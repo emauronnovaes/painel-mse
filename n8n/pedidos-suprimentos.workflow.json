@@ -1,0 +1,101 @@
+{
+  "name": "Pedidos (Suprimentos) → Supabase (painel-mse)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "daysInterval": 1, "triggerAtHour": 7, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "id": "trigger-diario",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Mesma lista/ids do array OBRAS em prototipo/index.html -- diferente do\n// fluxo de Orçamentos Complementares, aqui NÃO dá pra descobrir as obras a\n// partir de 1 chamada só (a API exige `obra_id` por request, sem endpoint\n// \"lista todas as obras\"), então a lista fixa é inevitável. CNPEM -\n// Auditório (id 103) fica DE FORA de propósito -- decisão já tomada\n// (2026-08-11) de que essa obra não faz parte do painel. Se uma obra nova\n// entrar no painel, adicionar aqui também.\nconst OBRAS = [\n  { id: 106, nome: 'CNPEM - Faseado' },\n  { id: 110, nome: 'Hitachi' },\n  { id: 94,  nome: 'Porto Itapoá' },\n  { id: 107, nome: 'Novo Nordisk - AP' },\n  { id: 108, nome: 'Novo Nordisk - AP - Reforço' },\n  { id: 91,  nome: 'Novo Nordisk - UB/SP' },\n];\n\nreturn OBRAS.map(o => ({ json: { id_obra: o.id, nome_obra: o.nome } }));"
+      },
+      "id": "code-lista-obras",
+      "name": "Lista de obras",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-660, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "url": "=https://portalmse.com.br/microservices/pedidos_usuarios_api/v1/pedidos",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "obra_id", "value": "={{$json.id_obra}}" },
+            { "name": "all", "value": "true" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "timeout": 60000
+        }
+      },
+      "id": "http-pedidos-por-obra",
+      "name": "Buscar pedidos por obra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-420, 300],
+      "credentials": {
+        "httpBearerAuth": { "name": "PortalMSE - Pedidos (Suprimentos)" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Modo padrão \"Run Once for All Items\" (não mexer -- é o correto aqui,\n// diferente do bug do fluxo de Orçamentos Complementares onde esse modo\n// era o ERRADO: lá a saída precisava ser 1-por-1 pareada por pairedItem,\n// aqui a saída é um FAN-OUT de 1 item de obra pra N linhas de pedido, que\n// é exatamente o que \"All Items\" resolve bem).\n//\n// Casa cada resposta HTTP com sua obra de origem por POSIÇÃO (mesma ordem\n// de entrada/saída -- garantia padrão do n8n pra nodes não-batch como o\n// HTTP Request). Guard explícito: se as contagens não baterem, aborta com\n// erro claro em vez de arriscar juntar pedido com obra errada.\nconst listaObras = $('Lista de obras').all();\nconst respostas = $input.all();\nif (listaObras.length !== respostas.length) {\n  throw new Error(`Descompasso entre lista de obras (${listaObras.length}) e respostas HTTP (${respostas.length}) -- abortando pra não misturar pedido com obra errada.`);\n}\n\nreturn respostas.map((resp, i) => {\n  const idObra = listaObras[i].json.id_obra;\n  const pedidos = Array.isArray(resp.json.data) ? resp.json.data : [];\n  const linhas = pedidos.map(p => ({\n    id_obra: idObra,\n    banco_s1: p.banco_s1 ?? null,\n    numero_pedido: p.numero_pedido != null ? String(p.numero_pedido) : null,\n    numero_requisicao: p.numero_requisicao || null,\n    obra_nome: p.obra || null,\n    tipo_descricao: p.tipo_descricao || null,\n    status_pedido: p.status_pedido || null,\n    solicitante: p.solicitante || null,\n    comprador: p.comprador || null,\n    fornecedor: p.fornecedor || null,\n    fornecedor_cnpj: p.fornecedor_cnpj || null,\n    valor: p.valor ?? null,\n    valor_liquido: p.valor_liquido ?? null,\n    desconto: p.desconto ?? null,\n    acrescimo: p.acrescimo ?? null,\n    frete: p.frete ?? null,\n    data_pedido: p.data_pedido || null,\n    data_entrega: p.data_entrega || null,\n    entrega_atualizada: p.entrega_atualizada || null,\n    descricao: p.descricao || null,\n    grupo: p.grupo || null,\n    observacoes: p.observacoes || null,\n    itens: Array.isArray(p.itens) ? p.itens : [],\n    raw: p,\n    atualizado_em: new Date().toISOString(),\n  }));\n  return { json: { id_obra: idObra, linhas } };\n});"
+      },
+      "id": "code-achatar-pedidos",
+      "name": "Montar linhas por obra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/pedidos_suprimentos?on_conflict=banco_s1,numero_pedido",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.linhas) }}"
+      },
+      "id": "http-upsert-supabase",
+      "name": "Upsert no Supabase (lote por obra)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 300],
+      "credentials": {
+        "httpCustomAuth": { "name": "Supabase - API Portal (service_role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": { "main": [[{ "node": "Lista de obras", "type": "main", "index": 0 }]] },
+    "Lista de obras": { "main": [[{ "node": "Buscar pedidos por obra", "type": "main", "index": 0 }]] },
+    "Buscar pedidos por obra": { "main": [[{ "node": "Montar linhas por obra", "type": "main", "index": 0 }]] },
+    "Montar linhas por obra": { "main": [[{ "node": "Upsert no Supabase (lote por obra)", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,113 @@
+{
+  "name": "Orçamentos Complementares → Supabase (painel-mse)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "daysInterval": 1, "triggerAtHour": 6, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "id": "trigger-diario",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-680, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "url": "https://portalmse.com.br/microservices/orcamentos_complementares_api/v1/orcamentos_complementares",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } }
+        }
+      },
+      "id": "http-todas-ocs",
+      "name": "Buscar todas as OCs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-440, 300],
+      "credentials": {
+        "httpBearerAuth": { "name": "PortalMSE - Orçamentos Complementares" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Deriva a lista de obras DIRETO dos dados recebidos (cada OC já vem com\n// obra_id + obra_nome) -- NÃO mantém mais uma lista própria de obras aqui.\n// Motivo: a 1ª carga real trouxe a obra id 103 \"CNPEM - AUDITÓRIO\", que\n// não existe no array OBRAS do painel-mse (só tem 106/110/94/107/108/91).\n// Uma lista fixa teria descartado essa obra em silêncio -- contra a regra\n// do projeto de nunca sumir com dado sem avisar (ADR-005). Gravar TODAS as\n// obras que aparecerem aqui, mesmo que o painel ainda não tenha aba pra\n// mostrar; decidir o que exibir é problema do front-end, não da ingestão.\nconst resposta = $input.first().json;\nconst todasOcs = Array.isArray(resposta.data) ? resposta.data : [];\n\nconst porObra = new Map();\nfor (const oc of todasOcs) {\n  const idObra = Number(oc.obra_id);\n  if (!Number.isFinite(idObra)) continue; // OC sem obra_id numérico válido -- não deveria acontecer; não trava o resto da carga\n  if (!porObra.has(idObra)) {\n    porObra.set(idObra, { id_obra: idObra, nome_obra: oc.obra_nome || null, ocs: [] });\n  }\n  porObra.get(idObra).ocs.push(oc);\n}\n\nreturn Array.from(porObra.values()).map(obra => ({\n  json: { ...obra, total: obra.ocs.length },\n}));"
+      },
+      "id": "code-agrupar-por-obra",
+      "name": "Agrupar OCs por obra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "url": "=https://portalmse.com.br/microservices/orcamentos_complementares_api/v1/resumo?obra_id={{$json.id_obra}}",
+        "options": {
+          "response": { "response": { "responseFormat": "json" } }
+        }
+      },
+      "id": "http-resumo-por-obra",
+      "name": "Buscar resumo por obra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [40, 300],
+      "credentials": {
+        "httpBearerAuth": { "name": "PortalMSE - Orçamentos Complementares" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Reconstrói o registro completo da obra: os dados vindos de \"Agrupar OCs\n// por obra\" (ocs, total, nome) + o resumo financeiro que acabou de chegar\n// desta chamada (1 por obra, pareado pelo item de origem via pairedItem\n// automático do n8n). IMPORTANTE: este node precisa estar em modo \"Run\n// Once for Each Item\" (parameters.mode acima) -- no modo padrão (\"Run\n// Once for All Items\") o código roda 1 VEZ SÓ pro workflow inteiro e\n// devolve 1 item só, mesmo com várias obras chegando aqui (foi assim que\n// a 1ª rodada completa só gravou 1-2 obras em vez de todas, sem erro\n// nenhum reportado -- o node \"funcionou\", só que processou tudo como se\n// fosse 1 item).\nconst original = $('Agrupar OCs por obra').item.json;\nconst resumo = $input.item.json;\n\nreturn {\n  json: {\n    id_obra: original.id_obra,\n    nome_obra: original.nome_obra,\n    total: original.total,\n    ocs: original.ocs,\n    resumo: resumo,\n    atualizado_em: new Date().toISOString(),\n  },\n};"
+      },
+      "id": "code-montar-registro",
+      "name": "Montar registro final",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/orcamentos_complementares_obra?on_conflict=id_obra",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "http-upsert-supabase",
+      "name": "Upsert no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 300],
+      "credentials": {
+        "httpCustomAuth": { "name": "Supabase - API Portal (service_role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": { "main": [[{ "node": "Buscar todas as OCs", "type": "main", "index": 0 }]] },
+    "Buscar todas as OCs": { "main": [[{ "node": "Agrupar OCs por obra", "type": "main", "index": 0 }]] },
+    "Agrupar OCs por obra": { "main": [[{ "node": "Buscar resumo por obra", "type": "main", "index": 0 }]] },
+    "Buscar resumo por obra": { "main": [[{ "node": "Montar registro final", "type": "main", "index": 0 }]] },
+    "Montar registro final": { "main": [[{ "node": "Upsert no Supabase", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}
