@@ -719,23 +719,90 @@ function CartaoEstado({ texto, maxHeight, tom }){
 // SEM o "modo cliente" do atual (reescreve o previsto para maquiar desvio
 // negativo) nem o filtro de período — fora do pedido, e o primeiro conflita
 // com a regra de não fabricar dado (ADR-005).
-function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hiddenLines, forceAllTicks, mostrarRotulos = true, zoomViewBox = null }) {
+function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hiddenLines, forceAllTicks, mostrarRotulos = true, zoomViewBox = null, zoomScale = 1, setZoom = null, containerRef = null }) {
   const [dragOffsets, setDragOffsets] = useState({});
   const dragRef = useRef(null);
+  // Refs pro loop de auto-pan (abaixo) sempre ler o valor mais recente, já
+  // que o efeito que registra os listeners de mousemove/mouseup roda uma
+  // vez só (deps []) — sem isso, `zoomScale`/`setZoom` ficariam presos no
+  // valor de quando o componente montou.
+  const zoomScaleRef = useRef(zoomScale);
+  const setZoomRef = useRef(setZoom);
+  const lastClientRef = useRef({ x: 0, y: 0 });
+  const panRafRef = useRef(null);
+  useEffect(() => { zoomScaleRef.current = zoomScale; }, [zoomScale]);
+  useEffect(() => { setZoomRef.current = setZoom; }, [setZoom]);
+
+  // Arrastar um rótulo no modo zoom NÃO deve mover a câmera — só perto da
+  // BORDA da área visível é que a tela acompanha (auto-pan), igual ao
+  // "arrastar-e-soltar" comum em outras interfaces. `EDGE_MARGIN` é a faixa
+  // (em px de tela) a partir da borda que dispara o pan; a velocidade é em
+  // px de TELA por frame (dividida pelo zoom na hora de aplicar), pra não
+  // ficar mais rápido só porque a imagem está mais ampliada.
+  const EDGE_MARGIN = 36;
+  const PAN_PX_POR_FRAME = 10;
+
+  // Offset incremental (soma um `delta` em cima do offset atual) em vez de
+  // recalcular "do zero" a partir do ponto inicial do arrasto — necessário
+  // porque o auto-pan (abaixo) TAMBÉM precisa somar nesse mesmo offset a
+  // cada frame (pra o rótulo continuar "grudado" no cursor enquanto a
+  // câmera anda sozinha), e as duas fontes (mousemove e o loop de pan)
+  // precisam concordar sobre qual é o valor "atual", não um congelado no
+  // início do arrasto.
+  const somarOffset = (id, deltaX, deltaY) => {
+    setDragOffsets(prev => {
+      const atual = prev[id] || { dx: 0, dy: 0 };
+      return { ...prev, [id]: { dx: atual.dx + deltaX, dy: atual.dy + deltaY } };
+    });
+  };
+
+  const pararAutoPan = () => {
+    if (panRafRef.current) { cancelAnimationFrame(panRafRef.current); panRafRef.current = null; }
+  };
+  const loopAutoPan = () => {
+    if (!dragRef.current || !setZoomRef.current || !containerRef?.current) { panRafRef.current = null; return; }
+    const scale = zoomScaleRef.current;
+    if (scale > 1) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const { x, y } = lastClientRef.current;
+      let dxScreen = 0, dyScreen = 0;
+      if (x - rect.left < EDGE_MARGIN) dxScreen = -PAN_PX_POR_FRAME;
+      else if (rect.right - x < EDGE_MARGIN) dxScreen = PAN_PX_POR_FRAME;
+      if (y - rect.top < EDGE_MARGIN) dyScreen = -PAN_PX_POR_FRAME;
+      else if (rect.bottom - y < EDGE_MARGIN) dyScreen = PAN_PX_POR_FRAME;
+      if (dxScreen !== 0 || dyScreen !== 0) {
+        const stepX = dxScreen / scale, stepY = dyScreen / scale;
+        setZoomRef.current(prev => ({
+          ...prev,
+          ox: Math.max(0, Math.min(width  * (1 - 1 / prev.scale), prev.ox + stepX)),
+          oy: Math.max(0, Math.min(height * (1 - 1 / prev.scale), prev.oy + stepY)),
+        }));
+        // Compensa o pan no offset do rótulo (mesmo sinal/tamanho) — sem
+        // isso o rótulo "ficaria pra trás" conforme a câmera anda sozinha,
+        // já que só o mousemove (que não está disparando, o cursor está
+        // parado na borda) atualizava o offset antes.
+        somarOffset(dragRef.current.id, stepX, stepY);
+      }
+    }
+    panRafRef.current = requestAnimationFrame(loopAutoPan);
+  };
 
   useEffect(() => {
     const onMouseMove = (e) => {
+      const ultimo = lastClientRef.current;
+      lastClientRef.current = { x: e.clientX, y: e.clientY };
       if (!dragRef.current) return;
-      const { id, startX, startY, origDx, origDy } = dragRef.current;
-      setDragOffsets(prev => ({
-        ...prev,
-        [id]: { dx: origDx + (e.clientX - startX), dy: origDy + (e.clientY - startY) }
-      }));
+      // Distância percorrida em px de TELA convertida pra espaço do SVG —
+      // ampliado 2x, 100px de mouse = 50 unidades de SVG (senão o rótulo
+      // "foge" do cursor, andando mais rápido que ele, quando ampliado).
+      const escala = zoomScaleRef.current || 1;
+      somarOffset(dragRef.current.id, (e.clientX - ultimo.x) / escala, (e.clientY - ultimo.y) / escala);
     };
     const onMouseUp = () => {
       if (dragRef.current) {
         document.body.style.userSelect = '';
         dragRef.current = null;
+        pararAutoPan();
       }
     };
     window.addEventListener('mousemove', onMouseMove);
@@ -748,14 +815,12 @@ function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hidden
 
   const handleDragStart = (e, id) => {
     e.preventDefault();
+    e.stopPropagation(); // não deixa o mousedown "vazar" pro pan do CurvaChart
     document.body.style.userSelect = 'none';
-    dragRef.current = {
-      id,
-      startX: e.clientX,
-      startY: e.clientY,
-      origDx: dragOffsets[id]?.dx || 0,
-      origDy: dragOffsets[id]?.dy || 0
-    };
+    lastClientRef.current = { x: e.clientX, y: e.clientY };
+    dragRef.current = { id };
+    pararAutoPan();
+    panRafRef.current = requestAnimationFrame(loopAutoPan);
   };
 
   const hl = hiddenLines || new Set();
@@ -1155,7 +1220,7 @@ function CurvaChart({ chartData, idxHoje, idxHojeFloat, realColor, hiddenLines, 
       onMouseDown={handleMouseDown}>
       {size.w > 0
         ? <LineSVG data={chartData} width={size.w} height={size.h || 400} idxHoje={idxHoje} idxHojeFloat={idxHojeFloat} realColor={realColor} hiddenLines={hiddenLines} forceAllTicks={forceAllTicks} mostrarRotulos={mostrarRotulos}
-            zoomViewBox={safeViewBox} />
+            zoomViewBox={safeViewBox} zoomScale={zoom.scale} setZoom={modoZoom ? setZoom : null} containerRef={ref} />
         : null}
     </div>
   );
