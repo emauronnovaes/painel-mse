@@ -2619,6 +2619,125 @@ Real pra calcular uma razão). Meses com Real continuam na lógica de 0,9×
 já validada, sem mudança. Validado: 6 meses futuros (Set/26–Fev/27)
 batendo exatamente 55% do valor bruto original (ex. Set/26: 700→385).
 
+### Toggle de Assiduidade em Encarregados (2026-08-14)
+
+"O toggle da assiduidade pode ser exibido" — resposta direta a uma
+pergunta anterior ("o que não foi migrado do dash main pra esse?"), que
+tinha listado o toggle de Assiduidade como a única omissão deliberada
+ainda pendente no setor Encarregados (PNG e clique no nome já tinham sido
+portados antes). Porta o botão "ASSIDUIDADE" da `LoopEncSection` do
+dashboard atual — métrica só informativa (não entra no score de
+ranking): % de dias com apontamento nos últimos 7 dias úteis.
+
+- Cálculo idêntico ao original, portado pra dentro do `useMemo` de
+  `linhas` em `ModuloEncarregados`: `diasUteisObra` (união de todos os
+  encarregados, dias em que a OBRA trabalhou, excluindo fim de semana),
+  `feriadosNacionais` da(s) ano(s) da janela de 7 dias, `diasBaseObra`
+  (dias úteis da janela, exceto feriado em que a obra não trabalhou) e
+  `totalDiasAssiduidade = max(1, diasBaseObra.size)` como denominador.
+  Por encarregado: `assiduidade = (dias apontados dentro de
+  diasBaseObra / totalDiasAssiduidade) × 100`.
+- Toggle (`showAssiduidade`, estado local) ao lado do botão "Baixar PNG"
+  — ativa/desativa: 3º cartão KPI "Assiduidade Média" (média simples
+  entre os encarregados elegíveis) e a coluna "Assiduidade" na tabela,
+  posicionada entre Qualidade e Colaboradores (mesma posição do
+  original). Coluna ordenável como as demais.
+- **Detalhe replicado de propósito, não óbvio de primeira leitura**: pra
+  linhas "sem apontamento no dia de referência" (`semApontamentos`), o
+  original mostra "—" na coluna de Assiduidade mesmo quando o valor
+  calculado não é zero (a pessoa pode ter apontado em outros dias da
+  janela, só não no dia de referência específico) — é uma
+  inconsistência do próprio dashboard atual (as outras colunas, tipo
+  Colaboradores, mostram o valor real mesmo nesse caso), mas replicada
+  aqui por fidelidade à origem em vez de "corrigida" por conta própria —
+  não foi pedido, e mudar o comportamento de uma métrica só informativa
+  não parecia valer o risco de divergir do que o time já está acostumado
+  a ver no dashboard atual.
+- Exportar PNG do ranking **não muda** — o `exportarPNG` original nunca
+  incluiu Assiduidade nas colunas desenhadas no canvas (conferido antes
+  de portar), então não foi replicado ali também.
+
+Testado com Playwright local em 2 obras (Novo Nordisk - AP e Novo
+Nordisk - UB/SP): estado inicial (2 KPIs, sem coluna) → ativar (3 KPIs,
+coluna aparece com valores plausíveis 0–100%) → ordenar pela coluna
+(seta muda, ordem inverte) → desativar (volta ao estado inicial). Caso
+de borda "—" pra linha ausente confirmado na obra 91. Sem erro de
+console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
+### Botão "Portal MSE" no cabeçalho (2026-08-14)
+
+"antes disso precisamos incluir um botão para retornar ao
+portalmse.com.br" — dito logo depois de uma pergunta sobre o ganho de
+migrar pro ADR-006 (ou seja, é uma tarefa que entra ANTES de qualquer
+decisão de base técnica, não depende dela). Botão novo no `Header`,
+canto superior direito, ao lado do `SeletorObra` — ícone de seta pra
+esquerda + texto "Portal MSE", estilo consistente com o resto do
+cabeçalho navy (`rgba(255,255,255,...)`, mesmo padrão do próprio botão
+do seletor de obra).
+
+- `irParaPortal()` — mesma URL e mesmo fallback do dashboard atual
+  (`window.top.location.href` primeiro, pra funcionar mesmo se o painel
+  algum dia for embutido num iframe do Portal; `window.location.href`
+  como fallback se `window.top` não for acessível por política de
+  origem cruzada). URL literal `http://portalmse.com.br/`, copiada
+  verbatim do `irParaPortal` do dashboard-main — confirmado em teste que
+  o domínio de fato redireciona pra `/login.php`.
+- **Diferença deliberada do original**: no dashboard-main esse botão só
+  aparece condicionado a `VIA_PORTAL` (`typeof window.__SSO_BOOTSTRAP !==
+  'undefined'`, ou seja, só quando o dashboard é servido embutido via SSO
+  do Portal) e substitui o botão de logout. O painel-mse não tem esse
+  conceito de SSO/login ainda (ver [[02 - Escopo e Telas]], "Outras telas
+  herdadas" — login é pendência real, não implementada) — então o botão
+  aqui é incondicional, sempre visível, sem nenhuma lógica de
+  autenticação por trás. Se o painel-mse ganhar SSO/embed no futuro, vale
+  reconsiderar se esse botão deveria virar condicional como no original.
+- **Bug pego no teste, corrigido antes do deploy**: o botão novo dividia
+  a mesma linha flex do `SeletorObra` no cabeçalho — em mobile
+  (≤768px), o seletor já tinha uma regra CSS antiga de `width:100%`
+  (pensada pra quando ele era o único item da linha), que ignorou o novo
+  vizinho e estourou a largura da tela (confirmado via
+  `scrollWidth`/`clientWidth`: até 115px de overflow horizontal com o
+  nome de obra mais longo). Corrigido com uma classe nova
+  `.header-actions` + regra mobile que empilha os dois em coluna
+  (`flex-direction:column`, cada um `width:100%`) em vez de dividir a
+  mesma linha. **Lição, mesmo padrão do 78º passo (múltiplas curvas)**:
+  toda vez que um elemento novo entra numa linha flex que já tinha uma
+  regra `width:100%` fixa pensada pro caso de "item único", checar o
+  responsivo — o problema nunca aparece no teste desktop, só testando
+  a tela pequena de verdade.
+
+Testado com Playwright local em desktop (1600×900, 3 obras incluindo a
+de nome mais longo) e mobile (375×800, mesmas 3 obras, checagem de
+overflow via DOM antes/depois do fix) — sem overflow, sem sobreposição,
+sem erro de console, clique dispara a navegação corretamente. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Consolidação: repositório git vira fonte única (2026-08-14, mesmo dia)
+
+"é possível fazer o deploy pela versão do repositório?" — até aqui, o
+código vivia em DOIS lugares: `Documents\painel-mse` (sem git, onde
+tudo era editado e de onde saía o `firebase deploy`) e
+`Documents\Github\painel-mse` (com git, sincronizado na mão a cada
+tanto). Confirmado que `firebase.json`/`.firebaserc` batem exatamente
+entre os dois e que o CLI do firebase já está instalado globalmente
+(`C:\node\`) — deploy funciona igual a partir do repo git. Usuário
+escolheu consolidar: **este repositório git vira a fonte única** a
+partir de agora (editar, commitar/pushar pra `develop` e dar deploy tudo
+daqui) — resolve o anti-padrão de "duas cópias sincronizadas na mão" que
+o ADR-002 já registrava como erro do dashboard antigo.
+
+**Achado que muda uma premissa do ADR-006**: `node`/`npm` já estão
+instalados globalmente nesta máquina — a restrição "máquina sem Node"
+que embasava parte do custo da opção Vite+React+TypeScript não existe
+mais (ver [[06 - Decisões de Arquitetura]], nota de correção no ADR-006).
+
+Verificado com `git diff --no-index` que as pastas `prototipo/` dos dois
+diretórios eram byte-idênticas antes da consolidação (as 2 mudanças
+recentes — Assiduidade e Portal MSE — tinham sido portadas manualmente,
+trecho a trecho, antes deste passo). Deploy de confirmação rodado direto
+do repo git: 9 arquivos, resultado idêntico ao de sempre.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
