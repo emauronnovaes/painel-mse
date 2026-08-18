@@ -160,6 +160,11 @@
     .header-logo { height: 28px; }
     .header-divider { height: 22px; }
     .header-title { font-size: 17px; }
+    /* Botão "Portal MSE" + seletor de obra empilham em telas pequenas — o
+       seletor sozinho já tinha `width:100%` (regra abaixo), o que "estourava"
+       a linha assim que dividiu espaço com o botão novo (2026-08-14). */
+    .header-actions { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
+    .header-actions > button { width: 100%; }
     .seletor-obra-wrap { width: 100%; }
     .seletor-obra-wrap .obra-btn { width: 100%; justify-content: space-between; }
     .seletor-obra-wrap .obra-btn > div { text-align: left; }
@@ -605,6 +610,14 @@ function SeletorObra({ obras, atual, onSelecionar }){
 }
 
 // ── Cabeçalho (navy só aqui — com a foto da obra dando textura por baixo) ───
+// Volta ao Portal MSE — mesma URL/fallback do dashboard atual (`irParaPortal`,
+// window.top primeiro pra funcionar mesmo se o painel estiver embutido num
+// iframe do Portal; window.location como fallback se `window.top` não for
+// acessível por política de origem cruzada).
+function irParaPortal(){
+  try { window.top.location.href = 'http://portalmse.com.br/'; }
+  catch (_) { window.location.href = 'http://portalmse.com.br/'; }
+}
 function Header({ obraAtual, obras, onSelecionarObra, foto }){
   return (
     <div className="header-wrap" style={{ flexShrink:0 }}>
@@ -619,7 +632,17 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
             <div className="header-title">Painel de Obra</div>
           </div>
         </div>
-        <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+        <div className="header-actions" style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button onClick={irParaPortal} title="Voltar ao Portal MSE"
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, background:'rgba(255,255,255,0.09)', border:'1px solid rgba(255,255,255,0.2)',
+              color:'rgba(255,255,255,0.75)', padding:'8px 14px', borderRadius:10, cursor:'pointer', fontSize:12.5, fontWeight:600, flexShrink:0 }}>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Portal MSE
+          </button>
+          <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+        </div>
       </div>
     </div>
   );
@@ -1696,10 +1719,10 @@ function ModuloCurvaS({ linhas, info, carregando, erro, obraId, obraNome, curvas
 //                            → Qualidade / Produtividade / Colaboradores
 //      • pts_emitidas        → horário de liberação de PT (só NN-AP/NN-UB)
 //      • efetivo_diario_raw  → selo "Ausente" (projeto Efetivo)
-//    Deliberadamente SEM (fora do pedido, dá pra portar depois se precisar):
-//    exportar PNG, clique no nome pra abrir os cards do encarregado, e o
-//    toggle de Assiduidade (a própria seção original já marca essa métrica
-//    como "só informativa, não entra no score").
+//    Exportar PNG e clique no nome (cards do encarregado) foram portados
+//    depois (2026-08-06/2026-08-11); toggle de Assiduidade portado em
+//    2026-08-14 (métrica só informativa, não entra no score — mesma nota
+//    da seção original).
 function BadgeQualidade({ nome, qualidadeEnc, dim }){
   const q = qualidadeEnc[(nome || '').trim().toUpperCase()];
   if (!q) return <span style={{ fontSize:12, color:T.mut }}>—</span>;
@@ -1722,7 +1745,7 @@ function BadgePT({ hhmm, dim }){
   const bg  = hhmm <= '07:00' ? 'rgba(31,157,87,0.13)' : hhmm <= '07:15' ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
   return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:12, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{hhmm}</span>;
 }
-function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, produtividadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
+function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, produtividadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
   const dim = row.semApontamentos;
   const destaque = idx === 0 && !row.ausente && !row.semApontamentos;
   // Ausente: os indicadores do dia (qualidade/produtividade/colaboradores/PT)
@@ -1751,6 +1774,11 @@ function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, produtividadeEnc, col
         {dim && !row.ausente && <div className="mono" style={{ fontSize:9, letterSpacing:'0.06em', color:T.mut2, textTransform:'uppercase', marginTop:2 }}>Sem apontamento no dia de referência</div>}
       </td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeQualidade nome={row.nome} qualidadeEnc={qualidadeEnc} dim={dim} />}</td>
+      {showAssiduidade && (
+        <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>
+          {row.ausente || dim ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : `${row.assiduidade.toFixed(1)}%`}
+        </td>
+      )}
       <td style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>{colab ?? '—'}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeEnc} dim={dim} />}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>
@@ -2076,6 +2104,11 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
 function ModuloEncarregados({ obraId, obraNome }){
   const obraCfg = OBRAS.find(o => o.id === obraId);
   const [nomeSelecionado, setNomeSelecionado] = useState(null);
+  // Toggle "ASSIDUIDADE" — portado do dashboard atual (2026-08-14, pedido
+  // explícito: "O toggle da assiduidade pode ser exibido"). Métrica só
+  // informativa (não entra no score) — % de dias com apontamento nos
+  // últimos 7 dias úteis, ver cálculo em `linhas`/`assiduidade` abaixo.
+  const [showAssiduidade, setShowAssiduidade] = useState(false);
 
   const [tvRaw, setTvRaw] = useState(null);
   const [tvErro, setTvErro] = useState(false);
@@ -2307,11 +2340,43 @@ function ModuloEncarregados({ obraId, obraNome }){
       }
     });
 
+    // Assiduidade (toggle "ASSIDUIDADE", porta LoopEncSection do dashboard
+    // atual) — % de dias com apontamento nos últimos 7 dias úteis. Só
+    // informativa, não entra no score. Denominador = dias úteis da JANELA em
+    // que a OBRA trabalhou (união de todos os encarregados), excluindo
+    // feriado nacional em que a obra não trabalhou (mesma regra do original).
+    const diasUteisObra = new Set();
+    Object.values(porEnc).forEach(s => {
+      s.diasApontados.forEach(ymd => {
+        const dt = new Date(ymd + 'T12:00:00');
+        if (dt.getDay() !== 0 && dt.getDay() !== 6) diasUteisObra.add(ymd);
+      });
+    });
+    const yearsInWindow = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
+      yearsInWindow.add(d.getFullYear());
+    }
+    const feriadosNacionais = new Set();
+    yearsInWindow.forEach(y => getFeriadosNacionais(y).forEach(f => feriadosNacionais.add(f)));
+    const diasBaseObra = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
+      if (d > ontem) break;
+      if (d.getDay() === 0 || d.getDay() === 6) continue;
+      const ymd = d.toISOString().slice(0, 10);
+      if (feriadosNacionais.has(ymd) && !diasUteisObra.has(ymd)) continue;
+      diasBaseObra.add(ymd);
+    }
+    const totalDiasAssiduidade = Math.max(1, diasBaseObra.size);
+
     let arr = Object.values(porEnc).map(s => {
       const diaAderencia = getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
-      return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
+      const diasUteisEnc = Array.from(s.diasApontados).filter(ymd => diasBaseObra.has(ymd)).length;
+      const assiduidade = (diasUteisEnc / totalDiasAssiduidade) * 100;
+      return { nome: s.nome, diaAderencia, aderenciaLin, assiduidade, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
     }).filter(s => cardsEncsUpper.has(s.nome.trim().toUpperCase()) || !s.semApontamentos);
 
     const encNamesSet = new Set(arr.map(s => s.nome.trim().toUpperCase()));
@@ -2319,7 +2384,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: getDiaAderencia(), aderenciaLin: null, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: getDiaAderencia(), aderenciaLin: null, assiduidade: 0, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -2357,6 +2422,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     const valor = (r) => {
       switch (ordenarEnc) {
         case 'qualidade': return rankQualidade(r.nome);
+        case 'assiduidade': return r.assiduidade ?? -1;
         case 'colaboradores': return colaboradoresEnc[up(r.nome)] ?? -1;
         case 'produtividade': return produtividadeEnc[up(r.nome)] ?? -1;
         case 'pt': {
@@ -2652,10 +2718,12 @@ function ModuloEncarregados({ obraId, obraNome }){
   if (erro) return <CartaoEstado texto="Erro ao carregar vw_dados_tv / cards_ativos" maxHeight={620} tom={T.red} />;
 
   const aderenciaGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.aderenciaLin ?? 0), 0) / linhas.length : 0;
+  const assiduidadeGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.assiduidade ?? 0), 0) / linhas.length : 0;
   const colsEncarregados = [
     { label:'Pos', campo:null, align:'left' },
     { label:'Encarregado', campo:'nome', align:'left' },
     { label:'Qualidade', campo:'qualidade', align:'right' },
+    ...(showAssiduidade ? [{ label:'Assiduidade', campo:'assiduidade', align:'right' }] : []),
     { label:'Colaboradores', campo:'colaboradores', align:'right' },
     { label:'Produtividade', campo:'produtividade', align:'right' },
     { label:'Aderência', campo:'aderencia', align:'right' },
@@ -2674,11 +2742,16 @@ function ModuloEncarregados({ obraId, obraNome }){
           className="mono" style={{ background:'#eef3fe', border:'1px solid #d8e3fb', color:T.blue, padding:'6px 11px', borderRadius:8, cursor: rankingRows.length ? 'pointer' : 'default', opacity: rankingRows.length ? 1 : 0.5, fontSize:10.5, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Baixar PNG ↓
         </button>
+        <button onClick={() => setShowAssiduidade(v => !v)} title="Exibir/ocultar assiduidade dos cards (dias com apontamento nos últimos 7 dias úteis — só informativa, não entra no score)"
+          className="mono" style={{ background: showAssiduidade ? 'rgba(31,157,87,0.15)' : '#eef0f3', border:'none', color: showAssiduidade ? T.green : T.mut, padding:'6px 12px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+          Assiduidade
+        </button>
       </div>
 
-      <div className="kpi-row cols-2">
+      <div className={`kpi-row ${showAssiduidade ? 'cols-3' : 'cols-2'}`}>
         <Balao titulo="Aderência Média" cor={T.blue} bg="rgba(37,99,235,0.08)" borda="rgba(37,99,235,0.15)" valor={`${aderenciaGlobal.toFixed(1)}%`} />
         <Balao titulo="Colaboradores Alocados" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={numColabObra ?? '—'} />
+        {showAssiduidade && <Balao titulo="Assiduidade Média" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={`${assiduidadeGlobal.toFixed(1)}%`} />}
       </div>
 
       <div className="card" style={{ flex:1, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
@@ -2700,12 +2773,12 @@ function ModuloEncarregados({ obraId, obraNome }){
             </thead>
             <tbody>
               {rankingRows.map((row, idx) => (
-                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT}
+                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT} showAssiduidade={showAssiduidade}
                   qualidadeEnc={qualidadeEnc} produtividadeEnc={produtividadeEnc} colaboradoresEnc={colaboradoresEnc}
                   horarioPT={horarioPT} onClickNome={setNomeSelecionado} />
               ))}
               {rankingRows.length === 0 && (
-                <tr><td colSpan={5 + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
+                <tr><td colSpan={5 + (showAssiduidade ? 1 : 0) + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
               )}
             </tbody>
           </table>
