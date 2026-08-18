@@ -2738,6 +2738,48 @@ recentes — Assiduidade e Portal MSE — tinham sido portadas manualmente,
 trecho a trecho, antes deste passo). Deploy de confirmação rodado direto
 do repo git: 9 arquivos, resultado idêntico ao de sempre.
 
+### Arrastar rótulo no modo zoom não deve mais mover a câmera (2026-08-14, mesmo dia)
+
+"quando estiver no modo zoom, ao selecionar o rótulo para arrasto não
+deve mexer a tela, somente o rótulo, a não ser que chegue na borda" —
+bug real em `LineSVG`/`CurvaChart`: o `mousedown` no `<text>` do rótulo
+"vazava" (bubbling) pro `onMouseDown` do container que trata o pan da
+câmera (`CurvaChart.handleMouseDown`) — os dois aconteciam juntos sempre
+que o gráfico estava ampliado (`zoom.scale > 1`).
+
+- `LineSVG.handleDragStart` ganhou `e.stopPropagation()` — sozinho já
+  resolvia o pedido central (arrastar rótulo não move mais a tela).
+- **Parte 2 do pedido, o "a não ser que chegue na borda"**: implementado
+  auto-pan contínuo — perto de ~36px da borda visível do gráfico
+  (`containerRef`, passado de `CurvaChart` pra `LineSVG`), um loop de
+  `requestAnimationFrame` desloca sozinho o `ox`/`oy` do viewBox enquanto
+  o cursor permanecer ali (mesmo parado, sem `mousemove` novo), até
+  soltar o mouse ou sair da faixa de borda. O offset do rótulo é
+  compensado no mesmo passo (`somarOffset`) pra ele continuar "grudado"
+  no cursor durante o auto-pan, em vez de ficar pra trás conforme a
+  câmera anda sozinha.
+- **Bug relacionado, corrigido junto**: o cálculo do offset do rótulo
+  usava o delta do mouse em pixels de TELA direto como deslocamento em
+  espaço SVG — correto só quando `scale === 1`. Com zoom ampliado (ex.
+  2x), 100px de mouse deveriam virar 50 unidades de SVG (a viewBox
+  mapeia uma região menor pro mesmo tamanho de tela), mas sem a divisão
+  o rótulo "fugia" do cursor, andando mais rápido que ele. Corrigido
+  dividindo o delta por `zoomScale` (passado como prop, com um `ref`
+  interno pra não ficar preso no valor de quando o componente montou).
+  Reescrevi o cálculo do offset pra incremental (soma um delta em cima
+  do valor atual, via `somarOffset`) em vez de "recalcular do zero a
+  partir do ponto inicial" — necessário porque agora DUAS fontes
+  (mousemove normal e o loop de auto-pan) precisam concordar sobre o
+  valor "atual" do offset, não só uma.
+
+Testado com Playwright (zoom ampliado ~7x): arrastar rótulo no meio do
+gráfico não move o `viewBox` (câmera parada, só o texto se move);
+arrastar até a borda e segurar parado move o `viewBox` continuamente,
+parando exatamente no `mouseup`; distância cursor↔rótulo medida em 6
+amostras durante o auto-pan ficou constante (~0,82px, sem acumular
+atraso); sem erro de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse` (a partir do repo git, ver seção anterior).
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
