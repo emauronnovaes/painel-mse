@@ -302,7 +302,11 @@ const SETORES = [
 // (id 106) tem link cadastrado por enquanto; outras obras caem no estado
 // "indisponível" dentro de ModuloTour360.
 const OBRA_TOUR_360 = {
-  106: 'https://visi.constructin.com.br/#/tour/10971/1366341607a34b14acc32889be3f2bed',
+  // Link atualizado em 2026-08-19 (o anterior usava a rota `#/tour/...`;
+  // este usa `#/v?t=...&p=...` — mesmo projeto Constructin, `p=10971`
+  // bate com o `10971` do link antigo, por isso a troca ficou na mesma
+  // obra em vez de virar uma 2ª entrada).
+  106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
 };
 
 const MESES_ABREV = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
