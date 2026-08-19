@@ -2826,6 +2826,73 @@ aparecem corretas, ordenação por coluna funciona, os 3 popups
 (Contrato/Medido/Farol) abrem sem erro, 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — topo suprimido, Tour 360° do CNPEM corrigido, colunas enxugadas (2026-08-19)
+
+Três ajustes rápidos em cima da reescrita acima, mesmo dia:
+
+- **KPIs + gráfico suprimidos por ora** — pedido explícito ("suprimir o
+  gráfico e os botões superiores, vamos manter apenas as tabelas, por
+  hora"). Gate `MOSTRAR_TOPO_MEDICOES` (const, hoje `false`), mesmo
+  padrão do `MOSTRAR_PIZZA_MEDICOES` de 11/08: nada foi apagado,
+  reativar é só trocar a constante pra `true`.
+- **Link do Tour 360° do CNPEM - Faseado corrigido** — URL antiga
+  (`.../#/tour/10971/...`) trocada por
+  `https://visi.constructin.com.br/#/v?t=...&p=10971` (mesmo id de
+  projeto `10971`, formato de link novo do Constructin).
+- **Colunas do Histórico e da Previsão enxugadas** — a 1ª versão do
+  Histórico saiu com ~14 colunas (seção anterior), longa demais pro uso
+  real. A pedido explícito, ficou em 6: **BM | Período | Valor Previsto
+  | Valor Medido | Desconto FD | Valor Faturado**. O resto
+  (retenção/ISS/desc. adiantamento/recebimento previsto-real/vencimento/
+  data e status de recebimento) continua gravado em `boletins_medicao`,
+  só saiu da tela por ora — nenhuma coluna foi removida do banco.
+  Previsão ganhou `COLUNAS_PREVISAO` (antes era tabela hand-coded, sem
+  array): **Data de Faturamento | Status Fat. | Data do Recebimento |
+  Status Rec. | Saldo Previsto Acum. | Saldo Realizado Acum.** — sem
+  BM/Período de propósito (o foco vira status de pagamento/recebimento
+  e saldo acumulado corrente, não a identidade do boletim; normalmente
+  só existe 1 linha pendente mesmo). O **filtro de linha da Previsão não
+  mudou** (confirmado com o usuário antes de mexer): continua todo
+  boletim sem `status_faturamento = 'Faturado'`, só as colunas exibidas
+  são outras. Ordenação padrão do Histórico trocou de
+  `data_faturamento` (coluna que saiu da tela) pra `periodo_fim`.
+
+Testado com Playwright (obra 91/CP236, 35 boletins): as 2 tabelas
+mostram exatamente as colunas esperadas, na ordem certa, ordenação por
+coluna funciona, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — ordenação padrão por BM + polish visual (2026-08-19)
+
+Usuário aprovou a ordenação por BM ("vai sempre vir ordenado pela
+coluna do BM") e pediu polish geral. Perguntei antes de mexer (via
+AskUserQuestion) se BM devia virar ordenação FIXA (sem clique) ou só o
+padrão inicial mantendo clique nas colunas — usuário escolheu manter
+clicável, só trocando o padrão.
+
+- **Ordenação padrão do Histórico**: trocada de `periodo_fim` desc pra
+  `bm_label` asc. `DIRECAO_INICIAL_HIST` novo — cada coluna nasce com a
+  direção mais útil ao primeiro clique (BM/Período crescente, colunas
+  de valor decrescente, maior primeiro), corrigindo um bug latente onde
+  os dois ramos do `alternarOrdenacaoHist` caíam sempre em `'desc'`.
+- **Polish visual nas 2 tabelas**: zebra stripe (linhas pares
+  `#f7f8fa`), hover azul sutil (`rgba(37,99,235,0.06)`, classe CSS
+  `.tabela-medicoes`), cabeçalho/rodapé com fundo `#fafbfc` e borda
+  2px (era 1px), padding de célula maior (9-10px/14px, era 7-9px/12px),
+  colunas BM e Valor Faturado em negrito pra dar hierarquia ao extrato.
+
+Testado com Playwright (obra 91/CP236): BM ▲ ativo por padrão no
+carregamento, zebra/hover visíveis em screenshot, clique em "Valor
+Faturado" ordena decrescente (maior primeiro), 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+**Correção no mesmo dia**: usuário apontou "tem que vir ordenado do
+maior para o menor" — o padrão inicial (asc) estava invertido do que
+fazia sentido pra um extrato (mais recente primeiro). Trocado pra
+`bm_label` **desc** (e `periodo_fim` também nasce desc no 1º clique,
+mesmo critério das colunas de valor). Testado: carga inicial mostra BM
+33→1, header com ▼ ativo, 0 erros de console.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
