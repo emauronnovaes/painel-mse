@@ -2935,6 +2935,28 @@ Valor Previsto com `left`/`width` idênticos entre as 2 tabelas
 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — Histórico volta a ser auto, Previsão acompanha (2026-08-19)
+
+Correção do passo acima: forçar largura fixa em px deixou o Histórico
+espremido (valores grandes de moeda ficavam apertados). Pedido
+explícito: "a de cima deveria seguir como estava, a de baixo deveria,
+em caso de similaridade, acompanhar a de cima".
+
+- **Histórico** volta ao layout automático — sem `colgroup`/
+  `tableLayout:fixed`, largura por conteúdo, como era antes de toda
+  essa história de alinhamento.
+- **Previsão** mede ao vivo as colunas BM/Período/Valor Previsto já
+  renderizadas no Histórico (`refLarguraHist` + `ResizeObserver` no
+  wrapper do Histórico) e replica esses px nas suas próprias colunas
+  Período/Valor Previsto/spacer via `largurasHist` (estado). Reage a
+  resize de janela e a qualquer mudança de layout do Histórico — é
+  sempre a tabela de baixo que segue a de cima, nunca o contrário.
+
+Testado com Playwright (obra 91/CP236): "R$ 17.535.256,45" (Valor
+Faturado) sem quebra/corte, Período e Valor Previsto com `left`/`width`
+batendo a <1px entre as 2 tabelas, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
