@@ -77,14 +77,24 @@ errada — o pior tipo de falha para quem toma decisão olhando a tela.
 
 **Status:** decisão adiada de propósito, para ser tomada com o escopo na mão.
 
-**Restrição levantada:** a máquina de desenvolvimento **não tem Node/npm**
-(verificado). Tem Python 3.13 e Git portátil.
+**Restrição levantada originalmente (não vale mais, ver correção
+abaixo):** a máquina de desenvolvimento **não tem Node/npm** (verificado
+em 2026-08-05). Tem Python 3.13 e Git portátil.
+
+**Correção (2026-08-14)**: `node`/`npm`/`firebase` CLI já estão
+instalados globalmente na máquina (`C:\node\`), confirmado ao consolidar
+o repositório git (`Documents\Github\painel-mse`) como fonte única do
+projeto (ver [[08 - Blueprint do Painel de Obra]]). **O custo de
+"instalação única do Node" da opção Vite+React+TypeScript, abaixo, já
+não existe** — a restrição que motivava adiar essa parte da decisão foi
+removida. Vale reconferir com o usuário se isso muda o status de
+"pendente" pra "decidida".
 
 **Opções na mesa:**
 
 | Opção | Ganho | Custo |
 |---|---|---|
-| **Vite + React + TypeScript** (exige instalar Node) | padrão de mercado; TypeScript pega em tempo de escrita vários bugs que hoje só aparecem em produção; build otimizado (importa para TV); um arquivo por componente | instalação única do Node; deploy ganha etapa de build |
+| **Vite + React + TypeScript** | padrão de mercado; TypeScript pega em tempo de escrita vários bugs que hoje só aparecem em produção; build otimizado (importa para TV); um arquivo por componente | ~~instalação única do Node~~ (Node já disponível, 2026-08-14); deploy ganha etapa de build |
 | **Módulos ES nativos** (sem instalar nada) | resolve o pior problema atual (arquivo único gigante); deploy idêntico ao de hoje | sem TypeScript; sem JSX ou JSX transpilado no navegador; escala pior; muitos requests |
 
 **Inclinação técnica:** a primeira. O pedido é explicitamente "produto novo e
@@ -92,8 +102,10 @@ mais escalável" e "muito organizado" — e boa parte da dívida do dashboard at
 (campos buscados e nunca usados, props mortas, campo que não existe no select
 sendo renderizado) é exatamente o que tipagem estática pega de graça.
 
-**A decidir junto:** se o deploy continua em Firebase + `app.py`, e se a máquina
-de desenvolvimento pode receber o Node.
+**A decidir junto:** se o deploy continua em Firebase + `app.py` (hoje o
+deploy já roda direto do repositório git, ver [[08 - Blueprint do Painel
+de Obra]] — a etapa de build do Vite se encaixaria no mesmo fluxo, antes
+do `firebase deploy`).
 
 ---
 

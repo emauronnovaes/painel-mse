@@ -138,6 +138,9 @@
   .seletor-obra-wrap { position: relative; flex-shrink: 0; }
   .chart-area { flex: 1; min-height: 0; overflow: hidden; position: relative; }
   .table-scroll-x { overflow: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
+  .tabela-medicoes tbody tr{ transition: background .12s ease; }
+  .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
+  .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -160,6 +163,11 @@
     .header-logo { height: 28px; }
     .header-divider { height: 22px; }
     .header-title { font-size: 17px; }
+    /* Botão "Portal MSE" + seletor de obra empilham em telas pequenas — o
+       seletor sozinho já tinha `width:100%` (regra abaixo), o que "estourava"
+       a linha assim que dividiu espaço com o botão novo (2026-08-14). */
+    .header-actions { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
+    .header-actions > button { width: 100%; }
     .seletor-obra-wrap { width: 100%; }
     .seletor-obra-wrap .obra-btn { width: 100%; justify-content: space-between; }
     .seletor-obra-wrap .obra-btn > div { text-align: left; }
@@ -237,8 +245,9 @@ const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // convenção nas duas — confirmado ao vivo, 2026-08-05) — usado pela aba
 // Encarregados; comparar sempre com .trim() (duas delas vêm com espaço extra
 // no banco). `origemPTS` é pts_emitidas.obra — só existe pra NN-AP/NN-UB.
-// `origemCP` é o código de contrato usado em `nfs`/`proximos_faturamentos`
-// (setor Medições, 2026-08-10) — confirmado direto no texto das tarefas raiz
+// `origemCP` é o código de contrato usado em `contratos_medicao`/
+// `boletins_medicao` (setor Medições, 2026-08-10; fonte trocada em
+// 2026-08-19) — confirmado direto no texto das tarefas raiz
 // da EAP pra 4 das 6 obras (CP002/CP029/CP261/CP273); Novo Nordisk-UB/SP é
 // CP236 e Hitachi é CP022, ambos confirmados pelo usuário em 2026-08-10.
 const OBRAS = [
@@ -259,20 +268,11 @@ const OBRAS = [
   { id: 91,  nome: 'Novo Nordisk - UB/SP',           curva: 'NOVO NORDISK - UB SP',      origemTV: 'NN - UB/SP - ELETROMECÂNICA',    origemPTS: 'Novo Nordisk UB',  origemCP: 'CP236' },
 ];
 
-// Valores de contrato por código CP (setor Medições) — vieram do usuário
-// direto por chat em 2026-08-10, NÃO existem em nenhuma tabela do Supabase.
-// `original` + `extras` (OC/PO/Saldo/etc.) são fixos; `fd` (Faturamento
-// Direto) é PROVISÓRIO, sujeito a mudança — reconfirmar com o usuário antes
-// de tratar como definitivo. Todas as 6 obras já têm dado (as 3 últimas
-// vieram sem itens extras — só original + FD, `extras` fica vazio).
-const CONTRATOS_CP = {
-  CP029: { original: 47961357.60, extras: [{ label: 'OC1', valor: 2400852.91 }, { label: 'OC2', valor: 1267129.79 }], fd: 18166434.55 },
-  CP022: { original: 19500000.00, extras: [{ label: 'OC1', valor: 1500000.00 }], fd: 2988294.55 },
-  CP236: { original: 335000000.00, extras: [{ label: 'PO 8002217931', valor: 7373.48 }, { label: 'Saldo Novo Civil', valor: 1295000.00 }], fd: 34257868.31 },
-  CP002: { original: 252225177.38, extras: [], fd: 104515271.57 },
-  CP273: { original: 129500000.00, extras: [], fd: 11885884.19 },
-  CP261: { original: 37000000.00, extras: [], fd: 3905945.55 },
-};
+// Substituído em 2026-08-19 pelas tabelas reais `contratos_medicao` +
+// `boletins_medicao` (ver ModuloMedicoes) — pedido explícito do usuário:
+// "não vamos utilizar os dados que já existem, vamos fazer uma nova
+// importação a partir destes". O `CONTRATOS_CP` hardcoded que vivia aqui
+// (valores vindos por chat em 2026-08-10, `fd` provisório) saiu de uso.
 
 // Mesmas fotos já usadas nos cards do dashboard atual (OBRA_VIDEOS) — reaproveitadas
 // como textura de fundo no cabeçalho (preto e branco, bem transparente).
@@ -305,7 +305,11 @@ const SETORES = [
 // (id 106) tem link cadastrado por enquanto; outras obras caem no estado
 // "indisponível" dentro de ModuloTour360.
 const OBRA_TOUR_360 = {
-  106: 'https://visi.constructin.com.br/#/tour/10971/1366341607a34b14acc32889be3f2bed',
+  // Link atualizado em 2026-08-19 (o anterior usava a rota `#/tour/...`;
+  // este usa `#/v?t=...&p=...` — mesmo projeto Constructin, `p=10971`
+  // bate com o `10971` do link antigo, por isso a troca ficou na mesma
+  // obra em vez de virar uma 2ª entrada).
+  106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
 };
 
 const MESES_ABREV = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
@@ -605,6 +609,14 @@ function SeletorObra({ obras, atual, onSelecionar }){
 }
 
 // ── Cabeçalho (navy só aqui — com a foto da obra dando textura por baixo) ───
+// Volta ao Portal MSE — mesma URL/fallback do dashboard atual (`irParaPortal`,
+// window.top primeiro pra funcionar mesmo se o painel estiver embutido num
+// iframe do Portal; window.location como fallback se `window.top` não for
+// acessível por política de origem cruzada).
+function irParaPortal(){
+  try { window.top.location.href = 'http://portalmse.com.br/'; }
+  catch (_) { window.location.href = 'http://portalmse.com.br/'; }
+}
 function Header({ obraAtual, obras, onSelecionarObra, foto }){
   return (
     <div className="header-wrap" style={{ flexShrink:0 }}>
@@ -619,7 +631,17 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
             <div className="header-title">Painel de Obra</div>
           </div>
         </div>
-        <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+        <div className="header-actions" style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button onClick={irParaPortal} title="Voltar ao Portal MSE"
+            style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, background:'rgba(255,255,255,0.09)', border:'1px solid rgba(255,255,255,0.2)',
+              color:'rgba(255,255,255,0.75)', padding:'8px 14px', borderRadius:10, cursor:'pointer', fontSize:12.5, fontWeight:600, flexShrink:0 }}>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+            Portal MSE
+          </button>
+          <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+        </div>
       </div>
     </div>
   );
@@ -696,23 +718,90 @@ function CartaoEstado({ texto, maxHeight, tom }){
 // SEM o "modo cliente" do atual (reescreve o previsto para maquiar desvio
 // negativo) nem o filtro de período — fora do pedido, e o primeiro conflita
 // com a regra de não fabricar dado (ADR-005).
-function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hiddenLines, forceAllTicks, mostrarRotulos = true, zoomViewBox = null }) {
+function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hiddenLines, forceAllTicks, mostrarRotulos = true, zoomViewBox = null, zoomScale = 1, setZoom = null, containerRef = null }) {
   const [dragOffsets, setDragOffsets] = useState({});
   const dragRef = useRef(null);
+  // Refs pro loop de auto-pan (abaixo) sempre ler o valor mais recente, já
+  // que o efeito que registra os listeners de mousemove/mouseup roda uma
+  // vez só (deps []) — sem isso, `zoomScale`/`setZoom` ficariam presos no
+  // valor de quando o componente montou.
+  const zoomScaleRef = useRef(zoomScale);
+  const setZoomRef = useRef(setZoom);
+  const lastClientRef = useRef({ x: 0, y: 0 });
+  const panRafRef = useRef(null);
+  useEffect(() => { zoomScaleRef.current = zoomScale; }, [zoomScale]);
+  useEffect(() => { setZoomRef.current = setZoom; }, [setZoom]);
+
+  // Arrastar um rótulo no modo zoom NÃO deve mover a câmera — só perto da
+  // BORDA da área visível é que a tela acompanha (auto-pan), igual ao
+  // "arrastar-e-soltar" comum em outras interfaces. `EDGE_MARGIN` é a faixa
+  // (em px de tela) a partir da borda que dispara o pan; a velocidade é em
+  // px de TELA por frame (dividida pelo zoom na hora de aplicar), pra não
+  // ficar mais rápido só porque a imagem está mais ampliada.
+  const EDGE_MARGIN = 36;
+  const PAN_PX_POR_FRAME = 10;
+
+  // Offset incremental (soma um `delta` em cima do offset atual) em vez de
+  // recalcular "do zero" a partir do ponto inicial do arrasto — necessário
+  // porque o auto-pan (abaixo) TAMBÉM precisa somar nesse mesmo offset a
+  // cada frame (pra o rótulo continuar "grudado" no cursor enquanto a
+  // câmera anda sozinha), e as duas fontes (mousemove e o loop de pan)
+  // precisam concordar sobre qual é o valor "atual", não um congelado no
+  // início do arrasto.
+  const somarOffset = (id, deltaX, deltaY) => {
+    setDragOffsets(prev => {
+      const atual = prev[id] || { dx: 0, dy: 0 };
+      return { ...prev, [id]: { dx: atual.dx + deltaX, dy: atual.dy + deltaY } };
+    });
+  };
+
+  const pararAutoPan = () => {
+    if (panRafRef.current) { cancelAnimationFrame(panRafRef.current); panRafRef.current = null; }
+  };
+  const loopAutoPan = () => {
+    if (!dragRef.current || !setZoomRef.current || !containerRef?.current) { panRafRef.current = null; return; }
+    const scale = zoomScaleRef.current;
+    if (scale > 1) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const { x, y } = lastClientRef.current;
+      let dxScreen = 0, dyScreen = 0;
+      if (x - rect.left < EDGE_MARGIN) dxScreen = -PAN_PX_POR_FRAME;
+      else if (rect.right - x < EDGE_MARGIN) dxScreen = PAN_PX_POR_FRAME;
+      if (y - rect.top < EDGE_MARGIN) dyScreen = -PAN_PX_POR_FRAME;
+      else if (rect.bottom - y < EDGE_MARGIN) dyScreen = PAN_PX_POR_FRAME;
+      if (dxScreen !== 0 || dyScreen !== 0) {
+        const stepX = dxScreen / scale, stepY = dyScreen / scale;
+        setZoomRef.current(prev => ({
+          ...prev,
+          ox: Math.max(0, Math.min(width  * (1 - 1 / prev.scale), prev.ox + stepX)),
+          oy: Math.max(0, Math.min(height * (1 - 1 / prev.scale), prev.oy + stepY)),
+        }));
+        // Compensa o pan no offset do rótulo (mesmo sinal/tamanho) — sem
+        // isso o rótulo "ficaria pra trás" conforme a câmera anda sozinha,
+        // já que só o mousemove (que não está disparando, o cursor está
+        // parado na borda) atualizava o offset antes.
+        somarOffset(dragRef.current.id, stepX, stepY);
+      }
+    }
+    panRafRef.current = requestAnimationFrame(loopAutoPan);
+  };
 
   useEffect(() => {
     const onMouseMove = (e) => {
+      const ultimo = lastClientRef.current;
+      lastClientRef.current = { x: e.clientX, y: e.clientY };
       if (!dragRef.current) return;
-      const { id, startX, startY, origDx, origDy } = dragRef.current;
-      setDragOffsets(prev => ({
-        ...prev,
-        [id]: { dx: origDx + (e.clientX - startX), dy: origDy + (e.clientY - startY) }
-      }));
+      // Distância percorrida em px de TELA convertida pra espaço do SVG —
+      // ampliado 2x, 100px de mouse = 50 unidades de SVG (senão o rótulo
+      // "foge" do cursor, andando mais rápido que ele, quando ampliado).
+      const escala = zoomScaleRef.current || 1;
+      somarOffset(dragRef.current.id, (e.clientX - ultimo.x) / escala, (e.clientY - ultimo.y) / escala);
     };
     const onMouseUp = () => {
       if (dragRef.current) {
         document.body.style.userSelect = '';
         dragRef.current = null;
+        pararAutoPan();
       }
     };
     window.addEventListener('mousemove', onMouseMove);
@@ -725,14 +814,12 @@ function LineSVG({ data, width, height, idxHoje, idxHojeFloat, realColor, hidden
 
   const handleDragStart = (e, id) => {
     e.preventDefault();
+    e.stopPropagation(); // não deixa o mousedown "vazar" pro pan do CurvaChart
     document.body.style.userSelect = 'none';
-    dragRef.current = {
-      id,
-      startX: e.clientX,
-      startY: e.clientY,
-      origDx: dragOffsets[id]?.dx || 0,
-      origDy: dragOffsets[id]?.dy || 0
-    };
+    lastClientRef.current = { x: e.clientX, y: e.clientY };
+    dragRef.current = { id };
+    pararAutoPan();
+    panRafRef.current = requestAnimationFrame(loopAutoPan);
   };
 
   const hl = hiddenLines || new Set();
@@ -1132,7 +1219,7 @@ function CurvaChart({ chartData, idxHoje, idxHojeFloat, realColor, hiddenLines, 
       onMouseDown={handleMouseDown}>
       {size.w > 0
         ? <LineSVG data={chartData} width={size.w} height={size.h || 400} idxHoje={idxHoje} idxHojeFloat={idxHojeFloat} realColor={realColor} hiddenLines={hiddenLines} forceAllTicks={forceAllTicks} mostrarRotulos={mostrarRotulos}
-            zoomViewBox={safeViewBox} />
+            zoomViewBox={safeViewBox} zoomScale={zoom.scale} setZoom={modoZoom ? setZoom : null} containerRef={ref} />
         : null}
     </div>
   );
@@ -1696,10 +1783,10 @@ function ModuloCurvaS({ linhas, info, carregando, erro, obraId, obraNome, curvas
 //                            → Qualidade / Produtividade / Colaboradores
 //      • pts_emitidas        → horário de liberação de PT (só NN-AP/NN-UB)
 //      • efetivo_diario_raw  → selo "Ausente" (projeto Efetivo)
-//    Deliberadamente SEM (fora do pedido, dá pra portar depois se precisar):
-//    exportar PNG, clique no nome pra abrir os cards do encarregado, e o
-//    toggle de Assiduidade (a própria seção original já marca essa métrica
-//    como "só informativa, não entra no score").
+//    Exportar PNG e clique no nome (cards do encarregado) foram portados
+//    depois (2026-08-06/2026-08-11); toggle de Assiduidade portado em
+//    2026-08-14 (métrica só informativa, não entra no score — mesma nota
+//    da seção original).
 function BadgeQualidade({ nome, qualidadeEnc, dim }){
   const q = qualidadeEnc[(nome || '').trim().toUpperCase()];
   if (!q) return <span style={{ fontSize:12, color:T.mut }}>—</span>;
@@ -1722,7 +1809,7 @@ function BadgePT({ hhmm, dim }){
   const bg  = hhmm <= '07:00' ? 'rgba(31,157,87,0.13)' : hhmm <= '07:15' ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
   return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:12, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{hhmm}</span>;
 }
-function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, produtividadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
+function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, produtividadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
   const dim = row.semApontamentos;
   const destaque = idx === 0 && !row.ausente && !row.semApontamentos;
   // Ausente: os indicadores do dia (qualidade/produtividade/colaboradores/PT)
@@ -1751,6 +1838,11 @@ function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, produtividadeEnc, col
         {dim && !row.ausente && <div className="mono" style={{ fontSize:9, letterSpacing:'0.06em', color:T.mut2, textTransform:'uppercase', marginTop:2 }}>Sem apontamento no dia de referência</div>}
       </td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeQualidade nome={row.nome} qualidadeEnc={qualidadeEnc} dim={dim} />}</td>
+      {showAssiduidade && (
+        <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>
+          {row.ausente || dim ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : `${row.assiduidade.toFixed(1)}%`}
+        </td>
+      )}
       <td style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>{colab ?? '—'}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeEnc} dim={dim} />}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>
@@ -2076,6 +2168,11 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
 function ModuloEncarregados({ obraId, obraNome }){
   const obraCfg = OBRAS.find(o => o.id === obraId);
   const [nomeSelecionado, setNomeSelecionado] = useState(null);
+  // Toggle "ASSIDUIDADE" — portado do dashboard atual (2026-08-14, pedido
+  // explícito: "O toggle da assiduidade pode ser exibido"). Métrica só
+  // informativa (não entra no score) — % de dias com apontamento nos
+  // últimos 7 dias úteis, ver cálculo em `linhas`/`assiduidade` abaixo.
+  const [showAssiduidade, setShowAssiduidade] = useState(false);
 
   const [tvRaw, setTvRaw] = useState(null);
   const [tvErro, setTvErro] = useState(false);
@@ -2307,11 +2404,43 @@ function ModuloEncarregados({ obraId, obraNome }){
       }
     });
 
+    // Assiduidade (toggle "ASSIDUIDADE", porta LoopEncSection do dashboard
+    // atual) — % de dias com apontamento nos últimos 7 dias úteis. Só
+    // informativa, não entra no score. Denominador = dias úteis da JANELA em
+    // que a OBRA trabalhou (união de todos os encarregados), excluindo
+    // feriado nacional em que a obra não trabalhou (mesma regra do original).
+    const diasUteisObra = new Set();
+    Object.values(porEnc).forEach(s => {
+      s.diasApontados.forEach(ymd => {
+        const dt = new Date(ymd + 'T12:00:00');
+        if (dt.getDay() !== 0 && dt.getDay() !== 6) diasUteisObra.add(ymd);
+      });
+    });
+    const yearsInWindow = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
+      yearsInWindow.add(d.getFullYear());
+    }
+    const feriadosNacionais = new Set();
+    yearsInWindow.forEach(y => getFeriadosNacionais(y).forEach(f => feriadosNacionais.add(f)));
+    const diasBaseObra = new Set();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
+      if (d > ontem) break;
+      if (d.getDay() === 0 || d.getDay() === 6) continue;
+      const ymd = d.toISOString().slice(0, 10);
+      if (feriadosNacionais.has(ymd) && !diasUteisObra.has(ymd)) continue;
+      diasBaseObra.add(ymd);
+    }
+    const totalDiasAssiduidade = Math.max(1, diasBaseObra.size);
+
     let arr = Object.values(porEnc).map(s => {
       const diaAderencia = getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
-      return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
+      const diasUteisEnc = Array.from(s.diasApontados).filter(ymd => diasBaseObra.has(ymd)).length;
+      const assiduidade = (diasUteisEnc / totalDiasAssiduidade) * 100;
+      return { nome: s.nome, diaAderencia, aderenciaLin, assiduidade, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
     }).filter(s => cardsEncsUpper.has(s.nome.trim().toUpperCase()) || !s.semApontamentos);
 
     const encNamesSet = new Set(arr.map(s => s.nome.trim().toUpperCase()));
@@ -2319,7 +2448,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: getDiaAderencia(), aderenciaLin: null, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: getDiaAderencia(), aderenciaLin: null, assiduidade: 0, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -2357,6 +2486,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     const valor = (r) => {
       switch (ordenarEnc) {
         case 'qualidade': return rankQualidade(r.nome);
+        case 'assiduidade': return r.assiduidade ?? -1;
         case 'colaboradores': return colaboradoresEnc[up(r.nome)] ?? -1;
         case 'produtividade': return produtividadeEnc[up(r.nome)] ?? -1;
         case 'pt': {
@@ -2652,10 +2782,12 @@ function ModuloEncarregados({ obraId, obraNome }){
   if (erro) return <CartaoEstado texto="Erro ao carregar vw_dados_tv / cards_ativos" maxHeight={620} tom={T.red} />;
 
   const aderenciaGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.aderenciaLin ?? 0), 0) / linhas.length : 0;
+  const assiduidadeGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.assiduidade ?? 0), 0) / linhas.length : 0;
   const colsEncarregados = [
     { label:'Pos', campo:null, align:'left' },
     { label:'Encarregado', campo:'nome', align:'left' },
     { label:'Qualidade', campo:'qualidade', align:'right' },
+    ...(showAssiduidade ? [{ label:'Assiduidade', campo:'assiduidade', align:'right' }] : []),
     { label:'Colaboradores', campo:'colaboradores', align:'right' },
     { label:'Produtividade', campo:'produtividade', align:'right' },
     { label:'Aderência', campo:'aderencia', align:'right' },
@@ -2674,11 +2806,16 @@ function ModuloEncarregados({ obraId, obraNome }){
           className="mono" style={{ background:'#eef3fe', border:'1px solid #d8e3fb', color:T.blue, padding:'6px 11px', borderRadius:8, cursor: rankingRows.length ? 'pointer' : 'default', opacity: rankingRows.length ? 1 : 0.5, fontSize:10.5, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Baixar PNG ↓
         </button>
+        <button onClick={() => setShowAssiduidade(v => !v)} title="Exibir/ocultar assiduidade dos cards (dias com apontamento nos últimos 7 dias úteis — só informativa, não entra no score)"
+          className="mono" style={{ background: showAssiduidade ? 'rgba(31,157,87,0.15)' : '#eef0f3', border:'none', color: showAssiduidade ? T.green : T.mut, padding:'6px 12px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+          Assiduidade
+        </button>
       </div>
 
-      <div className="kpi-row cols-2">
+      <div className={`kpi-row ${showAssiduidade ? 'cols-3' : 'cols-2'}`}>
         <Balao titulo="Aderência Média" cor={T.blue} bg="rgba(37,99,235,0.08)" borda="rgba(37,99,235,0.15)" valor={`${aderenciaGlobal.toFixed(1)}%`} />
         <Balao titulo="Colaboradores Alocados" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={numColabObra ?? '—'} />
+        {showAssiduidade && <Balao titulo="Assiduidade Média" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={`${assiduidadeGlobal.toFixed(1)}%`} />}
       </div>
 
       <div className="card" style={{ flex:1, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
@@ -2700,12 +2837,12 @@ function ModuloEncarregados({ obraId, obraNome }){
             </thead>
             <tbody>
               {rankingRows.map((row, idx) => (
-                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT}
+                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT} showAssiduidade={showAssiduidade}
                   qualidadeEnc={qualidadeEnc} produtividadeEnc={produtividadeEnc} colaboradoresEnc={colaboradoresEnc}
                   horarioPT={horarioPT} onClickNome={setNomeSelecionado} />
               ))}
               {rankingRows.length === 0 && (
-                <tr><td colSpan={5 + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
+                <tr><td colSpan={5 + (showAssiduidade ? 1 : 0) + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
               )}
             </tbody>
           </table>
@@ -4374,16 +4511,16 @@ function ModuloOcCo({ obraId, obraNome }){
   );
 }
 
-// ── Setor 8 — Medições, direto de `nfs` + `proximos_faturamentos` ───────────
-// `nfs` não tem valor (R$) nenhum — só nf/bm/empresa/emissão — então "a curva"
-// aqui é a contagem ACUMULADA de Notas Fiscais emitidas ao longo do tempo (um
-// proxy de cadência de faturamento/medição, no espírito da Curva S mas sem
-// previsto/tendência, que não existem nesse dado). `proximos_faturamentos`
-// tem 1 linha por obra com a próxima data+valor previstos — vira balão à
-// parte, nunca no mesmo eixo do gráfico (unidades diferentes: contagem vs
-// R$). As duas tabelas usam código de contrato ("CP029", "CP273"...) como
-// chave de obra, uma 4ª convenção de nome além de curva/origemTV/origemPTS —
-// ver `origemCP` em `OBRAS`.
+// ── Setor 8 — Medições, direto de `contratos_medicao` + `boletins_medicao`
+// (fonte trocada em 2026-08-19; antes vinha de `nfs`+`proximos_faturamentos`,
+// que só tinham nf/bm/empresa/emissão e 1 linha de "próximo" por obra — ver
+// [[08 - Blueprint do Painel de Obra]]). Agora o gráfico soma o VALOR
+// faturado por data (não mais uma contagem de NFs) a partir do Histórico
+// (boletins já faturados); a Previsão vira uma tabela própria (todo boletim
+// ainda sem faturamento), não mais um balão único. As duas tabelas usam
+// código de contrato ("CP029", "CP273"...) como chave de obra, uma 4ª
+// convenção de nome além de curva/origemTV/origemPTS — ver `origemCP` em
+// `OBRAS`. ─────────────────────────────────────────────────────────────────
 function GraficoMedicoes({ pontos }){
   const wrapRef = useRef(null);
   const [tam, setTam] = useState({ width: 900, height: 280 });
@@ -4619,36 +4756,81 @@ function GraficoPizza({ fatias }){
   );
 }
 
-const COLUNAS_NFS = [
-  { label:'BM',       campo:'bm' },
-  { label:'NF',       campo:'nf' },
-  { label:'Empresa',  campo:'empresa' },
-  { label:'Valor',    campo:'valor',   align:'right' },
-  { label:'Emissão',  campo:'emissao', align:'right' },
+// Badge genérico de status (Faturado/Recebido/Dentro do prazo/Atrasado) —
+// mesma paleta semântica usada nos outros badges do painel (verde/azul/
+// vermelho/neutro), reaproveitado nas 2 tabelas novas de Medições.
+function BadgeStatusMedicao({ texto }){
+  if (!texto) return <span style={{ fontSize:12, color:T.mut2 }}>—</span>;
+  const n = texto.trim().toLowerCase();
+  const cor = (n === 'recebido' || n === 'faturado') ? T.green : n === 'atrasado' ? T.red : n === 'dentro do prazo' ? T.blue : T.mut;
+  const bg  = (n === 'recebido' || n === 'faturado') ? 'rgba(31,157,87,0.13)' : n === 'atrasado' ? 'rgba(210,59,59,0.13)' : n === 'dentro do prazo' ? 'rgba(37,99,235,0.13)' : '#eef0f3';
+  return <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor, whiteSpace:'nowrap' }}>{texto}</span>;
+}
+
+// Tabela 1 — Histórico de Faturamentos: todo boletim já com
+// `status_faturamento = 'Faturado'`. Colunas ordenáveis, mais recente
+// primeiro por padrão. Colunas restritas a pedido explícito (2026-08-19,
+// a 1ª versão tinha ~14 colunas — larga demais); o resto do dado
+// (retenção/ISS/recebimento/vencimento) continua em `boletins_medicao`,
+// só saiu da tela por ora.
+const COLUNAS_HISTORICO = [
+  { label:'BM',              campo:'bm_label' },
+  { label:'Período',         campo:'periodo_fim' },
+  { label:'Valor Previsto',  campo:'valor_previsto', align:'right' },
+  { label:'Valor Medido',    campo:'valor_medido',   align:'right' },
+  { label:'Desconto FD',     campo:'desconto_fd',    align:'right' },
+  { label:'Valor Faturado',  campo:'valor_faturado', align:'right' },
+];
+
+// Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
+// `status_faturamento = 'Faturado'` (continua o mesmo filtro de linha de
+// antes — só as colunas mudaram, 2026-08-19). Sem BM/Período de
+// propósito (pedido explícito): normalmente só tem 1 linha pendente (o
+// "BM vigente"), então o foco vira o status de pagamento/recebimento e o
+// saldo acumulado corrente, não a identidade do boletim.
+const COLUNAS_PREVISAO = [
+  { label:'Data de Faturamento',       campo:'data_faturamento' },
+  { label:'Status Fat.',               campo:'status_faturamento' },
+  { label:'Data do Recebimento',       campo:'data_recebimento' },
+  { label:'Status Rec.',               campo:'status_recebimento' },
+  { label:'Saldo Previsto Acum.',      campo:'saldo_previsto_acumulado',              align:'right' },
+  { label:'Saldo Realizado Acum.',     campo:'saldo_realizado_acumulado_medido',      align:'right' },
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
   const obraCfg = OBRAS.find(o => o.id === obraId);
-  const [nfsRaw, setNfsRaw] = useState(null);
-  const [nfsErro, setNfsErro] = useState(false);
-  const [proximo, setProximo] = useState(null);
+  // Fonte trocada em 2026-08-19: `contratos_medicao` + `boletins_medicao`
+  // (importadas da planilha "Saldo a Faturar", ver [[08 - Blueprint]]) no
+  // lugar de `nfs` + `proximos_faturamentos` + `CONTRATOS_CP` hardcoded —
+  // pedido explícito: "não vamos utilizar os dados que já existem, vamos
+  // fazer uma nova importação a partir destes".
+  const [contratoRaw, setContratoRaw] = useState(null); // {} = sem cadastro pra este CP
+  const [contratoErro, setContratoErro] = useState(false);
+  const [boletinsRaw, setBoletinsRaw] = useState(null);
+  const [boletinsErro, setBoletinsErro] = useState(false);
   const [curvaFisica, setCurvaFisica] = useState(null);
   const [contratoAberto, setContratoAberto] = useState(false);
   const [medidoAberto, setMedidoAberto] = useState(false);
   const [farolAberto, setFarolAberto] = useState(false);
   useEffect(() => { setContratoAberto(false); setMedidoAberto(false); setFarolAberto(false); }, [obraId]);
 
-  // 2 divisores arrastáveis (pedido explícito: "preciso ter os comandos de
-  // ajuste entre ele [pizza] e a curva também") — pizza fica à esquerda,
-  // depois o gráfico, depois a tabela; cada fronteira arrasta
-  // independente. % são relativas à largura total da fileira (`areaRef`);
-  // a tabela nunca tem estado próprio, só herda o que sobrar (`flex:1`).
+  // 2 divisores arrastáveis (pedido explícito original: "preciso ter os
+  // comandos de ajuste entre ele [pizza] e a curva também") — pizza fica à
+  // esquerda, depois o gráfico, depois a tabela de Histórico (a tabela de
+  // Previsão fica FORA dessa fileira, embaixo — normalmente é uma lista
+  // curta, não precisa disputar espaço com o gráfico).
   const [pizzaPct, setPizzaPct] = useState(24);
   const [graficoPct, setGraficoPct] = useState(40);
   // Pizza "Situação do Contrato" suprimida por ora (pedido explícito,
   // 2026-08-11) — código/resizer continuam intactos, só a condição de
   // exibição ganhou esse gate. Reativar é trocar pra `true`.
   const MOSTRAR_PIZZA_MEDICOES = false;
+  // KPIs (Farol/Valor Contrato/Valor Medido/Próximo Faturamento) e o
+  // gráfico "Valor Faturado — Acumulado" suprimidos por ora (pedido
+  // explícito, 2026-08-19: "suprimir o gráfico e os botões superiores,
+  // vamos manter apenas as tabelas, por hora") — mesmo padrão de gate da
+  // pizza acima, nada foi apagado. Reativar é trocar pra `true`.
+  const MOSTRAR_TOPO_MEDICOES = false;
   const areaRef = useRef(null);
   const arrastandoRef = useRef(null); // 'pizza' | 'grafico' | null
 
@@ -4670,16 +4852,16 @@ function ModuloMedicoes({ obraId, obraNome }){
   }, [pizzaPct, graficoPct]);
 
   useEffect(() => {
-    setNfsRaw(null); setNfsErro(false); setProximo(null); setCurvaFisica(null);
+    setContratoRaw(null); setContratoErro(false); setBoletinsRaw(null); setBoletinsErro(false); setCurvaFisica(null);
     if (!obraCfg?.origemCP) return;
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/nfs?obra=eq.${obraCfg.origemCP}&select=nf,bm,empresa,emissao,valor&order=emissao.asc`, headers)
-      .then(rows => { if (rows === null) { setNfsErro(true); setNfsRaw([]); } else setNfsRaw(rows); })
-      .catch(() => { setNfsErro(true); setNfsRaw([]); });
-    fetch(`${SUPABASE_URL}/rest/v1/proximos_faturamentos?obra=eq.${obraCfg.origemCP}&select=data_prevista,valor_previsto&order=data_prevista.asc&limit=1`, { headers })
+    fetch(`${SUPABASE_URL}/rest/v1/contratos_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*`, { headers })
       .then(r => r.ok ? r.json() : null)
-      .then(rows => setProximo(Array.isArray(rows) && rows[0] ? rows[0] : {}))
-      .catch(() => setProximo({}));
+      .then(rows => setContratoRaw(Array.isArray(rows) && rows[0] ? rows[0] : {}))
+      .catch(() => { setContratoErro(true); setContratoRaw({}); });
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/boletins_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*&order=linha_planilha.asc`, headers)
+      .then(rows => { if (rows === null) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
+      .catch(() => { setBoletinsErro(true); setBoletinsRaw([]); });
     // Curva física (Curva S) — só pro farol Medido×Físico. Mesma tabela e
     // convenção de nome (`obraCfg.curva`) já usada no setor Curva S.
     fetch(`${SUPABASE_URL}/rest/v1/curvas_s?obra=eq.${encodeURIComponent(obraCfg.curva)}&select=data,acum_realizado&order=data.asc`, { headers })
@@ -4688,19 +4870,31 @@ function ModuloMedicoes({ obraId, obraNome }){
       .catch(() => setCurvaFisica([]));
   }, [obraId]);
 
-  // Curva por VALOR (não mais contagem de NFs) — eixo X é a data real de
-  // emissão, uma NF por ponto; NFs emitidas na mesma data somam num só ponto
-  // (evita 2 pontos empatados no mesmo X). Cada ponto carrega também o(s)
-  // BM(s) daquela data — na maioria dos casos é 1 só, mas já visto data com
-  // 2 BMs diferentes (ex. Porto Itapoá 25/09/25: BM 6 e 7) — junta os dois.
+  // Histórico = boletim já faturado; Previsão = tudo mais (pendente, "BM
+  // vigente", ou já com valor previsto lançado mas ainda sem faturamento).
+  const { historico, previsao } = useMemo(() => {
+    if (!boletinsRaw) return { historico: null, previsao: null };
+    const hist = [], prev = [];
+    boletinsRaw.forEach(b => {
+      if ((b.status_faturamento || '').trim().toLowerCase() === 'faturado') hist.push(b);
+      else prev.push(b);
+    });
+    return { historico: hist, previsao: prev };
+  }, [boletinsRaw]);
+
+  // Curva por VALOR faturado — mesmo padrão de antes (uma NF por ponto no
+  // eixo X = data de emissão), agora a partir do HISTÓRICO
+  // (data_faturamento + valor_faturado, já líquido de FD/retenção — é o
+  // que de fato vira nota) em vez de `nfs`. BMs na mesma data (ex. Porto
+  // Itapoá) continuam somados num só ponto.
   const seriePorData = useMemo(() => {
-    if (!nfsRaw) return null;
+    if (!historico) return null;
     const porData = {};
-    nfsRaw.forEach(r => {
-      if (!r.emissao) return;
-      const g = (porData[r.emissao] = porData[r.emissao] || { valor: 0, bms: [] });
-      g.valor += Number(r.valor) || 0;
-      const bm = bmCurto(r.bm);
+    historico.forEach(r => {
+      if (!r.data_faturamento) return;
+      const g = (porData[r.data_faturamento] = porData[r.data_faturamento] || { valor: 0, bms: [] });
+      g.valor += Number(r.valor_faturado) || 0;
+      const bm = bmCurto(r.bm_label);
       if (bm && !g.bms.includes(bm)) g.bms.push(bm);
     });
     let acumulado = 0;
@@ -4709,90 +4903,66 @@ function ModuloMedicoes({ obraId, obraNome }){
       acumulado += g.valor;
       return { label: fmtDataLonga(data), valorDia: g.valor, valorAcumulado: acumulado, bmLabel: g.bms.length ? g.bms.join(', ') : '—' };
     });
-  }, [nfsRaw]);
+  }, [historico]);
 
-  // Ordenação da tabela de NFs — por padrão já vem por BM, do maior pro
-  // menor (pedido explícito), não por data como antes. BM entra como
-  // NÚMERO (via `bmCurto`) pra "10" vir depois de "9" — ordenar como texto
-  // puro colocaria "10" antes de "2".
-  const [ordenarPor, setOrdenarPor] = useState('bm');
-  const [ordenarDir, setOrdenarDir] = useState('desc');
-  const alternarOrdenacao = (campo) => {
-    if (ordenarPor === campo) setOrdenarDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setOrdenarPor(campo); setOrdenarDir(campo === 'nf' || campo === 'empresa' ? 'asc' : 'desc'); }
+  // Ordenação do Histórico — BM decrescente (mais recente primeiro) por
+  // padrão, pedido explícito (2026-08-19: "tem que vir ordenado do maior
+  // para o menor"). Clicar num cabeçalho ainda reordena por qualquer
+  // coluna; toda coluna nasce em decrescente no primeiro clique — maior
+  // valor/BM/data mais recente primeiro, mesmo critério em todas.
+  const DIRECAO_INICIAL_HIST = { bm_label:'desc', periodo_fim:'desc', valor_previsto:'desc', valor_medido:'desc', desconto_fd:'desc', valor_faturado:'desc' };
+  const [ordenarHist, setOrdenarHist] = useState('bm_label');
+  const [ordenarHistDir, setOrdenarHistDir] = useState('desc');
+  const alternarOrdenacaoHist = (campo) => {
+    if (ordenarHist === campo) setOrdenarHistDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setOrdenarHist(campo); setOrdenarHistDir(DIRECAO_INICIAL_HIST[campo] || 'desc'); }
   };
-  const nfsOrdenadas = useMemo(() => {
-    if (!nfsRaw) return null;
-    const dir = ordenarDir === 'asc' ? 1 : -1;
+  const historicoOrdenado = useMemo(() => {
+    if (!historico) return null;
+    const dir = ordenarHistDir === 'asc' ? 1 : -1;
     const valorDe = (r) => {
-      switch (ordenarPor) {
-        case 'nf': return (r.nf || '').toLowerCase();
-        case 'bm': { const n = Number(bmCurto(r.bm)); return isNaN(n) ? -Infinity : n; }
-        case 'empresa': return (r.empresa || '').toLowerCase();
-        case 'valor': return Number(r.valor) || 0;
-        case 'emissao': return r.emissao || '';
-        default: return 0;
-      }
+      if (ordenarHist === 'bm_label') { const n = Number(bmCurto(r.bm_label)); return isNaN(n) ? -Infinity : n; }
+      const v = r[ordenarHist];
+      if (v == null) return -Infinity;
+      return typeof v === 'number' ? v : v;
     };
-    return nfsRaw.slice().sort((a, b) => {
+    return historico.slice().sort((a, b) => {
       const va = valorDe(a), vb = valorDe(b);
       return va < vb ? -1 * dir : va > vb ? 1 * dir : 0;
     });
-  }, [nfsRaw, ordenarPor, ordenarDir]);
+  }, [historico, ordenarHist, ordenarHistDir]);
 
   if (!obraCfg?.origemCP) return <CartaoEstado texto="Sem código de contrato (CP) mapeado ainda para esta obra" maxHeight={620} />;
-  if (nfsRaw === null || proximo === null) return <CartaoEstado texto="Carregando medições…" maxHeight={620} />;
-  if (nfsErro) return <CartaoEstado texto="Erro ao carregar nfs" maxHeight={620} tom={T.red} />;
-  if (nfsRaw.length === 0) return <CartaoEstado texto="Nenhuma nota fiscal emitida para esta obra" maxHeight={620} />;
+  if (contratoRaw === null || boletinsRaw === null) return <CartaoEstado texto="Carregando medições…" maxHeight={620} />;
+  if (contratoErro || boletinsErro) return <CartaoEstado texto="Erro ao carregar contratos_medicao / boletins_medicao" maxHeight={620} tom={T.red} />;
+  if (boletinsRaw.length === 0) return <CartaoEstado texto="Nenhum boletim de medição lançado para esta obra" maxHeight={620} />;
 
-  const valorTotalFaturado = soma(nfsRaw, 'valor');
-  const temProximo = proximo && proximo.valor_previsto != null;
-
-  // Valor Contrato / Valor Medido (pedido explícito, 2026-08-10) — dado vem
-  // de `CONTRATOS_CP` (fornecido pelo usuário, fora do Supabase), não de
-  // `nfs`. Só 3 das 6 obras têm esse cadastro; as demais mostram "sem
-  // dado" em vez de fingir um valor (ADR-005). Fórmulas confirmadas:
-  // Valor Contrato = original + tudo que NÃO é FD; Valor Medido = FD + soma
-  // de todas as NFs (FD é a parcela de faturamento direto, fora das NFs).
-  const contratoCfg = CONTRATOS_CP[obraCfg.origemCP];
-  const valorContrato = contratoCfg ? contratoCfg.original + soma(contratoCfg.extras, 'valor') : null;
-  const valorMedido = contratoCfg ? contratoCfg.fd + valorTotalFaturado : null;
-  // Saldo a Faturar = o que resta do contrato depois de descontar o que já
-  // foi faturado via NF e via FD. Pode dar negativo se FD+NFs passar do
-  // contrato (obra faturou mais do que o valor cadastrado) — mostrado como
-  // alerta no popup em vez de escondido, a fatia do gráfico só não desenha
-  // arco negativo (não existe "fatia negativa" visualmente).
-  const saldoAFaturar = contratoCfg ? valorContrato - valorMedido : null;
-  // Faturado e FD em tons de verde (pedido explícito) — mesma família de
-  // cor (é tudo "já realizado" financeiramente), diferenciados só pela
-  // saturação; Saldo continua neutro (cinza — é o que falta, não é "bom
-  // nem ruim" por si só).
-  const fatiasContrato = contratoCfg ? [
+  // Valor Contrato = VALOR TOTAL da planilha (contrato base + OCs) — mesmo
+  // conceito do KPI antigo, agora vindo de `contratos_medicao.valor_total`
+  // em vez do `CONTRATOS_CP.original + extras` hardcoded.
+  const temContrato = contratoRaw && contratoRaw.valor_total != null;
+  const valorContrato = temContrato ? Number(contratoRaw.valor_total) : null;
+  // Valor Medido = soma do `valor_medido` de todo boletim já faturado —
+  // substitui `FD + soma(nfs)`; agora é tudo uma coisa só no ledger.
+  const valorMedido = soma(historico, 'valor_medido');
+  const percMedido = (valorContrato != null && valorMedido != null) ? (valorMedido / valorContrato) * 100 : null;
+  const saldoAFaturar = (valorContrato != null && valorMedido != null) ? valorContrato - valorMedido : null;
+  const fatiasContrato = temContrato ? [
     { label: 'Saldo a Faturar', valor: saldoAFaturar, cor: T.mut2 },
-    { label: 'Valor Faturado (NFs)', valor: valorTotalFaturado, cor: T.green },
-    { label: 'Valor FD', valor: contratoCfg.fd, cor: '#7bc796' },
+    { label: 'Valor Medido', valor: valorMedido || 0, cor: T.green },
   ] : [];
-  // % do Valor Medido em cima do Valor Contrato (pedido explícito).
-  const percMedido = (contratoCfg && valorContrato) ? (valorMedido / valorContrato) * 100 : null;
-  // % do Próximo Faturamento em cima do Valor Contrato (pedido explícito,
-  // mesmo padrão do % do Valor Medido) — só existe quando as duas pontas
-  // têm dado (contrato cadastrado E previsão de próximo faturamento).
-  const temProximoPct = temProximo && contratoCfg && valorContrato;
-  const percProximo = temProximoPct ? (Number(proximo.valor_previsto) / valorContrato) * 100 : null;
 
-  // Farol Medido × Físico (pedido explícito): compara o % financeiro
-  // medido com o % físico da Curva S, NO CORTE MAIS PRÓXIMO DA DATA DO
-  // ÚLTIMO FATURAMENTO (não o corte de hoje) — pedido explícito, pra
-  // comparar os dois numa mesma referência temporal (a NF mais recente).
-  // BUG real pego pelo usuário: `curvas_s.data` vem como TEXTO "dd/mm/aaaa"
-  // (não ISO) — `new Date(r.data)` direto retorna Invalid Date pra maioria
-  // das linhas (dia > 12 não é reconhecido como dd/mm/aaaa pelo parser
-  // nativo), e uma vez que `dist` vira NaN, nenhuma comparação seguinte
-  // (`NaN < x` é sempre falso) consegue substituir o "melhor" errado —
-  // travava na 1ª linha do array, não na mais próxima de verdade. Corrigido
-  // usando `parseDataCorte` (= `parseDataFlexivel`), que já lida com os 2
-  // formatos (dd/mm/aaaa do curvas_s E aaaa-mm-dd do nfs.emissao).
-  const dataUltimoFaturamento = nfsRaw.length ? nfsRaw.reduce((max, r) => (r.emissao && r.emissao > max ? r.emissao : max), nfsRaw[0].emissao) : null;
+  // Próximo Faturamento — 1ª linha da Previsão que já tem VALOR PREVISTO
+  // lançado; se nenhuma tiver, cai pra 1ª linha da fila mesmo sem valor
+  // (normalmente o "BM vigente"), só pra mostrar BM/período sem valor.
+  const proximo = previsao.length ? (previsao.find(p => p.valor_previsto != null) || previsao[0]) : null;
+  const temProximo = !!proximo;
+  const percProximo = (temProximo && proximo.valor_previsto != null && valorContrato) ? (Number(proximo.valor_previsto) / valorContrato) * 100 : null;
+
+  // Farol Medido × Físico — mesma lógica de sempre (corte da Curva S mais
+  // próximo da data do ÚLTIMO FATURAMENTO), agora usando
+  // `historico[].data_faturamento` no lugar de `nfs.emissao`.
+  const dataUltimoFaturamento = historico.length ? historico.reduce((max, r) => (r.data_faturamento && r.data_faturamento > max ? r.data_faturamento : max), historico[0].data_faturamento) : null;
   const dtUltimoFaturamento = parseDataCorte(dataUltimoFaturamento);
   const corteFisico = (curvaFisica && curvaFisica.length && dtUltimoFaturamento)
     ? curvaFisica
@@ -4808,28 +4978,25 @@ function ModuloMedicoes({ obraId, obraNome }){
   const farolDiff = (percMedido != null && percFisico != null) ? percMedido - percFisico : null;
   const farolTom = farolDiff != null ? corDesvioTom(farolDiff) : null;
 
+  const fmtPeriodo = (r) => r.periodo_inicio ? `${fmtDataLonga(r.periodo_inicio)} – ${fmtDataLonga(r.periodo_fim)}` : '—';
+
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
+      {MOSTRAR_TOPO_MEDICOES && (
       <div className="kpi-row-flex">
-        {/* Farol Medido × Físico (pedido explícito) — balão BEM MENOR (só a
-            luz, largura fixa, não divide espaço igual com os outros) e vem
-            primeiro na fileira. Clique abre o detalhe (%medido/%físico/
-            diferença/corte usado). % físico é o Realizado Acumulado da
-            Curva S (`acum_realizado`), no corte mais próximo da data do
-            ÚLTIMO FATURAMENTO (não o corte de hoje). Cor reaproveita a
-            paleta de severidade já usada em Desvios (`corDesvioTom`). */}
+        {/* Farol Medido × Físico — balão BEM MENOR (só a luz, largura fixa,
+            não divide espaço igual com os outros) e vem primeiro na
+            fileira. Clique abre o detalhe (%medido/%físico/diferença/corte
+            usado). % físico é o Realizado Acumulado da Curva S
+            (`acum_realizado`), no corte mais próximo da data do ÚLTIMO
+            FATURAMENTO (não o corte de hoje). Cor reaproveita a paleta de
+            severidade já usada em Desvios (`corDesvioTom`). */}
         <div className={`farol-fix ${farolDiff != null ? 'card hoverable balao-clicavel' : 'card'}`}
           onClick={farolDiff != null ? () => setFarolAberto(true) : undefined}
           title="Farol Medido × Físico"
           style={{ flex:'0 0 84px', borderRadius:16, background: farolTom ? farolTom.bg : '#eef0f3', border:`1px solid ${farolTom ? farolTom.borda : 'var(--line)'}`,
             padding:'10px 10px', display:'flex', flexDirection:'column', alignItems:'center', height:'auto', alignSelf:'stretch', minHeight:74, boxSizing:'border-box', cursor: farolDiff != null ? 'pointer' : 'default' }}>
           <span className="mono" style={{ fontSize:8.5, letterSpacing:'0.06em', color:T.mut, textTransform:'uppercase', fontWeight:600, textAlign:'center', lineHeight:1.2 }}>Farol</span>
-          {/* Mesmo espaçador flexível + reserva embaixo do `Balao` (pedido:
-              "centralizar o sinal do farol com os valores") — sem isso, a
-              luz ficava colada no fundo do cartão (era `justifyContent:
-              space-between` com só 2 filhos), numa altura diferente da
-              linha de valor dos balões vizinhos, que reserva 15px+2px de
-              `sub` abaixo do texto. */}
           <div style={{ flex:1, minHeight:8 }} />
           {farolDiff != null ? (
             <span style={{ width:20, height:20, borderRadius:'50%', background:farolTom.cor, boxShadow:`0 0 0 5px ${farolTom.bg}` }} />
@@ -4841,54 +5008,39 @@ function ModuloMedicoes({ obraId, obraNome }){
         <div style={{ flex:1, minWidth:0 }}>
           <Balao titulo="Valor Contrato" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
             valor={valorContrato != null ? fmtReais(valorContrato) : 'sem dado'}
-            onClick={contratoCfg ? () => setContratoAberto(true) : undefined} />
+            onClick={temContrato ? () => setContratoAberto(true) : undefined} />
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <Balao titulo="Valor Medido" cor={T.green} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
             valor={valorMedido != null ? fmtReais(valorMedido) : 'sem dado'}
             sub={percMedido != null ? `${percMedido.toFixed(2)}% do contrato` : undefined}
-            onClick={contratoCfg ? () => setMedidoAberto(true) : undefined} />
+            onClick={valorMedido != null ? () => setMedidoAberto(true) : undefined} />
         </div>
-        {/* Balões separados (pedido explícito) — data e valor do próximo
-            faturamento cada um com seu próprio cartão, mesmo componente
-            `Balao` usado no resto do painel, mesmo destaque pros dois. */}
         <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Data do Próximo Faturamento" cor={T.ink} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
-            valor={temProximo ? fmtDataCompleta(proximo.data_prevista) : 'sem previsão'} />
+          <Balao titulo="Período do Próximo Faturamento" cor={T.ink} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
+            valor={temProximo ? fmtPeriodo(proximo) : 'sem previsão'}
+            sub={temProximo ? `BM ${bmCurto(proximo.bm_label)}` : undefined} />
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <Balao titulo="Valor do Próximo Faturamento" cor={T.green} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
-            valor={temProximo ? fmtReais(Number(proximo.valor_previsto)) : 'sem previsão'}
+            valor={(temProximo && proximo.valor_previsto != null) ? fmtReais(Number(proximo.valor_previsto)) : 'sem previsão'}
             sub={percProximo != null ? `${percProximo.toFixed(2)}% do contrato` : undefined} />
         </div>
       </div>
+      )}
 
-      {/* `overflowX:'auto'` é a rede de segurança: se os 3 mínimos (pizza
-          220 + gráfico 320 + tabela 480, + as 2 faixas de 22px dos
-          resizers) somados passarem da largura real da tela, a fileira
-          rola por dentro dela mesma em vez de estourar a página inteira
-          pra direita (bug relatado: "está escorregando para direita da
-          tela" — antes pizza/gráfico tinham `flex-shrink:0`, recusavam
-          ceder espaço, e só a tabela tentava se proteger com `minWidth`,
-          empurrando a fileira toda pra fora da viewport). */}
+      {/* `overflowX:'auto'` é a rede de segurança: se os mínimos (pizza 220
+          + gráfico 320 + tabela 480, + as faixas de 22px dos resizers)
+          somados passarem da largura real da tela, a fileira rola por
+          dentro dela mesma em vez de estourar a página inteira pra direita. */}
       <div ref={areaRef} className="medicoes-row">
-        {/* Pizza (situação do contrato) fica à ESQUERDA da curva, pedido
-            explícito — só aparece pras obras com `CONTRATOS_CP` cadastrado.
-            Sem composição/valores aqui (isso virou o popup do balão "Valor
-            Contrato"); só o donut + legenda com rótulo/%, valor exato só
-            no hover do gráfico. Agora com `flex-shrink` habilitado + um
-            `minWidth` próprio, pra ceder espaço em telas estreitas em vez
-            de recusar e empurrar a tabela pra fora. */}
-        {contratoCfg && MOSTRAR_PIZZA_MEDICOES && (
+        {temContrato && MOSTRAR_PIZZA_MEDICOES && (
           <React.Fragment>
             <div className="card" style={{ flex:`1 1 ${pizzaPct}%`, minWidth:220, minHeight:0, display:'flex', flexDirection:'column', alignItems:'center', padding:'16px 18px' }}>
               <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:10, alignSelf:'flex-start', flexShrink:0 }}>Situação do Contrato</div>
               <div style={{ flex:1, minHeight:0, width:'100%' }}>
                 <GraficoPizza fatias={fatiasContrato} />
               </div>
-              {/* Legenda centralizada, 1 linha só, sem % (pedido explícito —
-                  a % já está nos aros do próprio gráfico, repetir na
-                  legenda era redundante). */}
               <div style={{ display:'flex', flexDirection:'row', flexWrap:'nowrap', justifyContent:'center', alignItems:'center', gap:14, marginTop:16, width:'100%', flexShrink:0 }}>
                 {fatiasContrato.map((f, i) => (
                   <div key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
@@ -4899,7 +5051,7 @@ function ModuloMedicoes({ obraId, obraNome }){
               </div>
               {saldoAFaturar < 0 && (
                 <div style={{ marginTop:12, padding:'7px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:11, color:T.red, lineHeight:1.4 }}>
-                  ⚠ Faturado + FD já ultrapassa o contrato.
+                  ⚠ Valor medido já ultrapassa o contrato.
                 </div>
               )}
             </div>
@@ -4911,62 +5063,69 @@ function ModuloMedicoes({ obraId, obraNome }){
           </React.Fragment>
         )}
 
-        <div className="card" style={{ flex:`1 1 ${graficoPct}%`, minWidth:320, minHeight:0, display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
-          <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Valor Faturado — Acumulado</div>
-          <div style={{ flex:1, minHeight:0 }}>
-            <GraficoMedicoes pontos={seriePorData} />
-          </div>
-        </div>
+        {MOSTRAR_TOPO_MEDICOES && (
+          <React.Fragment>
+            <div className="card" style={{ flex:`1 1 ${graficoPct}%`, minWidth:320, minHeight:0, display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
+              <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Valor Faturado — Acumulado</div>
+              <div style={{ flex:1, minHeight:0 }}>
+                <GraficoMedicoes pontos={seriePorData} />
+              </div>
+            </div>
 
-        <div onMouseDown={e => { e.preventDefault(); arrastandoRef.current = 'grafico'; document.body.style.userSelect = 'none'; }} className="resizer-medicoes"
-          style={{ flex:'0 0 22px', zIndex:2, cursor:'col-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div className="resizer-medicoes-barra" style={{ width:4, height:40, borderRadius:4, background:'var(--line)' }} />
-        </div>
+            <div onMouseDown={e => { e.preventDefault(); arrastandoRef.current = 'grafico'; document.body.style.userSelect = 'none'; }} className="resizer-medicoes"
+              style={{ flex:'0 0 22px', zIndex:2, cursor:'col-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <div className="resizer-medicoes-barra" style={{ width:4, height:40, borderRadius:4, background:'var(--line)' }} />
+            </div>
+          </React.Fragment>
+        )}
 
-        {/* minWidth explícito (pedido: "tamanho mínimo pra não suprimir as
-            informações") — sem isso, `flex:1` com `overflow:auto` no filho
-            (div de scroll) zera o mínimo automático do item flex (regra do
-            spec: overflow diferente de visible vira min-width:auto → 0),
-            deixando a tabela encolher até esmagar as colunas quando pizza
-            e/ou gráfico são arrastados maiores. Abaixo do mínimo, rola
-            horizontal em vez de espremer. */}
+        {/* minWidth explícito — sem isso, `flex:1` com `overflow:auto` no
+            filho zera o mínimo automático do item flex, deixando a tabela
+            encolher até esmagar as colunas quando pizza/gráfico são
+            arrastados maiores. Abaixo do mínimo, rola horizontal. */}
         <div className="card" style={{ flex:1, minWidth:480, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+          <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
+            Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
+          </div>
           <div style={{ overflow:'auto', flex:1 }}>
-            <table style={{ width:'100%', minWidth:460, textAlign:'left', borderCollapse:'collapse' }}>
-              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
-                <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:T.mut, fontWeight:600 }}>
-                  {COLUNAS_NFS.map(col => {
-                    const ativo = ordenarPor === col.campo;
+            <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
+                <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
+                  {COLUNAS_HISTORICO.map(col => {
+                    const ativo = ordenarHist === col.campo;
                     return (
-                      <th key={col.campo} onClick={() => alternarOrdenacao(col.campo)} title="Ordenar por esta coluna"
-                        style={{ padding:'10px 14px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'1px solid var(--line)' }}>
-                        {col.label}{ativo ? (ordenarDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                      <th key={col.campo} onClick={() => alternarOrdenacaoHist(col.campo)} title="Ordenar por esta coluna"
+                        style={{ padding:'10px 14px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'2px solid var(--line)' }}>
+                        {col.label}{ativo ? (ordenarHistDir === 'asc' ? ' ▲' : ' ▼') : ''}
                       </th>
                     );
                   })}
                 </tr>
               </thead>
               <tbody>
-                {nfsOrdenadas.map((r, i) => (
-                  <tr key={i} style={{ borderBottom:'1px solid var(--line)' }}>
-                    <td className="mono" style={{ padding:'8px 14px', fontSize:12, color:T.ink }}>{bmCurto(r.bm) || '—'}</td>
-                    <td className="mono" style={{ padding:'8px 14px', fontSize:12, color:T.body }}>{r.nf || '—'}</td>
-                    <td style={{ padding:'8px 14px', fontSize:12, color:T.body }}>{r.empresa || '—'}</td>
-                    <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(Number(r.valor))}</td>
-                    <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, color:T.body }}>{fmtDataLonga(r.emissao)}</td>
+                {historicoOrdenado.map((r) => (
+                  <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                    <td className="mono" style={{ padding:'9px 14px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
                   </tr>
                 ))}
+                {historicoOrdenado.length === 0 && (
+                  <tr><td colSpan={COLUNAS_HISTORICO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
+                )}
               </tbody>
-              {/* Linha de resumo só na coluna Valor (pedido explícito: "o
-                  restante não precisa de resumo") — NF/BM/Empresa/Emissão
-                  não têm soma que faça sentido, ficam em branco. `sticky
-                  bottom` mesmo padrão do `thead` (`sticky top`), fica
-                  visível mesmo rolando a tabela. */}
-              <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fff' }}>
+              {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
+                  mesmo padrão do `thead`. */}
+              <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
                 <tr>
-                  <td colSpan={3} className="mono" style={{ padding:'10px 14px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
-                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorTotalFaturado)}</td>
-                  <td style={{ borderTop:'2px solid var(--line)' }}></td>
+                  <td colSpan={2} className="mono" style={{ padding:'10px 14px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_previsto') || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -4974,37 +5133,81 @@ function ModuloMedicoes({ obraId, obraNome }){
         </div>
       </div>
 
-      {contratoAberto && contratoCfg && (
+      {/* Tabela 2 — Previsão de Próximos Faturamentos: tudo que ainda não
+          tem `status_faturamento = 'Faturado'` (BM vigente + qualquer BM
+          futuro que já tenha ganhado valor previsto na planilha). Fica
+          FORA da fileira redimensionável — lista curta, altura própria.
+          Sem coluna de BM/Período de propósito (pedido explícito,
+          2026-08-19) — foco no status de pagamento/recebimento e no saldo
+          acumulado corrente, não na identidade do boletim (normalmente só
+          tem 1 linha pendente mesmo). */}
+      <div className="card" style={{ minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0, maxHeight:260, flexShrink:0 }}>
+        <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
+          Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
+        </div>
+        <div style={{ overflow:'auto', flex:1 }}>
+          <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+            <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
+              <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
+                {COLUNAS_PREVISAO.map(col => (
+                  <th key={col.campo} style={{ padding:'10px 14px', textAlign:col.align || 'left', borderBottom:'2px solid var(--line)' }}>{col.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {previsao.map((r) => (
+                <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
+                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
+                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
+                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
+                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
+                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
+                </tr>
+              ))}
+              {previsao.length === 0 && (
+                <tr><td colSpan={COLUNAS_PREVISAO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {contratoAberto && temContrato && (
         <div onClick={() => setContratoAberto(false)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
           <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
-                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Composição</div>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>{contratoRaw.cp_codigo}{contratoRaw.gestor ? ` · ${contratoRaw.gestor}` : ''}</div>
                 <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Valor Contrato — {obraNome}</div>
               </div>
               <button onClick={() => setContratoAberto(false)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Contrato Original</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(contratoCfg.original)}</span>
+                <span>Contrato</span>
+                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{contratoRaw.valor_contrato != null ? fmtReais(contratoRaw.valor_contrato) : '—'}</span>
               </div>
-              {contratoCfg.extras.map((ex, i) => (
-                <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                  <span>{ex.label}</span>
-                  <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(ex.valor)}</span>
-                </div>
-              ))}
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                <span>OCs</span>
+                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{contratoRaw.valor_ocs != null ? fmtReais(contratoRaw.valor_ocs) : '—'}</span>
+              </div>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', fontSize:14, color:T.ink, fontWeight:700 }}>
-                <span>Valor Contrato</span>
+                <span>Valor Contrato (Total)</span>
                 <span className="mono">{fmtReais(valorContrato)}</span>
               </div>
+              {(contratoRaw.iss_fracao != null || contratoRaw.prazo_vencimento_dias != null) && (
+                <div style={{ marginTop:14, paddingTop:10, borderTop:'1px dashed #e4e7ec', display:'flex', gap:16, fontSize:12, color:T.mut }}>
+                  {contratoRaw.iss_fracao != null && <span>ISS: <b className="mono" style={{ color:T.body }}>{(contratoRaw.iss_fracao * 100).toFixed(1)}%</b></span>}
+                  {contratoRaw.prazo_vencimento_dias != null && <span>Prazo: <b className="mono" style={{ color:T.body }}>{contratoRaw.prazo_vencimento_dias} dias</b></span>}
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {medidoAberto && contratoCfg && (
+      {medidoAberto && valorMedido != null && (
         <div onClick={() => setMedidoAberto(false)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
           <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
@@ -5016,28 +5219,26 @@ function ModuloMedicoes({ obraId, obraNome }){
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Valor FD (Faturamento Direto)</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(contratoCfg.fd)}</span>
+                <span>Soma dos Boletins Faturados ({historico.length} {historico.length === 1 ? 'BM' : 'BMs'})</span>
+                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(valorMedido)}</span>
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Soma das NFs ({nfsRaw.length} {nfsRaw.length === 1 ? 'nota' : 'notas'})</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(valorTotalFaturado)}</span>
+                <span>Valor Faturado (líquido)</span>
+                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</span>
               </div>
               <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', fontSize:14, color:T.ink, fontWeight:700 }}>
                 <span>Valor Medido</span>
                 <span className="mono">{fmtReais(valorMedido)}</span>
               </div>
-              {/* Saldo a Faturar junto ao popup do Valor Medido (pedido
-                  explícito, 2026-08-11) — mesmo valor já usado na pizza
-                  suprimida (`saldoAFaturar` = Contrato − Medido), só que
-                  agora sem gráfico algum pra mostrar essa informação. */}
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', marginTop:8, borderTop:'1px dashed #e4e7ec', fontSize:13, color:T.mut }}>
-                <span>Saldo a Faturar</span>
-                <span className="mono" style={{ fontWeight:600, color: saldoAFaturar < 0 ? T.red : T.body }}>{fmtReais(saldoAFaturar)}</span>
-              </div>
+              {saldoAFaturar != null && (
+                <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', marginTop:8, borderTop:'1px dashed #e4e7ec', fontSize:13, color:T.mut }}>
+                  <span>Saldo a Faturar</span>
+                  <span className="mono" style={{ fontWeight:600, color: saldoAFaturar < 0 ? T.red : T.body }}>{fmtReais(saldoAFaturar)}</span>
+                </div>
+              )}
               {saldoAFaturar < 0 && (
                 <div style={{ marginTop:10, padding:'7px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:11, color:T.red, lineHeight:1.4 }}>
-                  ⚠ Faturado + FD já ultrapassa o contrato.
+                  ⚠ Valor medido já ultrapassa o contrato.
                 </div>
               )}
             </div>
