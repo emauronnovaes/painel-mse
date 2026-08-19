@@ -2957,6 +2957,46 @@ Faturado) sem quebra/corte, Período e Valor Previsto com `left`/`width`
 batendo a <1px entre as 2 tabelas, 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — live tiles, resumo na Previsão, gráfico Previsto × Medido (2026-08-19)
+
+Pedido explícito, em 3 partes: "o previsto pode ter resumos também";
+"seria interessante que as tabelas fossem como live tiles... remover,
+incluir, mudar a posição"; "teremos um gráfico que plotará as duas
+curvas, do previsto e do medido". Escopo confirmado com o usuário:
+tabelas + gráfico entram no sistema de tiles, **sem KPIs** (o bloco de
+KPIs/pizza/gráfico antigo, `MOSTRAR_TOPO_MEDICOES`/
+`MOSTRAR_PIZZA_MEDICOES`, continua fora, intocado).
+
+- **`TileFrame`** (novo componente): bloco com cabeçalho (título +
+  contagem), arrastável via **HTML5 drag-and-drop nativo** (sem lib
+  externa — mesmo padrão "tudo à mão" do resto do arquivo) e um "✕" que
+  só OCULTA (nunca apaga) — reaparece por um botão "+ Nome do bloco"
+  que surge abaixo quando há algo oculto.
+- **3 tiles**: Histórico de Faturamentos, Previsão de Próximos
+  Faturamentos, e o novo **Previsto × Medido — Acumulado**. Ordem e
+  visibilidade persistem em `localStorage`
+  (`mse_medicoes_tile_ordem`/`mse_medicoes_tile_ocultos`) — chave
+  GLOBAL (preferência de interface, não dado por obra).
+- **Resumo na Previsão**: `<tfoot>` somando só Valor Previsto. As 2
+  colunas "Acum." (Saldo Previsto/Realizado) ficam de fora da soma de
+  propósito — são snapshot carregado da planilha (arrastam o último
+  valor real pra frente, ver [[modelo-dados-supabase]]), somar geraria
+  número sem sentido.
+- **`GraficoPrevistoMedido`** (novo): 2 curvas acumuladas por período —
+  **Previsto** (tracejado âmbar, soma `valor_previsto` de
+  histórico+previsão — a trajetória contratual completa, passado e
+  futuro já lançado) × **Medido** (linha cheia azul, só `valor_medido`
+  do histórico — o progresso real até agora, nunca ultrapassa o
+  presente). Mesmo padrão hand-rolled em SVG do `GraficoMedicoes`
+  existente (ResizeObserver, hover com tooltip mostrando os 2 valores).
+
+Testado com Playwright (obra 91/CP236): 0 erros de console; 3 tiles
+corretos (Histórico 35 linhas, Previsão com "Total", gráfico com
+legenda e tooltip Previsto/Medido); remover/restaurar bloco funciona;
+drag-reorder troca a ordem visual (testado arrastando Previsão sobre
+Histórico); reload da página preserva ordem/ocultos via `localStorage`.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
