@@ -4905,14 +4905,14 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
   }, [historico]);
 
-  // Ordenação do Histórico — BM crescente (1, 2, 3...) por padrão, a
-  // ordem natural de um extrato (pedido explícito, 2026-08-19). Clicar
-  // num cabeçalho ainda reordena por qualquer coluna; a direção inicial
-  // de cada uma já nasce no sentido mais útil (datas/BM crescente, valores
-  // decrescente — maior valor primeiro).
-  const DIRECAO_INICIAL_HIST = { bm_label:'asc', periodo_fim:'asc', valor_previsto:'desc', valor_medido:'desc', desconto_fd:'desc', valor_faturado:'desc' };
+  // Ordenação do Histórico — BM decrescente (mais recente primeiro) por
+  // padrão, pedido explícito (2026-08-19: "tem que vir ordenado do maior
+  // para o menor"). Clicar num cabeçalho ainda reordena por qualquer
+  // coluna; toda coluna nasce em decrescente no primeiro clique — maior
+  // valor/BM/data mais recente primeiro, mesmo critério em todas.
+  const DIRECAO_INICIAL_HIST = { bm_label:'desc', periodo_fim:'desc', valor_previsto:'desc', valor_medido:'desc', desconto_fd:'desc', valor_faturado:'desc' };
   const [ordenarHist, setOrdenarHist] = useState('bm_label');
-  const [ordenarHistDir, setOrdenarHistDir] = useState('asc');
+  const [ordenarHistDir, setOrdenarHistDir] = useState('desc');
   const alternarOrdenacaoHist = (campo) => {
     if (ordenarHist === campo) setOrdenarHistDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setOrdenarHist(campo); setOrdenarHistDir(DIRECAO_INICIAL_HIST[campo] || 'desc'); }
