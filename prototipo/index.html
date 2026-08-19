@@ -141,6 +141,7 @@
   .tabela-medicoes tbody tr{ transition: background .12s ease; }
   .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
   .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
+  .tabela-medicoes td, .tabela-medicoes th{ overflow: hidden; text-overflow: ellipsis; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4773,29 +4774,41 @@ function BadgeStatusMedicao({ texto }){
 // a 1ª versão tinha ~14 colunas — larga demais); o resto do dado
 // (retenção/ISS/recebimento/vencimento) continua em `boletins_medicao`,
 // só saiu da tela por ora.
+// `largura` em PX (não %) — de propósito: Período/Valor Previsto usam o
+// MESMO px nas duas tabelas (pedido explícito 2026-08-19: "faça com que
+// as colunas iguais fiquem alinhadas entre as duas tables"). Como cada
+// coluna tem largura fixa em px a partir da borda esquerda do card (mesmo
+// padding nos dois cards), a coluna bate exata entre as duas independente
+// da largura total de cada tabela — a Previsão tem 2 colunas a mais
+// (Período/Valor Previsto) então é mais larga no total e rola
+// horizontalmente por dentro do próprio card quando não couber; só o
+// trecho comum (BM/spacer + Período + Valor Previsto) precisa alinhar.
+const LARGURA_BM_MEDICOES = 90; // BM no Histórico == spacer sem rótulo na Previsão
 const COLUNAS_HISTORICO = [
-  { label:'BM',              campo:'bm_label' },
-  { label:'Período',         campo:'periodo_fim' },
-  { label:'Valor Previsto',  campo:'valor_previsto', align:'right' },
-  { label:'Valor Medido',    campo:'valor_medido',   align:'right' },
-  { label:'Desconto FD',     campo:'desconto_fd',    align:'right' },
-  { label:'Valor Faturado',  campo:'valor_faturado', align:'right' },
+  { label:'BM',              campo:'bm_label',       largura:LARGURA_BM_MEDICOES },
+  { label:'Período',         campo:'periodo_fim',    largura:190 },
+  { label:'Valor Previsto',  campo:'valor_previsto', largura:150, align:'right' },
+  { label:'Valor Medido',    campo:'valor_medido',   largura:150, align:'right' },
+  { label:'Desconto FD',     campo:'desconto_fd',    largura:140, align:'right' },
+  { label:'Valor Faturado',  campo:'valor_faturado', largura:160, align:'right' },
 ];
 
 // Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
 // `status_faturamento = 'Faturado'` (continua o mesmo filtro de linha de
 // antes — só as colunas mudaram, 2026-08-19). Período/Valor Previsto
 // voltaram por pedido explícito (2026-08-19, "por hora" — sinaliza que
-// pode mudar de novo); BM continua fora.
+// pode mudar de novo); BM continua fora — no lugar dele entra uma coluna
+// "fantasma" sem rótulo (ver JSX), só pra reservar o mesmo espaço do BM e
+// manter Período/Valor Previsto alinhados com o Histórico.
 const COLUNAS_PREVISAO = [
-  { label:'Período',                   campo:'periodo_fim' },
-  { label:'Valor Previsto',            campo:'valor_previsto',                        align:'right' },
-  { label:'Data de Faturamento',       campo:'data_faturamento' },
-  { label:'Status Fat.',               campo:'status_faturamento' },
-  { label:'Data do Recebimento',       campo:'data_recebimento' },
-  { label:'Status Rec.',               campo:'status_recebimento' },
-  { label:'Saldo Previsto Acum.',      campo:'saldo_previsto_acumulado',              align:'right' },
-  { label:'Saldo Realizado Acum.',     campo:'saldo_realizado_acumulado_medido',      align:'right' },
+  { label:'Período',                   campo:'periodo_fim',                      largura:190 },
+  { label:'Valor Previsto',            campo:'valor_previsto',                   largura:150, align:'right' },
+  { label:'Data de Faturamento',       campo:'data_faturamento',                 largura:160 },
+  { label:'Status Fat.',               campo:'status_faturamento',               largura:175 },
+  { label:'Data do Recebimento',       campo:'data_recebimento',                 largura:160 },
+  { label:'Status Rec.',               campo:'status_recebimento',               largura:175 },
+  { label:'Saldo Previsto Acum.',      campo:'saldo_previsto_acumulado',         largura:170, align:'right' },
+  { label:'Saldo Realizado Acum.',     campo:'saldo_realizado_acumulado_medido', largura:180, align:'right' },
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
@@ -5089,7 +5102,18 @@ function ModuloMedicoes({ obraId, obraNome }){
             Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
           </div>
           <div style={{ overflow:'auto', flex:1 }}>
-            <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+            <table className="tabela-medicoes" style={{ width:'100%', minWidth:880, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+              <colgroup>
+                {COLUNAS_HISTORICO.map(col => <col key={col.campo} style={{ width:col.largura }} />)}
+                {/* coluna-filler sem largura fixa — em `table-layout:fixed`,
+                    se a soma das larguras explícitas for menor que o
+                    container (`width:100%`), o navegador estica TODAS as
+                    colunas proporcionalmente pra preencher, o que quebrava
+                    o alinhamento com a Previsão. Essa coluna sem `width`
+                    absorve a sobra em vez disso — as outras ficam no px
+                    exato. */}
+                <col />
+              </colgroup>
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   {COLUNAS_HISTORICO.map(col => {
@@ -5101,6 +5125,7 @@ function ModuloMedicoes({ obraId, obraNome }){
                       </th>
                     );
                   })}
+                  <th style={{ borderBottom:'2px solid var(--line)' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -5112,10 +5137,11 @@ function ModuloMedicoes({ obraId, obraNome }){
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
+                    <td></td>
                   </tr>
                 ))}
                 {historicoOrdenado.length === 0 && (
-                  <tr><td colSpan={COLUNAS_HISTORICO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
+                  <tr><td colSpan={COLUNAS_HISTORICO.length + 1} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
                 )}
               </tbody>
               {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
@@ -5127,6 +5153,7 @@ function ModuloMedicoes({ obraId, obraNome }){
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
+                  <td style={{ borderTop:'2px solid var(--line)' }}></td>
                 </tr>
               </tfoot>
             </table>
@@ -5145,9 +5172,16 @@ function ModuloMedicoes({ obraId, obraNome }){
           Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
         </div>
         <div style={{ overflow:'auto', flex:1 }}>
-          <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+          <table className="tabela-medicoes" style={{ width:'100%', minWidth:1450, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+            <colgroup>
+              <col style={{ width:LARGURA_BM_MEDICOES }} />
+              {COLUNAS_PREVISAO.map(col => <col key={col.campo} style={{ width:col.largura }} />)}
+            </colgroup>
             <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
               <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
+                {/* coluna fantasma sem rótulo — só reserva o espaço do BM do
+                    Histórico pra Período/Valor Previsto caírem alinhados */}
+                <th style={{ borderBottom:'2px solid var(--line)' }}></th>
                 {COLUNAS_PREVISAO.map(col => (
                   <th key={col.campo} style={{ padding:'10px 14px', textAlign:col.align || 'left', borderBottom:'2px solid var(--line)' }}>{col.label}</th>
                 ))}
@@ -5156,6 +5190,7 @@ function ModuloMedicoes({ obraId, obraNome }){
             <tbody>
               {previsao.map((r) => (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                  <td></td>
                   <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
                   <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
                   <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
@@ -5167,7 +5202,7 @@ function ModuloMedicoes({ obraId, obraNome }){
                 </tr>
               ))}
               {previsao.length === 0 && (
-                <tr><td colSpan={COLUNAS_PREVISAO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
+                <tr><td colSpan={COLUNAS_PREVISAO.length + 1} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
               )}
             </tbody>
           </table>
