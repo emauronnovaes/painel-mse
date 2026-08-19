@@ -71,17 +71,33 @@ levantamento do dashboard atual — detalhamento completo no vault
   formatadas dd/mm/aaaa), `nome_eap`/`id_eap`, `responsabilidade`,
   `usuario_cadastro`. Alimenta o setor Restrições do blueprint desde
   2026-08-07 — ver armadilha 11 abaixo (RLS).
-- **`nfs`** — 1 linha por Nota Fiscal emitida (`nf`, `bm` = nº do Boletim de
-  Medição vinculado, `empresa`, `emissao`, `valor`). Na implantação original
-  (2026-08-10) não tinha coluna de valor — ganhou `valor` (numeric) depois,
-  no mesmo dia, 100% preenchida nas 22 obras da tabela; a curva do setor
-  Medições passou de contagem de NFs pra valor acumulado por data de
-  emissão. Chave de obra é o **código de contrato** ("CP029", "CP273"...) —
-  uma 4ª convenção de nome de obra, além de `curva`/`origemTV`/`origemPTS`
-  — ver armadilha 12.
-- **`proximos_faturamentos`** — 1 linha por obra (quando existe): próxima
-  `data_prevista` + `valor_previsto`. Mesma chave de obra (código CP) de
-  `nfs`. As duas alimentam o setor Medições desde 2026-08-10.
+- **`nfs`** e **`proximos_faturamentos`** — fontes ORIGINAIS do setor
+  Medições (2026-08-10), **substituídas em 2026-08-19** por
+  `contratos_medicao`/`boletins_medicao` abaixo (pedido explícito: "não
+  vamos utilizar os dados que já existem, vamos fazer uma nova
+  importação"). Ficam registradas aqui só por histórico — `nfs` tinha 1
+  linha por Nota Fiscal (`nf`/`bm`/`empresa`/`emissao`/`valor`),
+  `proximos_faturamentos` tinha 1 linha por obra com a próxima
+  `data_prevista`+`valor_previsto`. O painel não lê mais nenhuma das duas.
+- **`contratos_medicao`** (1 linha por contrato — `cp_codigo` PK) e
+  **`boletins_medicao`** (1 linha por BM/boletim de medição, chave
+  `cp_codigo`+`linha_planilha`) — fonte atual do setor Medições, importada
+  via Apps Script da planilha "Saldo a Faturar - Geral - Medições" (ver
+  [[08 - Blueprint do Painel de Obra]] pro schema completo e o histórico
+  de bugs do parser). `contratos_medicao` tem `valor_contrato`/
+  `valor_ocs`/`valor_total`/`iss_fracao`/`prazo_vencimento_dias`.
+  `boletins_medicao` tem o extrato completo por BM: previsto, medido,
+  desconto FD, retenção, faturado, datas, status de faturamento/
+  recebimento, saldos acumulados (guardados tal qual a planilha calcula,
+  só pra auditoria — **não** usados pra decidir se uma linha "existe":
+  essas colunas carregam o último valor conhecido pra frente via fórmula
+  da planilha, mesmo em linha sem nenhuma atividade real). Chave de obra
+  continua sendo o **código de contrato** ("CP029", "CP273"...) — mesma 4ª
+  convenção de nome de obra de sempre, além de `curva`/`origemTV`/
+  `origemPTS` — ver armadilha 12. Ingestão é upsert (não substituição em
+  lote como as demais tabelas do projeto) — rodar a sincronização de novo
+  atualiza linhas existentes e insere as novas, nunca apaga uma linha que
+  saiu da planilha.
 
 ## Como o dado entra (importante para o novo desenho)
 

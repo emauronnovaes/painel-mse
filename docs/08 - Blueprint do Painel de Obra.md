@@ -2780,6 +2780,52 @@ amostras durante o auto-pan ficou constante (~0,82px, sem acumular
 atraso); sem erro de console. Deploy: `firebase deploy --only hosting
 --project planejamento-mse` (a partir do repo git, ver seção anterior).
 
+### Tela de Medições reescrita: histórico + previsão a partir de `contratos_medicao`/`boletins_medicao` (2026-08-19)
+
+"Vamos gerar a nova tela de medições a partir destes novos dados. A ideia
+central é ter duas tabelas, uma com o histórico dos faturamentos... outra
+com a previsão dos próximos faturamentos" — depois de toda a importação
+da planilha "Saldo a Faturar" (ver seções anteriores desta mesma data),
+o setor Medições (`ModuloMedicoes`) foi reescrito por completo pra parar
+de usar `nfs` + `proximos_faturamentos` + o `CONTRATOS_CP` hardcoded no
+próprio `index.html`. Confirmado com o usuário antes de mexer: **troca a
+tela inteira**, não só a tabela de baixo (KPIs também passam a vir do
+banco real).
+
+- **Histórico de Faturamentos** = todo `boletins_medicao` com
+  `status_faturamento = 'Faturado'`. Tabela com ~14 colunas (Valor
+  Medido, Valor Faturado, Data Faturamento, Desconto FD, Retenção, ISS,
+  Desc. Adiantamento, Recebimento Previsto/Real, Vencimento, Data
+  Recebimento, Status Recebimento), ordenável por coluna, rodapé com
+  totais — muito mais detalhe que a antiga tabela de NFs (que só tinha
+  BM/NF/Empresa/Valor/Emissão).
+- **Previsão de Próximos Faturamentos** = tudo que NÃO está faturado
+  ainda (a lista inteira, não só 1 registro como o `proximos_faturamentos`
+  antigo) — BM, Período, Valor Previsto, Status, Observação (pega o "BM
+  vigente" da planilha).
+- **KPIs recalculados na fonte nova**: Valor Contrato =
+  `contratos_medicao.valor_total` (contrato base + OCs, mesmo conceito do
+  `CONTRATOS_CP.original + extras` antigo); Valor Medido = soma de
+  `valor_medido` de todo o Histórico (substitui `FD fixo + soma(nfs)`).
+  Farol Medido×Físico mantém a mesma lógica (corte da Curva S mais
+  próximo da data do último faturamento), só trocando a fonte da data.
+  "Próximo Faturamento" (2 balões) agora deriva da 1ª linha da Previsão
+  com valor lançado — se nenhuma tiver valor ainda (caso comum, o "BM
+  vigente" normalmente ainda não tem previsto), mostra "sem previsão" em
+  vez de inventar (ADR-005).
+- `CONTRATOS_CP` removido do código (não tem mais nenhum uso).
+- Popups de "Valor Contrato"/"Valor Medido" adaptados — perderam a lista
+  "extras" item a item (esse conceito não existe mais, `valor_ocs` é um
+  número só agora, sem itemização) mas ganharam ISS%/prazo de vencimento
+  no popup do Contrato, que a fonte antiga não tinha.
+
+Testado com Playwright (obra 91, CP236 — a que tem mais dado, 35
+boletins no Histórico + 1 na Previsão, bate exato com os 36 totais já
+validados na sincronização): tela carrega com dado real, as 2 tabelas
+aparecem corretas, ordenação por coluna funciona, os 3 popups
+(Contrato/Medido/Farol) abrem sem erro, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
