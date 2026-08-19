@@ -2908,6 +2908,33 @@ Período/Valor Previsto com valores sensatos, Histórico inalterado, 0
 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — Período/Valor Previsto alinhados entre as 2 tabelas (2026-08-19)
+
+Pedido explícito: "faça com que as colunas iguais fiquem alinhadas
+entre as duas tables". Período e Valor Previsto aparecem nas duas
+tabelas (Histórico e Previsão) — passaram a usar a MESMA largura fixa
+em px (`<colgroup>` + `tableLayout:'fixed'`), então caem exatamente na
+mesma posição horizontal quando as tabelas ficam empilhadas. Previsão
+ganhou uma coluna fantasma sem rótulo no lugar do BM (que só existe no
+Histórico), só pra reservar o mesmo espaço.
+
+**Bug pego no meio do caminho**: com `table-layout:fixed`, se a soma
+das larguras das colunas for menor que a largura real do container
+(`width:100%`), o navegador estica TODAS as colunas proporcionalmente
+pra preencher — isso quebrava o alinhamento porque o Histórico (menos
+colunas, soma menor) esticava e a Previsão (mais colunas, soma maior,
+já forçava scroll horizontal) não. Corrigido com uma coluna-filler sem
+`width` no fim do Histórico — absorve a sobra, as colunas com largura
+fixa não são mais esticadas. De quebra, "Data de Faturamento"/"Data do
+Recebimento" estavam sendo cortadas (130px insuficiente pro rótulo) —
+subiu pra 160px.
+
+Testado com Playwright (obra 91/CP236, viewport 1440×900): Período e
+Valor Previsto com `left`/`width` idênticos entre as 2 tabelas
+(`getBoundingClientRect`), sem clipping nos cabeçalhos de data, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
