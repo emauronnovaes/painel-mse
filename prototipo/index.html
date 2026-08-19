@@ -4774,23 +4774,21 @@ function BadgeStatusMedicao({ texto }){
 // a 1ª versão tinha ~14 colunas — larga demais); o resto do dado
 // (retenção/ISS/recebimento/vencimento) continua em `boletins_medicao`,
 // só saiu da tela por ora.
-// `largura` em PX (não %) — de propósito: Período/Valor Previsto usam o
-// MESMO px nas duas tabelas (pedido explícito 2026-08-19: "faça com que
-// as colunas iguais fiquem alinhadas entre as duas tables"). Como cada
-// coluna tem largura fixa em px a partir da borda esquerda do card (mesmo
-// padding nos dois cards), a coluna bate exata entre as duas independente
-// da largura total de cada tabela — a Previsão tem 2 colunas a mais
-// (Período/Valor Previsto) então é mais larga no total e rola
-// horizontalmente por dentro do próprio card quando não couber; só o
-// trecho comum (BM/spacer + Período + Valor Previsto) precisa alinhar.
-const LARGURA_BM_MEDICOES = 90; // BM no Histórico == spacer sem rótulo na Previsão
+// Largura das colunas volta a ser AUTO (conteúdo decide), sem
+// `colgroup`/`tableLayout:fixed` — pedido explícito (2026-08-19): a
+// tentativa anterior de alinhar via px fixo deixou a tabela de cima
+// espremida. "A de cima deveria seguir como estava, a de baixo deveria,
+// em caso de similaridade, acompanhar a de cima" — ver COLUNAS_PREVISAO
+// abaixo e o `useEffect`/`ResizeObserver` em `ModuloMedicoes` que mede
+// as larguras renderizadas de BM/Período/Valor Previsto aqui e as
+// replica lá.
 const COLUNAS_HISTORICO = [
-  { label:'BM',              campo:'bm_label',       largura:LARGURA_BM_MEDICOES },
-  { label:'Período',         campo:'periodo_fim',    largura:190 },
-  { label:'Valor Previsto',  campo:'valor_previsto', largura:150, align:'right' },
-  { label:'Valor Medido',    campo:'valor_medido',   largura:150, align:'right' },
-  { label:'Desconto FD',     campo:'desconto_fd',    largura:140, align:'right' },
-  { label:'Valor Faturado',  campo:'valor_faturado', largura:160, align:'right' },
+  { label:'BM',              campo:'bm_label' },
+  { label:'Período',         campo:'periodo_fim' },
+  { label:'Valor Previsto',  campo:'valor_previsto', align:'right' },
+  { label:'Valor Medido',    campo:'valor_medido',   align:'right' },
+  { label:'Desconto FD',     campo:'desconto_fd',    align:'right' },
+  { label:'Valor Faturado',  campo:'valor_faturado', align:'right' },
 ];
 
 // Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
@@ -4798,8 +4796,12 @@ const COLUNAS_HISTORICO = [
 // antes — só as colunas mudaram, 2026-08-19). Período/Valor Previsto
 // voltaram por pedido explícito (2026-08-19, "por hora" — sinaliza que
 // pode mudar de novo); BM continua fora — no lugar dele entra uma coluna
-// "fantasma" sem rótulo (ver JSX), só pra reservar o mesmo espaço do BM e
-// manter Período/Valor Previsto alinhados com o Histórico.
+// "fantasma" sem rótulo (ver JSX), só pra reservar o mesmo espaço do BM.
+// `largura` de Período/Valor Previsto aqui são só o FALLBACK inicial
+// (antes do Histórico terminar de renderizar) — assim que o
+// `ResizeObserver` mede, o valor real do Histórico substitui esses
+// números via `largurasHist` em `ModuloMedicoes`. As demais colunas
+// (sem equivalente no Histórico) usam largura fixa normal.
 const COLUNAS_PREVISAO = [
   { label:'Período',                   campo:'periodo_fim',                      largura:190 },
   { label:'Valor Previsto',            campo:'valor_previsto',                   largura:150, align:'right' },
@@ -4827,6 +4829,9 @@ function ModuloMedicoes({ obraId, obraNome }){
   const [medidoAberto, setMedidoAberto] = useState(false);
   const [farolAberto, setFarolAberto] = useState(false);
   useEffect(() => { setContratoAberto(false); setMedidoAberto(false); setFarolAberto(false); }, [obraId]);
+  const refLarguraHist = { bm: useRef(null), periodo: useRef(null), valorPrevisto: useRef(null) };
+  const histTableWrapRef = useRef(null);
+  const [largurasHist, setLargurasHist] = useState({ bm:90, periodo:190, valorPrevisto:150 });
 
   // 2 divisores arrastáveis (pedido explícito original: "preciso ter os
   // comandos de ajuste entre ele [pizza] e a curva também") — pizza fica à
@@ -4895,6 +4900,26 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
     return { historico: hist, previsao: prev };
   }, [boletinsRaw]);
+
+  // Previsão "acompanha" o Histórico nas colunas em comum (BM/Período/
+  // Valor Previsto) — pedido explícito (2026-08-19): a de cima é sempre
+  // AUTO (conteúdo decide a largura, nunca mais espremida por um px
+  // fixo), a de baixo mede o que a de cima renderizou e replica. Um
+  // ResizeObserver no wrapper do Histórico reage tanto a resize de
+  // janela quanto a mudanças de layout que não disparam `resize` (ex.:
+  // arrastar os divisores de pizza/gráfico, se reativados um dia).
+  useEffect(() => {
+    const medir = () => {
+      const bm = refLarguraHist.bm.current?.offsetWidth;
+      const periodo = refLarguraHist.periodo.current?.offsetWidth;
+      const valorPrevisto = refLarguraHist.valorPrevisto.current?.offsetWidth;
+      if (bm && periodo && valorPrevisto) setLargurasHist({ bm, periodo, valorPrevisto });
+    };
+    medir();
+    const ro = new ResizeObserver(medir);
+    if (histTableWrapRef.current) ro.observe(histTableWrapRef.current);
+    return () => ro.disconnect();
+  }, [historico]);
 
   // Curva por VALOR faturado — mesmo padrão de antes (uma NF por ponto no
   // eixo X = data de emissão), agora a partir do HISTÓRICO
@@ -5101,31 +5126,29 @@ function ModuloMedicoes({ obraId, obraNome }){
           <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
             Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
           </div>
-          <div style={{ overflow:'auto', flex:1 }}>
-            <table className="tabela-medicoes" style={{ width:'100%', minWidth:880, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
-              <colgroup>
-                {COLUNAS_HISTORICO.map(col => <col key={col.campo} style={{ width:col.largura }} />)}
-                {/* coluna-filler sem largura fixa — em `table-layout:fixed`,
-                    se a soma das larguras explícitas for menor que o
-                    container (`width:100%`), o navegador estica TODAS as
-                    colunas proporcionalmente pra preencher, o que quebrava
-                    o alinhamento com a Previsão. Essa coluna sem `width`
-                    absorve a sobra em vez disso — as outras ficam no px
-                    exato. */}
-                <col />
-              </colgroup>
+          <div ref={histTableWrapRef} style={{ overflow:'auto', flex:1 }}>
+            {/* Layout AUTO (sem colgroup/tableLayout:fixed) — pedido
+                explícito (2026-08-19): "a de cima deveria seguir como
+                estava" depois que o fixed deixou as colunas espremidas.
+                Largura de cada coluna nasce do conteúdo, como sempre foi.
+                `refLarguraHist` mede Período/Valor Previsto/BM já
+                renderizados (ver useEffect com ResizeObserver) pra a
+                Previsão, embaixo, REPLICAR essas larguras nas colunas que
+                tem em comum — é a tabela de baixo que acompanha a de
+                cima, nunca o contrário. */}
+            <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   {COLUNAS_HISTORICO.map(col => {
                     const ativo = ordenarHist === col.campo;
+                    const refLargura = col.campo === 'bm_label' ? refLarguraHist.bm : col.campo === 'periodo_fim' ? refLarguraHist.periodo : col.campo === 'valor_previsto' ? refLarguraHist.valorPrevisto : null;
                     return (
-                      <th key={col.campo} onClick={() => alternarOrdenacaoHist(col.campo)} title="Ordenar por esta coluna"
+                      <th key={col.campo} ref={refLargura} onClick={() => alternarOrdenacaoHist(col.campo)} title="Ordenar por esta coluna"
                         style={{ padding:'10px 14px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'2px solid var(--line)' }}>
                         {col.label}{ativo ? (ordenarHistDir === 'asc' ? ' ▲' : ' ▼') : ''}
                       </th>
                     );
                   })}
-                  <th style={{ borderBottom:'2px solid var(--line)' }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -5137,11 +5160,10 @@ function ModuloMedicoes({ obraId, obraNome }){
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
                     <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
-                    <td></td>
                   </tr>
                 ))}
                 {historicoOrdenado.length === 0 && (
-                  <tr><td colSpan={COLUNAS_HISTORICO.length + 1} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
+                  <tr><td colSpan={COLUNAS_HISTORICO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
                 )}
               </tbody>
               {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
@@ -5153,7 +5175,6 @@ function ModuloMedicoes({ obraId, obraNome }){
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
                   <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
-                  <td style={{ borderTop:'2px solid var(--line)' }}></td>
                 </tr>
               </tfoot>
             </table>
@@ -5172,10 +5193,17 @@ function ModuloMedicoes({ obraId, obraNome }){
           Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
         </div>
         <div style={{ overflow:'auto', flex:1 }}>
-          <table className="tabela-medicoes" style={{ width:'100%', minWidth:1450, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+          {/* Largura de Período/Valor Previsto (e do spacer, equivalente ao
+              BM) vem de `largurasHist` — medida ao vivo no Histórico logo
+              acima, nunca fixa aqui. É a Previsão que acompanha a de cima,
+              não o contrário (pedido explícito, 2026-08-19). */}
+          <table className="tabela-medicoes" style={{ width:'100%', minWidth: largurasHist.bm + largurasHist.periodo + largurasHist.valorPrevisto + 1020, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
             <colgroup>
-              <col style={{ width:LARGURA_BM_MEDICOES }} />
-              {COLUNAS_PREVISAO.map(col => <col key={col.campo} style={{ width:col.largura }} />)}
+              <col style={{ width:largurasHist.bm }} />
+              {COLUNAS_PREVISAO.map(col => {
+                const largura = col.campo === 'periodo_fim' ? largurasHist.periodo : col.campo === 'valor_previsto' ? largurasHist.valorPrevisto : col.largura;
+                return <col key={col.campo} style={{ width:largura }} />;
+              })}
             </colgroup>
             <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
               <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
