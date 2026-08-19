@@ -138,6 +138,9 @@
   .seletor-obra-wrap { position: relative; flex-shrink: 0; }
   .chart-area { flex: 1; min-height: 0; overflow: hidden; position: relative; }
   .table-scroll-x { overflow: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
+  .tabela-medicoes tbody tr{ transition: background .12s ease; }
+  .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
+  .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4902,14 +4905,17 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
   }, [historico]);
 
-  // Ordenação do Histórico — mais recente primeiro por padrão. Usa
-  // `periodo_fim` (não mais `data_faturamento`, que saiu da tela em
-  // 2026-08-19 quando as colunas foram enxugadas para 6).
-  const [ordenarHist, setOrdenarHist] = useState('periodo_fim');
-  const [ordenarHistDir, setOrdenarHistDir] = useState('desc');
+  // Ordenação do Histórico — BM crescente (1, 2, 3...) por padrão, a
+  // ordem natural de um extrato (pedido explícito, 2026-08-19). Clicar
+  // num cabeçalho ainda reordena por qualquer coluna; a direção inicial
+  // de cada uma já nasce no sentido mais útil (datas/BM crescente, valores
+  // decrescente — maior valor primeiro).
+  const DIRECAO_INICIAL_HIST = { bm_label:'asc', periodo_fim:'asc', valor_previsto:'desc', valor_medido:'desc', desconto_fd:'desc', valor_faturado:'desc' };
+  const [ordenarHist, setOrdenarHist] = useState('bm_label');
+  const [ordenarHistDir, setOrdenarHistDir] = useState('asc');
   const alternarOrdenacaoHist = (campo) => {
     if (ordenarHist === campo) setOrdenarHistDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setOrdenarHist(campo); setOrdenarHistDir(campo === 'bm_label' ? 'desc' : 'desc'); }
+    else { setOrdenarHist(campo); setOrdenarHistDir(DIRECAO_INICIAL_HIST[campo] || 'desc'); }
   };
   const historicoOrdenado = useMemo(() => {
     if (!historico) return null;
@@ -5082,14 +5088,14 @@ function ModuloMedicoes({ obraId, obraNome }){
             Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
           </div>
           <div style={{ overflow:'auto', flex:1 }}>
-            <table style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
-              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
+            <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   {COLUNAS_HISTORICO.map(col => {
                     const ativo = ordenarHist === col.campo;
                     return (
                       <th key={col.campo} onClick={() => alternarOrdenacaoHist(col.campo)} title="Ordenar por esta coluna"
-                        style={{ padding:'9px 12px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'1px solid var(--line)' }}>
+                        style={{ padding:'10px 14px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'2px solid var(--line)' }}>
                         {col.label}{ativo ? (ordenarHistDir === 'asc' ? ' ▲' : ' ▼') : ''}
                       </th>
                     );
@@ -5099,12 +5105,12 @@ function ModuloMedicoes({ obraId, obraNome }){
               <tbody>
                 {historicoOrdenado.map((r) => (
                   <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                    <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
+                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
                   </tr>
                 ))}
                 {historicoOrdenado.length === 0 && (
@@ -5113,13 +5119,13 @@ function ModuloMedicoes({ obraId, obraNome }){
               </tbody>
               {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
                   mesmo padrão do `thead`. */}
-              <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fff' }}>
+              <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
                 <tr>
-                  <td colSpan={2} className="mono" style={{ padding:'9px 12px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
-                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_previsto') || 0)}</td>
-                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
-                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
-                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
+                  <td colSpan={2} className="mono" style={{ padding:'10px 14px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_previsto') || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
+                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
                 </tr>
               </tfoot>
             </table>
@@ -5140,23 +5146,23 @@ function ModuloMedicoes({ obraId, obraNome }){
           Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
         </div>
         <div style={{ overflow:'auto', flex:1 }}>
-          <table style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
-            <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
+          <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+            <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
               <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                 {COLUNAS_PREVISAO.map(col => (
-                  <th key={col.campo} style={{ padding:'9px 12px', textAlign:col.align || 'left', borderBottom:'1px solid var(--line)' }}>{col.label}</th>
+                  <th key={col.campo} style={{ padding:'10px 14px', textAlign:col.align || 'left', borderBottom:'2px solid var(--line)' }}>{col.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {previsao.map((r) => (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                  <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
-                  <td style={{ padding:'7px 12px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
-                  <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
-                  <td style={{ padding:'7px 12px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
-                  <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
-                  <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
+                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
+                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
+                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
+                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
+                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
+                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
                 </tr>
               ))}
               {previsao.length === 0 && (
