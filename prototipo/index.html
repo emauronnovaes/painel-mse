@@ -4808,6 +4808,12 @@ function ModuloMedicoes({ obraId, obraNome }){
   // 2026-08-11) — código/resizer continuam intactos, só a condição de
   // exibição ganhou esse gate. Reativar é trocar pra `true`.
   const MOSTRAR_PIZZA_MEDICOES = false;
+  // KPIs (Farol/Valor Contrato/Valor Medido/Próximo Faturamento) e o
+  // gráfico "Valor Faturado — Acumulado" suprimidos por ora (pedido
+  // explícito, 2026-08-19: "suprimir o gráfico e os botões superiores,
+  // vamos manter apenas as tabelas, por hora") — mesmo padrão de gate da
+  // pizza acima, nada foi apagado. Reativar é trocar pra `true`.
+  const MOSTRAR_TOPO_MEDICOES = false;
   const areaRef = useRef(null);
   const arrastandoRef = useRef(null); // 'pizza' | 'grafico' | null
 
@@ -4956,6 +4962,7 @@ function ModuloMedicoes({ obraId, obraNome }){
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
+      {MOSTRAR_TOPO_MEDICOES && (
       <div className="kpi-row-flex">
         {/* Farol Medido × Físico — balão BEM MENOR (só a luz, largura fixa,
             não divide espaço igual com os outros) e vem primeiro na
@@ -5000,6 +5007,7 @@ function ModuloMedicoes({ obraId, obraNome }){
             sub={percProximo != null ? `${percProximo.toFixed(2)}% do contrato` : undefined} />
         </div>
       </div>
+      )}
 
       {/* `overflowX:'auto'` é a rede de segurança: se os mínimos (pizza 220
           + gráfico 320 + tabela 480, + as faixas de 22px dos resizers)
@@ -5035,17 +5043,21 @@ function ModuloMedicoes({ obraId, obraNome }){
           </React.Fragment>
         )}
 
-        <div className="card" style={{ flex:`1 1 ${graficoPct}%`, minWidth:320, minHeight:0, display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
-          <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Valor Faturado — Acumulado</div>
-          <div style={{ flex:1, minHeight:0 }}>
-            <GraficoMedicoes pontos={seriePorData} />
-          </div>
-        </div>
+        {MOSTRAR_TOPO_MEDICOES && (
+          <React.Fragment>
+            <div className="card" style={{ flex:`1 1 ${graficoPct}%`, minWidth:320, minHeight:0, display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
+              <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Valor Faturado — Acumulado</div>
+              <div style={{ flex:1, minHeight:0 }}>
+                <GraficoMedicoes pontos={seriePorData} />
+              </div>
+            </div>
 
-        <div onMouseDown={e => { e.preventDefault(); arrastandoRef.current = 'grafico'; document.body.style.userSelect = 'none'; }} className="resizer-medicoes"
-          style={{ flex:'0 0 22px', zIndex:2, cursor:'col-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
-          <div className="resizer-medicoes-barra" style={{ width:4, height:40, borderRadius:4, background:'var(--line)' }} />
-        </div>
+            <div onMouseDown={e => { e.preventDefault(); arrastandoRef.current = 'grafico'; document.body.style.userSelect = 'none'; }} className="resizer-medicoes"
+              style={{ flex:'0 0 22px', zIndex:2, cursor:'col-resize', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <div className="resizer-medicoes-barra" style={{ width:4, height:40, borderRadius:4, background:'var(--line)' }} />
+            </div>
+          </React.Fragment>
+        )}
 
         {/* minWidth explícito — sem isso, `flex:1` com `overflow:auto` no
             filho zera o mínimo automático do item flex, deixando a tabela
