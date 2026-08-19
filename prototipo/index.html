@@ -4766,22 +4766,32 @@ function BadgeStatusMedicao({ texto }){
 
 // Tabela 1 — Histórico de Faturamentos: todo boletim já com
 // `status_faturamento = 'Faturado'`. Colunas ordenáveis, mais recente
-// primeiro por padrão.
+// primeiro por padrão. Colunas restritas a pedido explícito (2026-08-19,
+// a 1ª versão tinha ~14 colunas — larga demais); o resto do dado
+// (retenção/ISS/recebimento/vencimento) continua em `boletins_medicao`,
+// só saiu da tela por ora.
 const COLUNAS_HISTORICO = [
-  { label:'BM',                    campo:'bm_label' },
-  { label:'Período',               campo:'periodo_fim' },
-  { label:'Valor Medido',          campo:'valor_medido',                align:'right' },
-  { label:'Valor Faturado',        campo:'valor_faturado',              align:'right' },
-  { label:'Data Faturamento',      campo:'data_faturamento',            align:'right' },
-  { label:'Desconto FD',           campo:'desconto_fd',                 align:'right' },
-  { label:'Retenção',              campo:'retencao',                    align:'right' },
-  { label:'ISS',                   campo:'iss_valor',                   align:'right' },
-  { label:'Desc. Adiantamento',    campo:'desconto_adiantamento',       align:'right' },
-  { label:'Recebimento Previsto',  campo:'valor_recebimento_previsto',  align:'right' },
-  { label:'Recebimento Real',      campo:'valor_recebimento_real',      align:'right' },
-  { label:'Vencimento',            campo:'vencimento',                  align:'right' },
-  { label:'Data Recebimento',      campo:'data_recebimento',            align:'right' },
-  { label:'Status Recebimento',    campo:'status_recebimento',          align:'right' },
+  { label:'BM',              campo:'bm_label' },
+  { label:'Período',         campo:'periodo_fim' },
+  { label:'Valor Previsto',  campo:'valor_previsto', align:'right' },
+  { label:'Valor Medido',    campo:'valor_medido',   align:'right' },
+  { label:'Desconto FD',     campo:'desconto_fd',    align:'right' },
+  { label:'Valor Faturado',  campo:'valor_faturado', align:'right' },
+];
+
+// Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
+// `status_faturamento = 'Faturado'` (continua o mesmo filtro de linha de
+// antes — só as colunas mudaram, 2026-08-19). Sem BM/Período de
+// propósito (pedido explícito): normalmente só tem 1 linha pendente (o
+// "BM vigente"), então o foco vira o status de pagamento/recebimento e o
+// saldo acumulado corrente, não a identidade do boletim.
+const COLUNAS_PREVISAO = [
+  { label:'Data de Faturamento',       campo:'data_faturamento' },
+  { label:'Status Fat.',               campo:'status_faturamento' },
+  { label:'Data do Recebimento',       campo:'data_recebimento' },
+  { label:'Status Rec.',               campo:'status_recebimento' },
+  { label:'Saldo Previsto Acum.',      campo:'saldo_previsto_acumulado',              align:'right' },
+  { label:'Saldo Realizado Acum.',     campo:'saldo_realizado_acumulado_medido',      align:'right' },
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
@@ -4892,10 +4902,10 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
   }, [historico]);
 
-  // Ordenação do Histórico — mais recente primeiro por padrão (antes era
-  // por BM desc; com data de faturamento disponível de verdade agora,
-  // "mais recente" é a leitura mais útil pra um extrato).
-  const [ordenarHist, setOrdenarHist] = useState('data_faturamento');
+  // Ordenação do Histórico — mais recente primeiro por padrão. Usa
+  // `periodo_fim` (não mais `data_faturamento`, que saiu da tela em
+  // 2026-08-19 quando as colunas foram enxugadas para 6).
+  const [ordenarHist, setOrdenarHist] = useState('periodo_fim');
   const [ordenarHistDir, setOrdenarHistDir] = useState('desc');
   const alternarOrdenacaoHist = (campo) => {
     if (ordenarHist === campo) setOrdenarHistDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -5072,7 +5082,7 @@ function ModuloMedicoes({ obraId, obraNome }){
             Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
           </div>
           <div style={{ overflow:'auto', flex:1 }}>
-            <table style={{ width:'100%', minWidth:1100, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+            <table style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   {COLUNAS_HISTORICO.map(col => {
@@ -5091,35 +5101,25 @@ function ModuloMedicoes({ obraId, obraNome }){
                   <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
                     <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
                     <td className="mono" style={{ padding:'7px 12px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
+                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
                     <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
                     <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.mut }}>{r.retencao ? fmtReais(r.retencao) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.mut }}>{r.iss_valor ? fmtReais(r.iss_valor) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_adiantamento ? fmtReais(r.desconto_adiantamento) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body }}>{r.valor_recebimento_previsto != null ? fmtReais(r.valor_recebimento_previsto) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink }}>{r.valor_recebimento_real != null ? fmtReais(r.valor_recebimento_real) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body }}>{r.vencimento ? fmtDataLonga(r.vencimento) : '—'}</td>
-                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
-                    <td style={{ padding:'7px 12px', textAlign:'right' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
+                    <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
                   </tr>
                 ))}
                 {historicoOrdenado.length === 0 && (
                   <tr><td colSpan={COLUNAS_HISTORICO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
                 )}
               </tbody>
-              {/* Linha de resumo — só nas colunas com soma que faz sentido
-                  (Medido/Faturado/Recebimento Real), `sticky bottom` mesmo
-                  padrão do `thead`. */}
+              {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
+                  mesmo padrão do `thead`. */}
               <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fff' }}>
                 <tr>
                   <td colSpan={2} className="mono" style={{ padding:'9px 12px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
+                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_previsto') || 0)}</td>
                   <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
+                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
                   <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
-                  <td colSpan={6} style={{ borderTop:'2px solid var(--line)' }}></td>
-                  <td className="mono" style={{ padding:'9px 12px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_recebimento_real') || 0)}</td>
-                  <td colSpan={3} style={{ borderTop:'2px solid var(--line)' }}></td>
                 </tr>
               </tfoot>
             </table>
@@ -5130,7 +5130,11 @@ function ModuloMedicoes({ obraId, obraNome }){
       {/* Tabela 2 — Previsão de Próximos Faturamentos: tudo que ainda não
           tem `status_faturamento = 'Faturado'` (BM vigente + qualquer BM
           futuro que já tenha ganhado valor previsto na planilha). Fica
-          FORA da fileira redimensionável — lista curta, altura própria. */}
+          FORA da fileira redimensionável — lista curta, altura própria.
+          Sem coluna de BM/Período de propósito (pedido explícito,
+          2026-08-19) — foco no status de pagamento/recebimento e no saldo
+          acumulado corrente, não na identidade do boletim (normalmente só
+          tem 1 linha pendente mesmo). */}
       <div className="card" style={{ minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0, maxHeight:260, flexShrink:0 }}>
         <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
           Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
@@ -5139,25 +5143,24 @@ function ModuloMedicoes({ obraId, obraNome }){
           <table style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
             <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
               <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
-                <th style={{ padding:'9px 12px', borderBottom:'1px solid var(--line)' }}>BM</th>
-                <th style={{ padding:'9px 12px', borderBottom:'1px solid var(--line)' }}>Período</th>
-                <th style={{ padding:'9px 12px', textAlign:'right', borderBottom:'1px solid var(--line)' }}>Valor Previsto</th>
-                <th style={{ padding:'9px 12px', textAlign:'right', borderBottom:'1px solid var(--line)' }}>Status</th>
-                <th style={{ padding:'9px 12px', borderBottom:'1px solid var(--line)' }}>Observação</th>
+                {COLUNAS_PREVISAO.map(col => (
+                  <th key={col.campo} style={{ padding:'9px 12px', textAlign:col.align || 'left', borderBottom:'1px solid var(--line)' }}>{col.label}</th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {previsao.map((r) => (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                  <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
-                  <td className="mono" style={{ padding:'7px 12px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
-                  <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : 'sem previsão'}</td>
-                  <td style={{ padding:'7px 12px', textAlign:'right' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
-                  <td style={{ padding:'7px 12px', fontSize:12, color:T.mut, whiteSpace:'normal' }}>{r.observacao || '—'}</td>
+                  <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
+                  <td style={{ padding:'7px 12px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
+                  <td className="mono" style={{ padding:'7px 12px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
+                  <td style={{ padding:'7px 12px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
+                  <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
+                  <td className="mono" style={{ padding:'7px 12px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
                 </tr>
               ))}
               {previsao.length === 0 && (
-                <tr><td colSpan={5} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
+                <tr><td colSpan={COLUNAS_PREVISAO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
               )}
             </tbody>
           </table>
