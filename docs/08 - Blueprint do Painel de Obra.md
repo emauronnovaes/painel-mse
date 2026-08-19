@@ -2893,6 +2893,21 @@ fazia sentido pra um extrato (mais recente primeiro). Trocado pra
 mesmo critério das colunas de valor). Testado: carga inicial mostra BM
 33→1, header com ▼ ativo, 0 erros de console.
 
+### Medições — Previsão ganha Período e Valor Previsto de volta (2026-08-19)
+
+Pedido explícito, "por hora" (sinaliza que pode mudar de novo): a
+tabela de Previsão volta a mostrar **Período** e **Valor Previsto**,
+direto de `boletins_medicao` (mesma leitura do Histórico —
+`fmtPeriodo`/`valor_previsto`). BM continua fora. Ordem final das 8
+colunas: Período | Valor Previsto | Data de Faturamento | Status Fat. |
+Data do Recebimento | Status Rec. | Saldo Previsto Acum. | Saldo
+Realizado Acum.
+
+Testado com Playwright (obra 91/CP236): 8 colunas na ordem certa,
+Período/Valor Previsto com valores sensatos, Histórico inalterado, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
