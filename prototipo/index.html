@@ -4784,11 +4784,12 @@ const COLUNAS_HISTORICO = [
 
 // Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
 // `status_faturamento = 'Faturado'` (continua o mesmo filtro de linha de
-// antes — só as colunas mudaram, 2026-08-19). Sem BM/Período de
-// propósito (pedido explícito): normalmente só tem 1 linha pendente (o
-// "BM vigente"), então o foco vira o status de pagamento/recebimento e o
-// saldo acumulado corrente, não a identidade do boletim.
+// antes — só as colunas mudaram, 2026-08-19). Período/Valor Previsto
+// voltaram por pedido explícito (2026-08-19, "por hora" — sinaliza que
+// pode mudar de novo); BM continua fora.
 const COLUNAS_PREVISAO = [
+  { label:'Período',                   campo:'periodo_fim' },
+  { label:'Valor Previsto',            campo:'valor_previsto',                        align:'right' },
   { label:'Data de Faturamento',       campo:'data_faturamento' },
   { label:'Status Fat.',               campo:'status_faturamento' },
   { label:'Data do Recebimento',       campo:'data_recebimento' },
@@ -5137,10 +5138,8 @@ function ModuloMedicoes({ obraId, obraNome }){
           tem `status_faturamento = 'Faturado'` (BM vigente + qualquer BM
           futuro que já tenha ganhado valor previsto na planilha). Fica
           FORA da fileira redimensionável — lista curta, altura própria.
-          Sem coluna de BM/Período de propósito (pedido explícito,
-          2026-08-19) — foco no status de pagamento/recebimento e no saldo
-          acumulado corrente, não na identidade do boletim (normalmente só
-          tem 1 linha pendente mesmo). */}
+          Período/Valor Previsto voltaram por pedido explícito (2026-08-19,
+          "por hora" — pode mudar de novo); BM continua fora. */}
       <div className="card" style={{ minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0, maxHeight:260, flexShrink:0 }}>
         <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
           Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
@@ -5157,6 +5156,8 @@ function ModuloMedicoes({ obraId, obraNome }){
             <tbody>
               {previsao.map((r) => (
                 <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                  <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
+                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
                   <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
                   <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
                   <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
