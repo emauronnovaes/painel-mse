@@ -3150,6 +3150,59 @@ empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
 depois da sequência toda. 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — as 2 tabelas viram 1 só, consolidada (2026-08-19)
+
+Pedido explícito: "ajuste tudo em uma única tabela, compile todas as
+informações de uma só vez". Fecha o ciclo que começou com a reescrita da
+tela: Histórico (boletim faturado) e Previsão (boletim pendente) eram
+duas tabelas com filtro de linha oposto e recortes de coluna diferentes.
+
+- **`COLUNAS_MEDICOES`** substitui `COLUNAS_HISTORICO` +
+  `COLUNAS_PREVISAO`: 12 colunas, união das duas, na ordem do ciclo de
+  vida do boletim (identificação → medição → faturamento →
+  recebimento → saldo acumulado): BM | Período | Valor Previsto | Valor
+  Medido | Desconto FD | Valor Faturado | Data de Faturamento | Status
+  Fat. | Data do Recebimento | Status Rec. | Saldo Previsto Acum. |
+  Saldo Realizado Acum.
+- **Uma linha por boletim, faturado OU pendente.** Quem separa os dois
+  casos agora é o badge da coluna "Status Fat.", não a tabela.
+- Rodapé "Total" soma sobre TODOS os boletins, nas 4 colunas de valor
+  por boletim. As 2 "Acum." continuam fora da soma (snapshot carregado
+  da planilha, ver [[modelo-dados-supabase]] — somar daria número sem
+  sentido).
+- Ordenação em qualquer das 12 colunas, padrão BM decrescente. Como a
+  direção inicial de toda coluna é decrescente, o mapa
+  `DIRECAO_INICIAL_HIST` escrito à mão saiu: coluna nova já nasce com o
+  comportamento certo, sem precisar cadastrar.
+- **Grid: 3 blocos viraram 2** (`tabela` + `grafico`), ambos `w12`
+  empilhados. Lado a lado continua possível, mas não como padrão — com
+  12 colunas a tabela viraria uma tira que só rola.
+- **Migração automática de layout**: os ids mudaram
+  (`historico`/`previsao` → `tabela`), então um layout salvo da versão
+  anterior não passa na validação de `layoutTiles` e cai no padrão novo
+  sozinho. Não precisou de chave nova no `localStorage` — e a lista de
+  ocultos também filtra id desconhecido, então um `["previsao"]` velho
+  não esconde nada.
+- **Saiu** a maquinaria que espelhava as larguras de BM/Período/Valor
+  Previsto entre as duas tabelas (`ResizeObserver` + refs + estado
+  `largurasHist`): não há mais duas tabelas pra alinhar.
+- Respiro horizontal das células é **10px** só nesta tabela (o resto do
+  painel usa 14): com 14 a largura natural ia a ~1900px e as 2 últimas
+  colunas caíam fora da tela num monitor de 1920. Com 10, cabe inteira
+  em 1920 sem rolagem; abaixo disso rola na horizontal, que é o
+  esperado num extrato de 12 colunas (apertar mais já foi rejeitado —
+  "colunas espremidas").
+
+Testado com Playwright (obra 91/CP236): 36 linhas = o total (antes 35 +
+1 em tabelas separadas), com o boletim pendente (BM 34, "Dentro do
+prazo") na mesma tabela dos faturados; 12 cabeçalhos na ordem certa;
+ordenação por "Saldo Realizado Acum." (coluna que só existia na
+Previsão) funciona; rodapé com os 4 totais e as "Acum." em branco;
+layout salvo no formato antigo não quebra nada; arrastar e redimensionar
+(8 alças) seguem funcionando; em 1920×1080 a tabela cabe inteira sem
+rolagem horizontal e nenhuma célula fica truncada; 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
