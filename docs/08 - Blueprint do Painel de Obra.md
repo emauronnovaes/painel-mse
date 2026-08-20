@@ -3429,6 +3429,37 @@ Não testado nem revisado por mim antes do deploy — o ajuste e a
 publicação já estavam prontos quando entrei, só fiz o commit/push do que
 já estava no arquivo.
 
+### Medições — tooltip do gráfico cortado perto da borda (2026-08-19)
+
+Pedido explícito: "ao passar o mouse em um ponto do gráfico perto da
+borda, o detalhamento fica cortado". O clamping da posição do tooltip
+(`GraficoPrevistoMedido`) usava uma margem fixa "chutada" (metade de uma
+largura estimada, `70px`), que não batia com o tamanho real do
+tooltip — o conteúdo varia bastante em comprimento (4 linhas de
+acumulado/período contra "Medido: sem medição lançada" a partir do
+corte).
+
+Agora mede o tooltip de verdade via ref (`tipRef`/estado `tipTam`,
+recalculado a cada troca de ponto por um `useEffect` que roda depois do
+render) e usa o tamanho REAL pro clamping nos dois eixos:
+
+- **horizontal**: continua centralizado no ponto, mas a borda do
+  tooltip nunca passa da borda do gráfico — o cálculo usa a metade da
+  largura medida, não uma constante;
+- **vertical**: mesma lógica de acima/abaixo do ponto conforme a altura
+  na tela (herdada), agora limitando pelo topo/fundo REAIS do bloco —
+  relevante desde que o bloco virou redimensionável (91º passo): um
+  bloco encolhido também cortava o tooltip por cima/baixo com a margem
+  fixa antiga.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): ponto mais à esquerda
+e mais à direita com o tooltip inteiro dentro do container (nenhuma
+borda extrapolada); ponto do meio continua centralizado (diferença
+<0.1px); bloco encolhido ~150px de altura via alça sul (`.react-
+resizable-handle-s`) ainda mantém o tooltip dentro dos limites
+verticais; conteúdo legível em todos os casos. 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
