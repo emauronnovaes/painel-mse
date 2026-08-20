@@ -3103,6 +3103,53 @@ reload; tabela continua rolando e ordenando por coluna dentro do bloco;
 sem sobreposição na largura padrão e também 250px mais estreito. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — redimensionar por qualquer lado + botão "Organizar" (2026-08-19)
+
+Pedido explícito: "só consigo ajustar o tamanho para baixo ou para o
+lado direito". A entrada do grid tinha ficado com só 3 alças
+(`['se','e','s']`), o padrão da lib.
+
+- **8 alças** agora: `['nw','n','ne','w','e','sw','s','se']`. CSS
+  próprio pras novas (a folha da lib continua não sendo carregada):
+  cantos são um "L" de 2 bordas apontando pra fora, laterais são uma
+  barrinha no meio do lado, cada uma com o cursor diagonal certo.
+  Confirmado no bundle 1.5.0 que a lib tem a lógica de pivô que ajusta
+  `x`/`y` quando a alça é do lado norte/oeste — sem isso, redimensionar
+  por cima só cresceria pra baixo.
+- **`compactType` foi de `"vertical"` pra `null`, e isso não é
+  opcional**: redimensionar pelo topo/esquerda mexe no `x`/`y` do bloco,
+  não só no `w`/`h`; com compactação vertical ligada a lib puxava o
+  bloco de volta pra cima logo depois e o gesto não surtia efeito
+  nenhum. Sem compactação, cada bloco fica exatamente onde foi posto.
+- **`padding-right` do cabeçalho de 10 → 18px**: a alça do canto
+  nordeste (12px + 3px de recuo) ficava por cima do "✕" e roubava o
+  clique de ocultar. Verificado com `elementFromPoint`.
+- **Botão "Organizar" novo** — é o preço de ter tirado a compactação
+  automática: empurrar um vizinho pra baixo deixava faixa vazia que não
+  fechava mais sozinha. Ele sobe cada bloco até encostar, **sem mudar
+  largura, altura nem coluna** (só o `y`). Diferente de "Restaurar
+  layout": organiza sem desfazer o arranjo escolhido. Implementado à mão
+  (uma dúzia de linhas, 3 blocos) em vez de chamar
+  `ReactGridLayout.utils.compact` — não amarra em export interno da lib.
+
+**Decisão de projeto registrada:** ficou `preventCollision={false}`
+(padrão) de propósito. Com `true`, o resize pararia de empurrar vizinho
+(fecharia a faixa vazia na origem), mas o arrasto passaria a só aceitar
+espaço livre — não daria pra trocar dois blocos de lugar. Preferi manter
+o arrasto permissivo e resolver a faixa vazia com o "Organizar", pra não
+tirar liberdade de novo (é exatamente o erro dos passos 89-90).
+
+Testado com Playwright (obra 91/CP236, 1600×1000): as 4 direções novas
+funcionam de fato — topo (`n`) sobe a borda superior e aumenta a altura;
+esquerda (`w`) move a borda esquerda e aumenta a largura; cantos `nw` e
+`sw` idem nos 2 eixos, todas gravando no `localStorage`. 8 alças nos 3
+blocos (24 no total). "✕" clicável normalmente. "Organizar" fechou uma
+faixa de 716px mexendo só no `y`, é idempotente, persiste no reload e
+respeita coluna (blocos em colunas diferentes sobem os dois, sem
+empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
+depois da sequência toda. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
