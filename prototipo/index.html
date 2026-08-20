@@ -9,6 +9,15 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- react-grid-layout (UMD, 86KB) — grid de widgets do setor Medições:
+     arrastar livre, redimensionar e pôr lado a lado (pedido explícito,
+     2026-08-19). 1ª e 2ª versões eram feitas à mão (HTML5 DnD, depois
+     Pointer Events) e continuavam "engessadas" — colisão/compactação/
+     resize de verdade não vale reescrever à mão. Só o React/ReactDOM
+     ficam externos neste bundle (react-draggable/react-resizable vêm
+     embutidos). Se o CDN falhar, `GridLayoutMedicoes` fica null e a tela
+     cai num empilhamento simples — ver ModuloMedicoes. -->
+<script crossorigin src="https://unpkg.com/react-grid-layout@1.5.0/dist/react-grid-layout.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
 <style>
   :root{
@@ -142,6 +151,43 @@
   .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
   .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
   .tabela-medicoes td, .tabela-medicoes th{ overflow: hidden; text-overflow: ellipsis; }
+
+  /* Grid de widgets do setor Medições (react-grid-layout). A folha de
+     estilo da lib NÃO é carregada — estas regras são a versão enxuta
+     equivalente, no visual do painel. As essenciais são: `position:
+     relative` no container (os itens são absolutos, posicionados por
+     `transform` inline pela própria lib) e uma área clicável nas alças
+     de resize (sem tamanho, não há o que agarrar). */
+  .react-grid-layout { position: relative; transition: height 200ms ease; }
+  .react-grid-item { transition: transform 200ms ease, width 200ms ease, height 200ms ease; }
+  .react-grid-item.resizing,
+  .react-grid-item.react-draggable-dragging { transition: none; z-index: 4; }
+  .react-grid-item.react-draggable-dragging > .card { box-shadow: 0 20px 44px -10px rgba(16,24,40,.34); }
+  /* Sombra do "slot" de destino durante o arrasto — é o feedback que faz
+     o grid parecer vivo (a peça abre espaço antes de você soltar). */
+  .react-grid-item.react-grid-placeholder {
+    background: var(--blue); opacity: .14; border-radius: 14px;
+    transition-duration: 110ms; z-index: 2; user-select: none;
+  }
+  .react-grid-item > .react-resizable-handle {
+    position: absolute; opacity: 0; transition: opacity .15s ease; z-index: 3;
+  }
+  .react-grid-item:hover > .react-resizable-handle,
+  .react-grid-item.resizing > .react-resizable-handle { opacity: 1; }
+  .react-grid-item > .react-resizable-handle-se {
+    right: 4px; bottom: 4px; width: 15px; height: 15px; cursor: se-resize;
+    border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
+    border-bottom-right-radius: 6px;
+  }
+  .react-grid-item > .react-resizable-handle-e {
+    right: 1px; top: 50%; margin-top: -20px; width: 9px; height: 40px; cursor: ew-resize;
+    border-right: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .react-grid-item > .react-resizable-handle-s {
+    bottom: 1px; left: 50%; margin-left: -20px; width: 40px; height: 9px; cursor: ns-resize;
+    border-bottom: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .tile-handle:active { cursor: grabbing; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4692,12 +4738,20 @@ function GraficoPrevistoMedido({ pontos }){
   const linhaPrevisto = linhaDe('previstoAcum');
   const linhaMedido = linhaDe('medidoAcum');
 
-  const maxLabelsVisiveis = Math.max(4, Math.floor(W / 55));
+  // Decimação dos rótulos do eixo X. Com o grid de widgets o gráfico pode
+  // ficar bem estreito (ex.: 5 de 12 colunas), então nada de número
+  // mágico: o espaçamento sai da largura aproximada do rótulo
+  // "dd/mm/aa" nesta fonte/tamanho. O último ponto SEMPRE aparece e é
+  // ancorado à direita — ou seja, ocupa ~`LARGURA_ROTULO_X` à ESQUERDA do
+  // ponto final; um rótulo centrado antes dele precisa caber com a
+  // própria metade mais uma folga, daí o 1.5×.
+  const LARGURA_ROTULO_X = 50;
+  const maxLabelsVisiveis = Math.max(2, Math.floor(W / (LARGURA_ROTULO_X + 14)));
   const passoLabel = Math.max(1, Math.ceil(pontos.length / maxLabelsVisiveis));
   const mostrarLabel = i => {
     if (i === pontos.length - 1) return true;
     if (i % passoLabel !== 0) return false;
-    return (xScale(pontos.length - 1) - xScale(i)) > 70;
+    return (xScale(pontos.length - 1) - xScale(i)) > (LARGURA_ROTULO_X * 1.5 + 10);
   };
 
   const handleMove = e => {
@@ -4766,31 +4820,59 @@ function GraficoPrevistoMedido({ pontos }){
   );
 }
 
-// Bloco "live tile" reutilizável — pedido explícito (2026-08-19): "algo
-// mais fluido, ao arrastar, como um widget". 1ª versão usava HTML5
-// drag-and-drop nativo (só troca no drop, sem preview ao vivo — "seco"
-// demais pro efeito pedido); trocado por arrasto via Pointer Events
-// (mesmo padrão "tudo à mão" do resto do arquivo, ver `LineSVG`/
-// resizers de pizza-gráfico) + `position:absolute`/`transform` com
-// `transition` — o bloco arrastado segue o cursor 1:1 (sem transição,
-// senão fica com lag), os outros deslizam suavemente pra abrir espaço
-// assim que a prévia de ordem muda (ver `ModuloMedicoes`). `posStyle`
-// já vem pronto do pai (top/left/width/height/transform/transition/
-// zIndex/boxShadow) — este componente só cuida do conteúdo visual.
-function TileFrame({ titulo, contagem, onPointerDown, onPointerMove, onPointerUp, arrastando, onRemover, posStyle, children }){
+// Grid de widgets do setor Medições — pedido explícito (2026-08-19):
+// "preciso de algo realmente interativo, que seja capaz de
+// re-dimensionar, colocar lado a lado". As 2 versões anteriores eram
+// feitas à mão (HTML5 drag-and-drop, depois Pointer Events com
+// `translateY`) e só reordenavam numa coluna — daí a sensação de
+// "engessado". Grid de verdade (colisão, compactação, resize em 2 eixos,
+// posição livre em X e Y) não vale reescrever à mão: entrou
+// `react-grid-layout` via CDN UMD (ver <script> no <head>).
+// `WidthProvider` mede o container e passa a largura pro grid.
+// Se o CDN falhar, isto fica `null` e `ModuloMedicoes` cai num
+// empilhamento simples — a tela nunca fica em branco por causa disso.
+const GridLayoutMedicoes = (typeof ReactGridLayout !== 'undefined' && ReactGridLayout)
+  ? ReactGridLayout.WidthProvider(ReactGridLayout)
+  : null;
+
+// 12 colunas × linhas de 40px (+14 de gap): h=9 dá ~472px, h=6 ~310px.
+// Layout padrão JÁ vem com dois blocos lado a lado (Histórico + gráfico
+// na primeira fileira) — de propósito: num grid onde tudo nasce com
+// w=12, "pôr lado a lado" exige primeiro encolher um bloco, e quem abre
+// a tela não descobre isso sozinho. Histórico em w=7 (~890px) sobra pras
+// suas 6 colunas (mínimo ~640px) e o gráfico é 100% responsivo, então
+// cabe bem em w=5. A Previsão, que é a tabela mais larga (9 colunas,
+// ~1450px), fica na fileira de baixo em w=12 pra não virar uma tira que
+// só rola. `minW/minH` impedem encolher até o conteúdo ficar ilegível.
+const TILES_MEDICOES_IDS = ['historico', 'previsao', 'grafico'];
+const LAYOUT_MEDICOES_PADRAO = [
+  { i:'historico', x:0, y:0, w:7,  h:9 },
+  { i:'grafico',   x:7, y:0, w:5,  h:9 },
+  { i:'previsao',  x:0, y:9, w:12, h:6 },
+];
+const MIN_TILE_MEDICOES = {
+  historico: { minW:4, minH:5 },
+  previsao:  { minW:4, minH:4 },
+  grafico:   { minW:3, minH:4 },
+};
+// Só usado no fallback sem grid (CDN fora) — mantém as alturas de antes.
+const ALTURA_FALLBACK_TILE = { historico:440, previsao:300, grafico:340 };
+
+// Moldura do bloco. O cabeçalho (`tile-handle`) é a única área que
+// arrasta — assim tabela rola e coluna ordena normalmente por dentro do
+// bloco. O "✕" leva `tile-nao-arrasta` (é o `draggableCancel` do grid),
+// senão clicar nele iniciaria um arrasto. Remover só OCULTA — nada é
+// apagado, o bloco volta pelos botões "+ Nome" e reaparece na MESMA
+// posição/tamanho (a entrada dele continua guardada no layout).
+function TileFrame({ titulo, contagem, onRemover, children }){
   return (
-    <div className="card" style={{
-      position:'absolute', top:0, left:0, right:0, borderRadius:14, overflow:'hidden',
-      display:'flex', flexDirection:'column', padding:0, cursor: arrastando ? 'grabbing' : undefined,
-      ...posStyle,
-    }}>
-      <div className="mono" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
-        style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 10px 8px 16px', flexShrink:0, cursor: arrastando ? 'grabbing' : 'grab', touchAction:'none' }}>
-        <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1 }}>
+    <div className="card" style={{ height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 10px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
+        <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
         </span>
-        <span title="Arraste para reordenar" style={{ color: arrastando ? T.blue : T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none' }}>⠿⠿</span>
-        <button onClick={onRemover} onPointerDown={e => e.stopPropagation()} title="Remover bloco (pode trazer de volta depois)" className="mono"
+        <span title="Arraste para mover" style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0 }}>⠿⠿</span>
+        <button onClick={onRemover} title="Remover bloco (pode trazer de volta depois)" className="mono tile-nao-arrasta"
           style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:7, width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, lineHeight:1, flexShrink:0 }}>✕</button>
       </div>
       {children}
@@ -5120,90 +5202,57 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
   }, [historico, previsao]);
 
-  // Live tiles (pedido explícito, 2026-08-19): ordem e visibilidade de
-  // Histórico/Previsão/Gráfico ficam salvas no navegador — é preferência
-  // de interface, não dado da obra, por isso a chave é global (não por
-  // obraId). "Sem KPIs" (pedido explícito) — o bloco de KPIs/pizza/
-  // gráfico antigo (`MOSTRAR_TOPO_MEDICOES`/`MOSTRAR_PIZZA_MEDICOES`,
-  // ambos ainda `false`) fica de fora desse sistema, intocado.
-  const TILES_MEDICOES_ORDEM_PADRAO = ['historico', 'previsao', 'grafico'];
-  const [tileOrdem, setTileOrdem] = useState(() => {
+  // Grid de widgets (pedido explícito, 2026-08-19): posição livre (X e
+  // Y), tamanho e visibilidade de Histórico/Previsão/Gráfico ficam salvos
+  // no navegador — é preferência de interface, não dado da obra, por isso
+  // a chave é global (não por obraId). Guardamos a entrada de TODOS os
+  // blocos, inclusive os ocultos: assim um bloco escondido volta na mesma
+  // posição/tamanho em que estava. "Sem KPIs" (pedido explícito) — o
+  // bloco de KPIs/pizza/gráfico antigo (`MOSTRAR_TOPO_MEDICOES`/
+  // `MOSTRAR_PIZZA_MEDICOES`, ambos `false`) fica fora deste sistema.
+  // Chave `_grid` nova de propósito: o formato mudou de lista de ids
+  // (versão anterior, só ordem) pra lista de {i,x,y,w,h} — reaproveitar a
+  // chave antiga carregaria lixo incompatível.
+  const [layoutTiles, setLayoutTiles] = useState(() => {
     try {
-      const salvo = JSON.parse(localStorage.getItem('mse_medicoes_tile_ordem'));
-      if (Array.isArray(salvo) && salvo.length === TILES_MEDICOES_ORDEM_PADRAO.length && TILES_MEDICOES_ORDEM_PADRAO.every(id => salvo.includes(id))) return salvo;
+      const salvo = JSON.parse(localStorage.getItem('mse_medicoes_grid'));
+      if (Array.isArray(salvo) && salvo.length && salvo.every(l => l && TILES_MEDICOES_IDS.includes(l.i) && Number.isFinite(l.x) && Number.isFinite(l.y) && Number.isFinite(l.w) && Number.isFinite(l.h))) {
+        // completa com o padrão qualquer bloco que ainda não esteja salvo
+        const faltando = LAYOUT_MEDICOES_PADRAO.filter(p => !salvo.some(l => l.i === p.i));
+        return [...salvo, ...faltando];
+      }
     } catch {}
-    return TILES_MEDICOES_ORDEM_PADRAO;
+    return LAYOUT_MEDICOES_PADRAO;
   });
   const [tileOcultos, setTileOcultos] = useState(() => {
     try {
       const salvo = JSON.parse(localStorage.getItem('mse_medicoes_tile_ocultos'));
-      return Array.isArray(salvo) ? salvo.filter(id => TILES_MEDICOES_ORDEM_PADRAO.includes(id)) : [];
+      return Array.isArray(salvo) ? salvo.filter(id => TILES_MEDICOES_IDS.includes(id)) : [];
     } catch { return []; }
   });
-  useEffect(() => { localStorage.setItem('mse_medicoes_tile_ordem', JSON.stringify(tileOrdem)); }, [tileOrdem]);
+  useEffect(() => { localStorage.setItem('mse_medicoes_grid', JSON.stringify(layoutTiles)); }, [layoutTiles]);
   useEffect(() => { localStorage.setItem('mse_medicoes_tile_ocultos', JSON.stringify(tileOcultos)); }, [tileOcultos]);
 
-  // Arrasto "estilo widget" (pedido explícito, 2026-08-19: "algo mais
-  // fluido, ao arrastar, como um widget") — Pointer Events + posição
-  // absoluta com `transform`/`transition`, no lugar do HTML5 DnD nativo
-  // da 1ª versão (que só trocava a ordem no solto, sem preview ao vivo).
-  // Alturas fixas por tile (`ALTURA_TILE`) tornam trivial calcular o
-  // "slot" (posição Y) de cada bloco sem medir nada em tempo real — o
-  // bloco arrastado segue o cursor sem transição (`arrasto.currentY`
-  // direto), os outros usam `transition:transform` e escorregam suave
-  // pro novo slot assim que a prévia de ordem (`arrasto.ordemPreview`)
-  // muda. Ao soltar, a prévia vira a ordem definitiva (persistida acima).
-  const ALTURA_TILE = { historico:440, previsao:300, grafico:340 };
-  const GAP_TILE = 14;
-  const tileContainerRef = useRef(null);
-  const [arrasto, setArrasto] = useState(null); // { id, pointerId, grabOffsetY, containerTop, currentY, ordemPreview }
-
-  const calcularTops = (ordem) => {
-    let acc = 0;
-    const tops = {};
-    ordem.forEach(id => { tops[id] = acc; acc += ALTURA_TILE[id] + GAP_TILE; });
-    return { tops, alturaTotal: Math.max(acc - GAP_TILE, 0) };
-  };
-
-  const ordemVisivelBase = tileOrdem.filter(id => !tileOcultos.includes(id));
-  const ordemVisivelAtual = arrasto ? arrasto.ordemPreview : ordemVisivelBase;
-  const { tops: tilesTops, alturaTotal: tilesAlturaTotal } = calcularTops(ordemVisivelAtual);
-
-  const iniciarArrastoTile = (id) => (e) => {
-    if (e.button != null && e.button !== 0) return; // só botão esquerdo do mouse; toque não tem `.button`
-    e.preventDefault();
-    const containerRect = tileContainerRef.current.getBoundingClientRect();
-    const { tops } = calcularTops(ordemVisivelBase);
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setArrasto({
-      id, pointerId: e.pointerId,
-      grabOffsetY: e.clientY - containerRect.top - tops[id],
-      containerTop: containerRect.top,
-      currentY: e.clientY,
-      ordemPreview: ordemVisivelBase.slice(),
+  const idsVisiveis = TILES_MEDICOES_IDS.filter(id => !tileOcultos.includes(id));
+  const entradaLayout = (id) => layoutTiles.find(l => l.i === id) || LAYOUT_MEDICOES_PADRAO.find(l => l.i === id);
+  // `minW/minH` são reaplicados da constante a cada render (em vez de
+  // saírem do localStorage) — se um dia mudarem no código, valem na hora,
+  // sem depender de limpar o que já está salvo no navegador.
+  const layoutVisivel = idsVisiveis.map(id => ({ ...entradaLayout(id), ...MIN_TILE_MEDICOES[id] }));
+  const aoMudarLayoutTiles = (novo) => {
+    setLayoutTiles(prev => {
+      const ocultos = prev.filter(l => tileOcultos.includes(l.i));
+      const visiveis = novo.map(l => ({ i:l.i, x:l.x, y:l.y, w:l.w, h:l.h }));
+      // só grava se algo mudou de fato — `onLayoutChange` também dispara
+      // na montagem, e gravar igual re-renderizaria de graça.
+      const igual = visiveis.length === prev.length - ocultos.length
+        && visiveis.every(v => { const a = prev.find(p => p.i === v.i); return a && a.x === v.x && a.y === v.y && a.w === v.w && a.h === v.h; });
+      return igual ? prev : [...visiveis, ...ocultos];
     });
   };
-  const moverArrastoTile = (e) => {
-    if (!arrasto || e.pointerId !== arrasto.pointerId) return;
-    const topArrastado = e.clientY - arrasto.containerTop - arrasto.grabOffsetY;
-    const centroArrastado = topArrastado + ALTURA_TILE[arrasto.id] / 2;
-    const semArrastado = ordemVisivelBase.filter(x => x !== arrasto.id);
-    let acc = 0, idxInsercao = semArrastado.length;
-    for (let i = 0; i < semArrastado.length; i++) {
-      const h = ALTURA_TILE[semArrastado[i]];
-      if (centroArrastado < acc + h / 2) { idxInsercao = i; break; }
-      acc += h + GAP_TILE;
-    }
-    const novaPreview = semArrastado.slice();
-    novaPreview.splice(idxInsercao, 0, arrasto.id);
-    setArrasto(a => a ? { ...a, currentY: e.clientY, ordemPreview: novaPreview } : a);
-  };
-  const soltarArrastoTile = (e) => {
-    if (!arrasto || e.pointerId !== arrasto.pointerId) return;
-    const ocultosNaOrdem = tileOrdem.filter(x => tileOcultos.includes(x));
-    setTileOrdem([...arrasto.ordemPreview, ...ocultosNaOrdem]);
-    setArrasto(null);
-  };
+  // Clona o padrão em vez de guardar a referência da constante — nada
+  // hoje muta essas entradas, mas o estado passa a ser dono do array.
+  const restaurarLayoutPadrao = () => { setLayoutTiles(LAYOUT_MEDICOES_PADRAO.map(l => ({ ...l }))); setTileOcultos([]); };
 
   const TILES_MEDICOES_META = {
     historico: { titulo: 'Histórico de Faturamentos' },
@@ -5336,9 +5385,13 @@ function ModuloMedicoes({ obraId, obraNome }){
       )}
 
       {/* `overflowX:'auto'` é a rede de segurança: se os mínimos (pizza 220
-          + gráfico 320 + tabela 480, + as faixas de 22px dos resizers)
-          somados passarem da largura real da tela, a fileira rola por
-          dentro dela mesma em vez de estourar a página inteira pra direita. */}
+          + gráfico 320, + as faixas de 22px dos resizers) somados passarem
+          da largura real da tela, a fileira rola por dentro dela mesma em
+          vez de estourar a página inteira pra direita. A fileira inteira
+          só entra quando pizza ou KPIs/gráfico antigo estão ligados —
+          `.medicoes-row` é `flex:1`, e vazia ela roubaria a altura toda
+          do grid de widgets abaixo. */}
+      {(MOSTRAR_PIZZA_MEDICOES || MOSTRAR_TOPO_MEDICOES) && (
       <div ref={areaRef} className="medicoes-row">
         {temContrato && MOSTRAR_PIZZA_MEDICOES && (
           <React.Fragment>
@@ -5386,40 +5439,26 @@ function ModuloMedicoes({ obraId, obraNome }){
         )}
 
       </div>
+      )}
 
-      {/* Blocos reordenáveis/removíveis (live tiles) — pedido explícito
-          (2026-08-19): "algo mais fluido, ao arrastar, como um widget".
-          Histórico, Previsão e o gráfico Previsto×Medido formam o
-          conjunto (sem KPIs, pedido explícito); ordem/visibilidade
-          persistem no navegador (ver `tileOrdem`/`tileOcultos` acima).
-          Container com altura explícita (`tilesAlturaTotal`) porque os
-          blocos viram `position:absolute` dentro dele — ver comentário
-          detalhado no bloco de estado/handlers de arrasto acima. */}
-      <div ref={tileContainerRef} style={{ position:'relative', height:tilesAlturaTotal, flexShrink:0 }}>
-      {ordemVisivelAtual.map(id => {
+      {/* Blocos do grid de widgets — pedido explícito (2026-08-19):
+          "algo realmente interativo, que seja capaz de re-dimensionar,
+          colocar lado a lado". Histórico, Previsão e o gráfico
+          Previsto×Medido formam o conjunto (sem KPIs, pedido explícito);
+          posição/tamanho/visibilidade persistem no navegador (ver
+          `layoutTiles`/`tileOcultos` acima). `renderTile` devolve só o
+          conteúdo de cada bloco — quem posiciona é o grid (ou, se o CDN
+          do react-grid-layout falhar, o empilhamento de reserva). */}
+      {(() => {
+      const renderTile = (id) => {
         const meta = TILES_MEDICOES_META[id];
-        const arrastandoEste = arrasto?.id === id;
-        const topOffset = arrastandoEste
-          ? (arrasto.currentY - arrasto.containerTop - arrasto.grabOffsetY)
-          : tilesTops[id];
-        const posStyle = {
-          transform: `translateY(${topOffset}px) scale(${arrastandoEste ? 1.015 : 1})`,
-          transition: arrastandoEste ? 'none' : 'transform 0.28s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s',
-          zIndex: arrastandoEste ? 30 : 1,
-          boxShadow: arrastandoEste ? '0 20px 44px -10px rgba(16,24,40,0.32)' : undefined,
-          height: ALTURA_TILE[id],
-        };
         const tileProps = {
-          onPointerDown: iniciarArrastoTile(id),
-          onPointerMove: moverArrastoTile,
-          onPointerUp: soltarArrastoTile,
-          arrastando: arrastandoEste,
+          titulo: meta.titulo,
           onRemover: () => setTileOcultos(o => [...o, id]),
-          posStyle,
         };
 
         if (id === 'historico') return (
-          <TileFrame key={id} titulo={meta.titulo} contagem={historico.length} {...tileProps}>
+          <TileFrame key={id} contagem={historico.length} {...tileProps}>
             <div ref={histTableWrapRef} style={{ overflow:'auto', flex:1 }}>
               {/* Layout AUTO (sem colgroup/tableLayout:fixed) — pedido
                   explícito (2026-08-19): "a de cima deveria seguir como
@@ -5477,12 +5516,16 @@ function ModuloMedicoes({ obraId, obraNome }){
         );
 
         if (id === 'previsao') return (
-          <TileFrame key={id} titulo={meta.titulo} contagem={previsao.length} {...tileProps}>
+          <TileFrame key={id} contagem={previsao.length} {...tileProps}>
             <div style={{ overflow:'auto', flex:1 }}>
               {/* Largura de Período/Valor Previsto (e do spacer, equivalente
                   ao BM) vem de `largurasHist` — medida ao vivo no Histórico,
                   nunca fixa aqui. É a Previsão que acompanha a de cima, não
-                  o contrário (pedido explícito, 2026-08-19). */}
+                  o contrário (pedido explícito, 2026-08-19). Vale lembrar
+                  que depois do grid de widgets isso só ALINHA de fato
+                  quando os dois blocos estão empilhados na largura cheia;
+                  em qualquer outro arranjo continua funcionando (é só
+                  copiar um px), só não tem efeito visual de alinhamento. */}
               <table className="tabela-medicoes" style={{ width:'100%', minWidth: largurasHist.bm + largurasHist.periodo + largurasHist.valorPrevisto + 1020, tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
                 <colgroup>
                   <col style={{ width:largurasHist.bm }} />
@@ -5539,7 +5582,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         );
 
         if (id === 'grafico') return (
-          <TileFrame key={id} titulo={meta.titulo} {...tileProps}>
+          <TileFrame key={id} {...tileProps}>
             <div style={{ flex:1, minHeight:0, padding:'2px 16px 16px' }}>
               <GraficoPrevistoMedido pontos={serieDuasCurvas} />
             </div>
@@ -5547,20 +5590,55 @@ function ModuloMedicoes({ obraId, obraNome }){
         );
 
         return null;
-      })}
-      </div>
+      };
 
-      {tileOcultos.length > 0 && (
-        <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
-          <span className="mono" style={{ fontSize:11, color:T.mut }}>Blocos ocultos:</span>
-          {tileOcultos.map(id => (
-            <button key={id} onClick={() => setTileOcultos(o => o.filter(x => x !== id))} className="mono"
-              style={{ background:'#eef0f3', border:'1px solid var(--line)', color:T.body, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
-              + {TILES_MEDICOES_META[id].titulo}
-            </button>
+      // O grid embrulha cada bloco num <div> próprio (é nele que a lib
+      // injeta className/style de posição e as alças de resize) — daí o
+      // <div key> em volta do TileFrame, em vez do TileFrame direto.
+      if (!GridLayoutMedicoes) return (
+        <div style={{ display:'flex', flexDirection:'column', gap:14, flexShrink:0 }}>
+          {idsVisiveis.map(id => (
+            <div key={id} style={{ height:ALTURA_FALLBACK_TILE[id], flexShrink:0 }}>{renderTile(id)}</div>
           ))}
         </div>
-      )}
+      );
+      return (
+        // `flexShrink:0` NÃO é decoração: este grid é filho de um flex
+        // column, e a altura que a lib calcula (inline, em px) era
+        // esmagada pelo shrink padrão. Os blocos são `position:absolute`
+        // e mantêm o offset real, então vazavam pra fora do container e
+        // cobriam a barra de apoio abaixo (o botão "Restaurar layout"
+        // ficava inclicável quando o grid passava da altura da tela).
+        <GridLayoutMedicoes layout={layoutVisivel} onLayoutChange={aoMudarLayoutTiles}
+          style={{ flexShrink:0 }}
+          cols={12} rowHeight={40} margin={[14, 14]} containerPadding={[0, 0]}
+          draggableHandle=".tile-handle" draggableCancel=".tile-nao-arrasta"
+          resizeHandles={['se', 'e', 's']} compactType="vertical">
+          {idsVisiveis.map(id => <div key={id}>{renderTile(id)}</div>)}
+        </GridLayoutMedicoes>
+      );
+      })()}
+
+      {/* Barra de apoio do grid: dica de uso (sem ela o resize/lado a lado
+          fica escondido — a alça só aparece no hover), blocos ocultos e
+          volta ao padrão. */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
+        <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
+          Arraste pelo cabeçalho para mover · puxe a borda ou o canto para redimensionar · encolha a largura para abrir espaço ao lado
+        </span>
+        <span style={{ flex:1, minWidth:8 }} />
+        {tileOcultos.map(id => (
+          <button key={id} onClick={() => setTileOcultos(o => o.filter(x => x !== id))} className="mono"
+            title="Trazer o bloco de volta (na posição em que estava)"
+            style={{ background:'#eef0f3', border:'1px solid var(--line)', color:T.body, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+            + {TILES_MEDICOES_META[id].titulo}
+          </button>
+        ))}
+        <button onClick={restaurarLayoutPadrao} className="mono" title="Voltar posição, tamanho e visibilidade ao padrão"
+          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+          Restaurar layout
+        </button>
+      </div>
 
       {contratoAberto && temContrato && (
         <div onClick={() => setContratoAberto(false)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
