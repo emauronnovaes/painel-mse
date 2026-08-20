@@ -174,18 +174,47 @@
   }
   .react-grid-item:hover > .react-resizable-handle,
   .react-grid-item.resizing > .react-resizable-handle { opacity: 1; }
+  /* As 8 alças (pedido explícito, 2026-08-19: "só consigo ajustar o
+     tamanho para baixo ou para o lado direito"). Cantos = "L" desenhado
+     com 2 bordas apontando pra fora; laterais = barrinha no meio do lado.
+     Os cantos são 12px e recuados 3px de propósito: o "✕" do cabeçalho
+     começa depois disso (padding-right 18px), senão a alça do canto
+     nordeste roubaria o clique do botão de ocultar. */
   .react-grid-item > .react-resizable-handle-se {
-    right: 4px; bottom: 4px; width: 15px; height: 15px; cursor: se-resize;
+    right: 3px; bottom: 3px; width: 12px; height: 12px; cursor: nwse-resize;
     border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
-    border-bottom-right-radius: 6px;
+    border-bottom-right-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-sw {
+    left: 3px; bottom: 3px; width: 12px; height: 12px; cursor: nesw-resize;
+    border-left: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
+    border-bottom-left-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-ne {
+    right: 3px; top: 3px; width: 12px; height: 12px; cursor: nesw-resize;
+    border-right: 2px solid var(--mut); border-top: 2px solid var(--mut);
+    border-top-right-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-nw {
+    left: 3px; top: 3px; width: 12px; height: 12px; cursor: nwse-resize;
+    border-left: 2px solid var(--mut); border-top: 2px solid var(--mut);
+    border-top-left-radius: 5px;
   }
   .react-grid-item > .react-resizable-handle-e {
     right: 1px; top: 50%; margin-top: -20px; width: 9px; height: 40px; cursor: ew-resize;
     border-right: 3px solid var(--mut2); border-radius: 3px;
   }
+  .react-grid-item > .react-resizable-handle-w {
+    left: 1px; top: 50%; margin-top: -20px; width: 9px; height: 40px; cursor: ew-resize;
+    border-left: 3px solid var(--mut2); border-radius: 3px;
+  }
   .react-grid-item > .react-resizable-handle-s {
     bottom: 1px; left: 50%; margin-left: -20px; width: 40px; height: 9px; cursor: ns-resize;
     border-bottom: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .react-grid-item > .react-resizable-handle-n {
+    top: 1px; left: 50%; margin-left: -20px; width: 40px; height: 9px; cursor: ns-resize;
+    border-top: 3px solid var(--mut2); border-radius: 3px;
   }
   .tile-handle:active { cursor: grabbing; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
@@ -4867,7 +4896,10 @@ const ALTURA_FALLBACK_TILE = { historico:440, previsao:300, grafico:340 };
 function TileFrame({ titulo, contagem, onRemover, children }){
   return (
     <div className="card" style={{ height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
-      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 10px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
+      {/* padding-right 18: deixa o "✕" fora da alça de resize do canto
+          nordeste (12px + 3px de recuo), senão o clique de ocultar cai na
+          alça. padding-left 16 já passa da alça do canto noroeste. */}
+      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
         <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
         </span>
@@ -5254,6 +5286,30 @@ function ModuloMedicoes({ obraId, obraNome }){
   // hoje muta essas entradas, mas o estado passa a ser dono do array.
   const restaurarLayoutPadrao = () => { setLayoutTiles(LAYOUT_MEDICOES_PADRAO.map(l => ({ ...l }))); setTileOcultos([]); };
 
+  // "Organizar": sobe cada bloco até encostar, sem mudar largura, altura
+  // nem coluna. Existe porque o grid roda SEM compactação automática (é o
+  // que faz o resize pelo topo funcionar, ver comentário no
+  // <GridLayoutMedicoes>): em troca, empurrar um vizinho pra baixo deixa
+  // faixa vazia que não se fecha sozinha. Isto fecha, sob demanda, sem
+  // tirar liberdade de posicionamento — e sem desfazer o arranjo, ao
+  // contrário do "Restaurar layout".
+  const organizarLayout = () => {
+    setLayoutTiles(prev => {
+      const ocultos = prev.filter(l => tileOcultos.includes(l.i));
+      const emOrdem = idsVisiveis.map(id => ({ ...entradaLayout(id) })).sort((a, b) => a.y - b.y || a.x - b.x);
+      const postos = [];
+      emOrdem.forEach(item => {
+        let y = 0;
+        const colide = (yTeste) => postos.some(p =>
+          p.x < item.x + item.w && item.x < p.x + p.w &&
+          yTeste < p.y + p.h && p.y < yTeste + item.h);
+        while (colide(y)) y++;
+        postos.push({ ...item, y });
+      });
+      return [...postos, ...ocultos];
+    });
+  };
+
   const TILES_MEDICOES_META = {
     historico: { titulo: 'Histórico de Faturamentos' },
     previsao: { titulo: 'Previsão de Próximos Faturamentos' },
@@ -5609,11 +5665,19 @@ function ModuloMedicoes({ obraId, obraNome }){
         // e mantêm o offset real, então vazavam pra fora do container e
         // cobriam a barra de apoio abaixo (o botão "Restaurar layout"
         // ficava inclicável quando o grid passava da altura da tela).
+        // `resizeHandles` com as 8 alças e `compactType={null}` andam
+        // juntos (2026-08-19: "só consigo ajustar o tamanho para baixo ou
+        // para o lado direito"). Redimensionar pelo topo/esquerda mexe no
+        // x/y do bloco, não só no w/h — com compactação vertical ligada, a
+        // lib puxava o bloco de volta pra cima logo depois e o gesto não
+        // surtia efeito nenhum. Sem compactação, cada bloco fica exatamente
+        // onde foi posto (e pode sobrar espaço vazio no meio — é o preço da
+        // liberdade, e o botão "Restaurar layout" resolve).
         <GridLayoutMedicoes layout={layoutVisivel} onLayoutChange={aoMudarLayoutTiles}
           style={{ flexShrink:0 }}
           cols={12} rowHeight={40} margin={[14, 14]} containerPadding={[0, 0]}
           draggableHandle=".tile-handle" draggableCancel=".tile-nao-arrasta"
-          resizeHandles={['se', 'e', 's']} compactType="vertical">
+          resizeHandles={['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se']} compactType={null}>
           {idsVisiveis.map(id => <div key={id}>{renderTile(id)}</div>)}
         </GridLayoutMedicoes>
       );
@@ -5624,7 +5688,7 @@ function ModuloMedicoes({ obraId, obraNome }){
           volta ao padrão. */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
         <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
-          Arraste pelo cabeçalho para mover · puxe a borda ou o canto para redimensionar · encolha a largura para abrir espaço ao lado
+          Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
         </span>
         <span style={{ flex:1, minWidth:8 }} />
         {tileOcultos.map(id => (
@@ -5634,6 +5698,10 @@ function ModuloMedicoes({ obraId, obraNome }){
             + {TILES_MEDICOES_META[id].titulo}
           </button>
         ))}
+        <button onClick={organizarLayout} className="mono" title="Subir os blocos para fechar espaços vazios, mantendo tamanho e coluna de cada um"
+          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+          Organizar
+        </button>
         <button onClick={restaurarLayoutPadrao} className="mono" title="Voltar posição, tamanho e visibilidade ao padrão"
           style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
           Restaurar layout
