@@ -4772,6 +4772,23 @@ function GraficoPrevistoMedido({ pontos }){
     return () => obs.disconnect();
   }, []);
 
+  // Tamanho REAL do tooltip (pedido explícito, 2026-08-19: "ao passar o
+  // mouse em um ponto do gráfico perto da borda, o detalhamento fica
+  // cortado") — a 1ª versão clampava a posição por uma margem fixa
+  // (metade de uma largura "chutada"), que não bate com o tooltip real
+  // (varia por conteúdo — "Medido: sem medição lançada" é bem mais curto
+  // que as 4 linhas de acumulado/período). Mede via ref depois de cada
+  // troca de ponto e usa o tamanho de verdade pra clamping, tanto
+  // horizontal quanto vertical (importante agora que o bloco é
+  // redimensionável — um bloco baixo cortava o tooltip por cima também).
+  const tipRef = useRef(null);
+  const [tipTam, setTipTam] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!tipRef.current) { setTipTam({ w: 0, h: 0 }); return; }
+    const r = tipRef.current.getBoundingClientRect();
+    setTipTam({ w: r.width, h: r.height });
+  }, [hover]);
+
   if (!pontos || pontos.length < 2) {
     return (
       <div ref={wrapRef} style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -4845,9 +4862,20 @@ function GraficoPrevistoMedido({ pontos }){
   };
 
   const p = hover != null ? pontos[hover] : null;
-  const tipLeft = hover != null ? Math.min(Math.max(xScale(hover), 70), W - 70) : 0;
   const topoPonto = p ? yScale(Math.max(p.previstoAcum ?? 0, p.medidoAcum ?? 0)) : 0;
   const tipAcimaDoPonto = p ? topoPonto < H * 0.35 : false;
+  // Clamping horizontal/vertical pelo tamanho REAL do tooltip (ver
+  // `tipTam` acima), não mais por uma metade-de-largura chutada. Enquanto
+  // o tooltip ainda não foi medido (1º hover), usa um palpite conservador
+  // só pra esse único frame — o efeito já corrige no próximo.
+  const MARGEM_BORDA = 8;
+  const metadeTip = (tipTam.w || 160) / 2 + MARGEM_BORDA;
+  const pontoAbsX = xScale(hover || 0) + pad.left;
+  const centroTipX = Math.min(Math.max(pontoAbsX, metadeTip), Math.max(width - metadeTip, metadeTip));
+  const alturaTip = tipTam.h || 90;
+  const topoTip = tipAcimaDoPonto
+    ? Math.min(pad.top + topoPonto + 14, height - alturaTip - MARGEM_BORDA)
+    : Math.max(pad.top + topoPonto - alturaTip - 10, MARGEM_BORDA);
 
   return (
     <div ref={wrapRef} style={{ position:'relative', width:'100%', height:'100%' }}>
@@ -4926,10 +4954,10 @@ function GraficoPrevistoMedido({ pontos }){
         </g>
       </svg>
       {p && (
-        <div className="mono" style={{
+        <div ref={tipRef} className="mono" style={{
           position:'absolute',
-          left: `${((tipLeft + pad.left) / width) * 100}%`,
-          top: tipAcimaDoPonto ? (pad.top + topoPonto + 14) : Math.max(pad.top + topoPonto - 104, 4),
+          left: centroTipX,
+          top: topoTip,
           transform:'translateX(-50%)',
           background: T.ink, color:'#fff', borderRadius:8, padding:'6px 10px',
           fontSize:11, lineHeight:1.5, pointerEvents:'none', boxShadow:'0 4px 14px rgba(0,0,0,0.18)', whiteSpace:'nowrap', zIndex:5,
