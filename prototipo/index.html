@@ -4766,24 +4766,31 @@ function GraficoPrevistoMedido({ pontos }){
   );
 }
 
-// Bloco "live tile" reutilizável — pedido explícito (2026-08-19): "seria
-// interessante que as tabelas fossem como live tiles... remover, incluir,
-// mudar a posição". Reordenação via HTML5 drag-and-drop nativo (sem lib
-// externa, mesmo padrão "tudo à mão" do resto do arquivo) — a alça de
-// arrasto é o próprio cabeçalho do bloco (o `⠿⠿` é só o indicador visual,
-// o `draggable` está no card inteiro). Remover só OCULTA (some pra
-// `tileOcultos`, no componente pai) — nada é apagado; reaparece pelos
-// botões "+ Nome do bloco" que surgem quando há algo oculto.
-function TileFrame({ titulo, contagem, onDragStart, onDragOver, onDrop, onRemover, style, children }){
+// Bloco "live tile" reutilizável — pedido explícito (2026-08-19): "algo
+// mais fluido, ao arrastar, como um widget". 1ª versão usava HTML5
+// drag-and-drop nativo (só troca no drop, sem preview ao vivo — "seco"
+// demais pro efeito pedido); trocado por arrasto via Pointer Events
+// (mesmo padrão "tudo à mão" do resto do arquivo, ver `LineSVG`/
+// resizers de pizza-gráfico) + `position:absolute`/`transform` com
+// `transition` — o bloco arrastado segue o cursor 1:1 (sem transição,
+// senão fica com lag), os outros deslizam suavemente pra abrir espaço
+// assim que a prévia de ordem muda (ver `ModuloMedicoes`). `posStyle`
+// já vem pronto do pai (top/left/width/height/transform/transition/
+// zIndex/boxShadow) — este componente só cuida do conteúdo visual.
+function TileFrame({ titulo, contagem, onPointerDown, onPointerMove, onPointerUp, arrastando, onRemover, posStyle, children }){
   return (
-    <div draggable onDragStart={onDragStart} onDragOver={onDragOver} onDrop={onDrop}
-      className="card" style={{ borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0, ...style }}>
-      <div className="mono" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 10px 8px 16px', flexShrink:0, cursor:'grab' }}>
+    <div className="card" style={{
+      position:'absolute', top:0, left:0, right:0, borderRadius:14, overflow:'hidden',
+      display:'flex', flexDirection:'column', padding:0, cursor: arrastando ? 'grabbing' : undefined,
+      ...posStyle,
+    }}>
+      <div className="mono" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+        style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 10px 8px 16px', flexShrink:0, cursor: arrastando ? 'grabbing' : 'grab', touchAction:'none' }}>
         <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1 }}>
           {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
         </span>
-        <span title="Arraste para reordenar" style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none' }}>⠿⠿</span>
-        <button onClick={onRemover} title="Remover bloco (pode trazer de volta depois)" className="mono"
+        <span title="Arraste para reordenar" style={{ color: arrastando ? T.blue : T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none' }}>⠿⠿</span>
+        <button onClick={onRemover} onPointerDown={e => e.stopPropagation()} title="Remover bloco (pode trazer de volta depois)" className="mono"
           style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:7, width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, lineHeight:1, flexShrink:0 }}>✕</button>
       </div>
       {children}
@@ -5135,19 +5142,69 @@ function ModuloMedicoes({ obraId, obraNome }){
   });
   useEffect(() => { localStorage.setItem('mse_medicoes_tile_ordem', JSON.stringify(tileOrdem)); }, [tileOrdem]);
   useEffect(() => { localStorage.setItem('mse_medicoes_tile_ocultos', JSON.stringify(tileOcultos)); }, [tileOcultos]);
-  const dragTileRef = useRef(null);
-  const moverTilePara = (destinoId) => (e) => {
-    e.preventDefault();
-    const origemId = dragTileRef.current;
-    if (!origemId || origemId === destinoId) return;
-    setTileOrdem(ord => {
-      const sem = ord.filter(x => x !== origemId);
-      const idx = sem.indexOf(destinoId);
-      sem.splice(idx, 0, origemId);
-      return sem;
-    });
-    dragTileRef.current = null;
+
+  // Arrasto "estilo widget" (pedido explícito, 2026-08-19: "algo mais
+  // fluido, ao arrastar, como um widget") — Pointer Events + posição
+  // absoluta com `transform`/`transition`, no lugar do HTML5 DnD nativo
+  // da 1ª versão (que só trocava a ordem no solto, sem preview ao vivo).
+  // Alturas fixas por tile (`ALTURA_TILE`) tornam trivial calcular o
+  // "slot" (posição Y) de cada bloco sem medir nada em tempo real — o
+  // bloco arrastado segue o cursor sem transição (`arrasto.currentY`
+  // direto), os outros usam `transition:transform` e escorregam suave
+  // pro novo slot assim que a prévia de ordem (`arrasto.ordemPreview`)
+  // muda. Ao soltar, a prévia vira a ordem definitiva (persistida acima).
+  const ALTURA_TILE = { historico:440, previsao:300, grafico:340 };
+  const GAP_TILE = 14;
+  const tileContainerRef = useRef(null);
+  const [arrasto, setArrasto] = useState(null); // { id, pointerId, grabOffsetY, containerTop, currentY, ordemPreview }
+
+  const calcularTops = (ordem) => {
+    let acc = 0;
+    const tops = {};
+    ordem.forEach(id => { tops[id] = acc; acc += ALTURA_TILE[id] + GAP_TILE; });
+    return { tops, alturaTotal: Math.max(acc - GAP_TILE, 0) };
   };
+
+  const ordemVisivelBase = tileOrdem.filter(id => !tileOcultos.includes(id));
+  const ordemVisivelAtual = arrasto ? arrasto.ordemPreview : ordemVisivelBase;
+  const { tops: tilesTops, alturaTotal: tilesAlturaTotal } = calcularTops(ordemVisivelAtual);
+
+  const iniciarArrastoTile = (id) => (e) => {
+    if (e.button != null && e.button !== 0) return; // só botão esquerdo do mouse; toque não tem `.button`
+    e.preventDefault();
+    const containerRect = tileContainerRef.current.getBoundingClientRect();
+    const { tops } = calcularTops(ordemVisivelBase);
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setArrasto({
+      id, pointerId: e.pointerId,
+      grabOffsetY: e.clientY - containerRect.top - tops[id],
+      containerTop: containerRect.top,
+      currentY: e.clientY,
+      ordemPreview: ordemVisivelBase.slice(),
+    });
+  };
+  const moverArrastoTile = (e) => {
+    if (!arrasto || e.pointerId !== arrasto.pointerId) return;
+    const topArrastado = e.clientY - arrasto.containerTop - arrasto.grabOffsetY;
+    const centroArrastado = topArrastado + ALTURA_TILE[arrasto.id] / 2;
+    const semArrastado = ordemVisivelBase.filter(x => x !== arrasto.id);
+    let acc = 0, idxInsercao = semArrastado.length;
+    for (let i = 0; i < semArrastado.length; i++) {
+      const h = ALTURA_TILE[semArrastado[i]];
+      if (centroArrastado < acc + h / 2) { idxInsercao = i; break; }
+      acc += h + GAP_TILE;
+    }
+    const novaPreview = semArrastado.slice();
+    novaPreview.splice(idxInsercao, 0, arrasto.id);
+    setArrasto(a => a ? { ...a, currentY: e.clientY, ordemPreview: novaPreview } : a);
+  };
+  const soltarArrastoTile = (e) => {
+    if (!arrasto || e.pointerId !== arrasto.pointerId) return;
+    const ocultosNaOrdem = tileOrdem.filter(x => tileOcultos.includes(x));
+    setTileOrdem([...arrasto.ordemPreview, ...ocultosNaOrdem]);
+    setArrasto(null);
+  };
+
   const TILES_MEDICOES_META = {
     historico: { titulo: 'Histórico de Faturamentos' },
     previsao: { titulo: 'Previsão de Próximos Faturamentos' },
@@ -5331,23 +5388,38 @@ function ModuloMedicoes({ obraId, obraNome }){
       </div>
 
       {/* Blocos reordenáveis/removíveis (live tiles) — pedido explícito
-          (2026-08-19): "seria interessante que as tabelas fossem como live
-          tiles... remover, incluir, mudar a posição". Histórico, Previsão
-          e o gráfico Previsto×Medido formam o conjunto (sem KPIs, também
-          pedido explícito); ordem/visibilidade persistem no navegador (ver
-          `tileOrdem`/`tileOcultos` acima). Arraste pelo cabeçalho de
-          qualquer bloco pra reordenar; "✕" só oculta — nunca apaga. */}
-      {tileOrdem.filter(id => !tileOcultos.includes(id)).map(id => {
+          (2026-08-19): "algo mais fluido, ao arrastar, como um widget".
+          Histórico, Previsão e o gráfico Previsto×Medido formam o
+          conjunto (sem KPIs, pedido explícito); ordem/visibilidade
+          persistem no navegador (ver `tileOrdem`/`tileOcultos` acima).
+          Container com altura explícita (`tilesAlturaTotal`) porque os
+          blocos viram `position:absolute` dentro dele — ver comentário
+          detalhado no bloco de estado/handlers de arrasto acima. */}
+      <div ref={tileContainerRef} style={{ position:'relative', height:tilesAlturaTotal, flexShrink:0 }}>
+      {ordemVisivelAtual.map(id => {
         const meta = TILES_MEDICOES_META[id];
-        const dragProps = {
-          onDragStart: () => { dragTileRef.current = id; },
-          onDragOver: e => e.preventDefault(),
-          onDrop: moverTilePara(id),
+        const arrastandoEste = arrasto?.id === id;
+        const topOffset = arrastandoEste
+          ? (arrasto.currentY - arrasto.containerTop - arrasto.grabOffsetY)
+          : tilesTops[id];
+        const posStyle = {
+          transform: `translateY(${topOffset}px) scale(${arrastandoEste ? 1.015 : 1})`,
+          transition: arrastandoEste ? 'none' : 'transform 0.28s cubic-bezier(0.22,1,0.36,1), box-shadow 0.2s',
+          zIndex: arrastandoEste ? 30 : 1,
+          boxShadow: arrastandoEste ? '0 20px 44px -10px rgba(16,24,40,0.32)' : undefined,
+          height: ALTURA_TILE[id],
+        };
+        const tileProps = {
+          onPointerDown: iniciarArrastoTile(id),
+          onPointerMove: moverArrastoTile,
+          onPointerUp: soltarArrastoTile,
+          arrastando: arrastandoEste,
           onRemover: () => setTileOcultos(o => [...o, id]),
+          posStyle,
         };
 
         if (id === 'historico') return (
-          <TileFrame key={id} titulo={meta.titulo} contagem={historico.length} style={{ maxHeight:440, flexShrink:0 }} {...dragProps}>
+          <TileFrame key={id} titulo={meta.titulo} contagem={historico.length} {...tileProps}>
             <div ref={histTableWrapRef} style={{ overflow:'auto', flex:1 }}>
               {/* Layout AUTO (sem colgroup/tableLayout:fixed) — pedido
                   explícito (2026-08-19): "a de cima deveria seguir como
@@ -5405,7 +5477,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         );
 
         if (id === 'previsao') return (
-          <TileFrame key={id} titulo={meta.titulo} contagem={previsao.length} style={{ maxHeight:300, flexShrink:0 }} {...dragProps}>
+          <TileFrame key={id} titulo={meta.titulo} contagem={previsao.length} {...tileProps}>
             <div style={{ overflow:'auto', flex:1 }}>
               {/* Largura de Período/Valor Previsto (e do spacer, equivalente
                   ao BM) vem de `largurasHist` — medida ao vivo no Histórico,
@@ -5467,7 +5539,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         );
 
         if (id === 'grafico') return (
-          <TileFrame key={id} titulo={meta.titulo} style={{ height:340, flexShrink:0 }} {...dragProps}>
+          <TileFrame key={id} titulo={meta.titulo} {...tileProps}>
             <div style={{ flex:1, minHeight:0, padding:'2px 16px 16px' }}>
               <GraficoPrevistoMedido pontos={serieDuasCurvas} />
             </div>
@@ -5476,6 +5548,7 @@ function ModuloMedicoes({ obraId, obraNome }){
 
         return null;
       })}
+      </div>
 
       {tileOcultos.length > 0 && (
         <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
