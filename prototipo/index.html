@@ -5200,6 +5200,17 @@ const COLUNAS_MEDICOES = [
   { label:'Status Rec.',           campo:'status_recebimento' },
   { label:'Saldo Previsto Acum.',  campo:'saldo_previsto_acumulado',         align:'right' },
   { label:'Saldo Realizado Acum.', campo:'saldo_realizado_acumulado_medido', align:'right' },
+  // Pedido explícito (2026-08-19). ATENÇÃO ao nome: apesar de "avanço",
+  // estas 2 colunas NÃO são percentuais — guardam valor em REAIS, o
+  // acumulado do previsto e do medido. Conferido no dado (CP236/CP002/
+  // CP022): no 1º BM `avanco_realizado_acumulado` == `valor_medido` da
+  // linha, o máximo de `avanco_previsto_acumulado` == total da coluna
+  // Valor Previsto (R$ 336.302.373,48) e o de
+  // `avanco_realizado_acumulado` == total de Valor Medido
+  // (R$ 177.460.890,18); e `saldo_previsto_acumulado` = contrato menos
+  // `avanco_previsto_acumulado`. Por isso são formatadas como moeda.
+  { label:'Avanço Previsto Acum.',  campo:'avanco_previsto_acumulado',  align:'right' },
+  { label:'Avanço Realizado Acum.', campo:'avanco_realizado_acumulado', align:'right' },
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
@@ -5684,13 +5695,13 @@ function ModuloMedicoes({ obraId, obraNome }){
                   espremidas. Com 12 colunas a tabela fica larga e rola na
                   horizontal por dentro do bloco. */}
               {/* Respiro horizontal das células é 10px (e não os 14px do
-                  resto do painel) só nesta tabela: com 13 colunas de
-                  moeda/data, 14px empurrava a largura natural pra ~1950px
-                  e as últimas colunas caíam fora da tela em monitor de
-                  1920. Continua rolando na horizontal em tela estreita —
-                  é o esperado num extrato desse tamanho, e apertar mais já
-                  foi rejeitado antes ("colunas espremidas"). */}
-              <table className="tabela-medicoes" style={{ width:'100%', minWidth:1230, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+                  resto do painel) só nesta tabela, pra economizar largura.
+                  Com 15 colunas de moeda/data ela passa dos ~2100px e rola
+                  na horizontal mesmo em monitor de 1920 — inevitável nesse
+                  tamanho, e apertar mais já foi rejeitado antes ("colunas
+                  espremidas"). O bloco é redimensionável, então quem
+                  precisa ver tudo alarga o bloco ou rola. */}
+              <table className="tabela-medicoes" style={{ width:'100%', minWidth:1450, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
                 <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                   <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                     {COLUNAS_MEDICOES.map(col => {
@@ -5726,6 +5737,8 @@ function ModuloMedicoes({ obraId, obraNome }){
                       <td style={{ padding:'9px 10px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.avanco_previsto_acumulado != null ? fmtReais(r.avanco_previsto_acumulado) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.avanco_realizado_acumulado != null ? fmtReais(r.avanco_realizado_acumulado) : '—'}</td>
                     </tr>
                     );
                   })}
@@ -5760,7 +5773,11 @@ function ModuloMedicoes({ obraId, obraNome }){
                     <td style={{ borderTop:'2px solid var(--line)' }}></td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'desconto_fd') || 0)}</td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_faturado') || 0)}</td>
-                    <td colSpan={6} style={{ borderTop:'2px solid var(--line)' }}></td>
+                    {/* Datas, status e as 4 colunas de acumulado não somam:
+                        as de "Acum." já SÃO acumulado (o último valor é o
+                        total), e ainda carregam o valor pra frente em linha
+                        sem atividade — somar daria número sem sentido. */}
+                    <td colSpan={8} style={{ borderTop:'2px solid var(--line)' }}></td>
                   </tr>
                 </tfoot>
               </table>
