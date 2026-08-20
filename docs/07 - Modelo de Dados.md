@@ -310,8 +310,16 @@ obras primeiro e só depois processava tudo junto, exigindo manter as 6
 respostas inteiras na memória ao mesmo tempo antes de gravar qualquer
 coisa. Corrigido pra processar **1 obra por vez em loop** (`Split In
 Batches`) — busca, transforma e grava uma obra antes de buscar a
-próxima, liberando memória a cada volta. Ver `rmi-suprimentos.README.md`
-pra detalhe completo.
+próxima, liberando memória a cada volta.
+
+**Schema de `itens_rmi` simplificado (2026-08-20)**: a pedido explícito
+("é possível retirar esta etapa?", referindo-se à tradução campo-a-campo
+no Code node), a tabela deixou de ter uma coluna por campo da API — agora
+é só `id` (chave), `id_obra` (filtro) + `raw jsonb` (item inteiro), mesmo
+padrão de `orcamentos_complementares_obra`. Filtro por `prazo_status`/
+`desvio_saldo_orcamentario` continua possível via `raw->>campo` no
+PostgREST, com índice de expressão nos dois. Ver `rmi-suprimentos.README.md`
+pra detalhe completo e exemplos de consulta.
 
 ### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
 

@@ -41,59 +41,53 @@ o que não existia antes.
 | | `itens_mapa_compras` (`mapa_compras_api`) | `itens_rmi` (`rmi_api`) |
 |---|---|---|
 | Chave única | `id_obra+id_mapa_compras+codigo_seq` (suposição) | `id` (id próprio do item na origem) |
-| Tem prazo por item? | Não | Sim (`prazo_status`) |
-| Tem hierarquia (item pai/filho)? | Não | Sim (`nivel`, `eh_item_pai`) |
+| Tem prazo por item? | Não | Sim (`prazo_status`, dentro de `raw`) |
+| Tem hierarquia (item pai/filho)? | Não | Sim (`nivel`, `eh_item_pai`, dentro de `raw`) |
 | Melhor oferta de fornecedor? | Sim (`melhor_oferta_*`, nomes não confirmados) | Não documentado |
 | Formato do envelope confirmado? | Não (suposição) | Sim (`{page,per_page,total,data}`) |
+| Colunas individuais por campo? | Sim | **Não** — só `raw jsonb` (ver abaixo) |
 
 ## SQL da tabela (rodar no SQL Editor do Supabase)
 
+**Schema simplificado** (pedido explícito, 2026-08-20: "é possível
+retirar esta etapa?", referindo-se à tradução campo-a-campo no Code
+node) — mesmo padrão já usado em `orcamentos_complementares_obra` neste
+projeto: sem coluna por campo da API, só o essencial pro pipeline
+funcionar (`id` pro upsert, `id_obra` pro filtro por obra — todo
+`GET .../rest/v1/<tabela>?id_obra=eq.X` deste projeto depende disso) +
+o item inteiro em `raw`. Filtrar por `prazo_status`/
+`desvio_saldo_orcamentario` continua possível, só que via `raw->>campo`
+em vez de coluna própria — ver "Consumo no painel" mais abaixo.
+
+**Trade-off**: menos manutenção (campo novo/renomeado na API não exige
+migração de coluna), mas consulta por campo de dentro do `raw` é um
+pouco mais verbosa e só é rápida com os índices de expressão abaixo
+(sem eles, cada filtro por `prazo_status` varre a tabela inteira).
+
 ```sql
 create table public.itens_rmi (
-  -- Diferente das outras 2 tabelas de ingestão deste projeto, aqui o `id`
-  -- é o PRÓPRIO id do item na origem (a API devolve um `id` numérico de
-  -- verdade, coisa que nem pedidos_suprimentos nem itens_mapa_compras
-  -- tinham) -- por isso vira a PK direto, sem coluna identity separada.
-  -- Suposição a confirmar com dado real: que esse `id` é globalmente
-  -- único (entre obras/RMIs), não só dentro de 1 RMI.
+  -- `id` é o PRÓPRIO id do item na origem (a API devolve um `id`
+  -- numérico de verdade, coisa que nem pedidos_suprimentos nem
+  -- itens_mapa_compras tinham) -- por isso vira a PK direto, sem coluna
+  -- identity separada. Suposição a confirmar com dado real: que esse
+  -- `id` é globalmente único (entre obras/RMIs), não só dentro de 1 RMI.
   id bigint primary key,
-  id_rmi bigint not null,
-  nome_rmi text,
   id_obra bigint not null,
-  obra_nome text,
-  codigo_seq text,
-  nivel integer,
-  eh_item_pai boolean,
-  codigo_lam text,
-  codigo_s1 text,
-  descricao text,
-  unidade text,
-  quantidade numeric,
-  quantidade_consumida numeric,
-  data_necessidade_compra date,
-  preco_referencia_bd_s1 numeric,
-  subtotal_referencia_bd_s1 numeric,
-  custo_meta_orcamento numeric,
-  subtotal_custo_meta_orcamento numeric,
-  total_consumido numeric,
-  total_consumido_proprio numeric,
-  saldo_orcamentario numeric,
-  desvio_saldo_orcamentario text,
-  desvio_cor text,
-  prazo_status text,
-  prazo_cor text,
-  raw jsonb,
+  raw jsonb not null,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
 
 create index itens_rmi_id_obra_idx on public.itens_rmi (id_obra);
-create index itens_rmi_id_rmi_idx on public.itens_rmi (id_rmi);
-create index itens_rmi_prazo_status_idx on public.itens_rmi (prazo_status);
-create index itens_rmi_desvio_idx on public.itens_rmi (desvio_saldo_orcamentario);
+
+-- Índices de expressão pros 2 campos que a tela de "crítico" mais
+-- provavelmente vai filtrar (ver seção acima) -- sem coluna própria,
+-- mas ainda rápido de consultar.
+create index itens_rmi_prazo_status_idx on public.itens_rmi ((raw->>'prazo_status'));
+create index itens_rmi_desvio_idx on public.itens_rmi ((raw->>'desvio_saldo_orcamentario'));
 
 comment on table public.itens_rmi is
-  'Itens de RMI (Requisicao de Material e Insumo) por obra, via API do PortalMSE (rmi_api) -- fonte separada de itens_mapa_compras (mapa_compras_api), mesma tela de Suprimentos. Tem prazo_status/desvio_saldo_orcamentario prontos da origem. Chave = id (id proprio do item na origem, presumido globalmente unico -- confirmar na 1a carga real).';
+  'Itens de RMI (Requisicao de Material e Insumo) por obra, via API do PortalMSE (rmi_api) -- fonte separada de itens_mapa_compras (mapa_compras_api), mesma tela de Suprimentos. Schema enxuto de proposito (so id/id_obra + raw jsonb, sem coluna por campo -- mesmo padrao de orcamentos_complementares_obra): tudo que a API devolve fica em raw, consultado via raw->>campo. Chave = id (id proprio do item na origem, presumido globalmente unico -- confirmar na 1a carga real).';
 
 alter table public.itens_rmi enable row level security;
 
@@ -148,8 +142,9 @@ create policy "service_role tem acesso total"
      específica.
    - Conferir por obra: `select id_obra, count(*) from itens_rmi group by id_obra;`
    - Conferir a distribuição de prazo (dá pra já visualizar o que "crítico"
-     poderia significar):
-     `select prazo_status, count(*) from itens_rmi group by prazo_status;`
+     poderia significar) — agora via `raw->>'prazo_status'`, já que não
+     tem coluna própria:
+     `select raw->>'prazo_status' as prazo_status, count(*) from itens_rmi group by 1;`
 6. **Ativar** o workflow (agendado pra 08:00 — 06:00 é Orçamentos
    Complementares, 07:00 é Pedidos, 07:30 é Mapa de Compras).
 
@@ -189,23 +184,36 @@ create policy "service_role tem acesso total"
   separada) — é a 1ª das 4 fontes de ingestão deste projeto que confirma
   ter um id numérico de verdade; as outras 3 precisaram de chave
   composta "no chute" por não terem isso.
-- **Conversão numérica/booleana explícita no Code node** (`num()`/
-  `bool()`) — mesmo raciocínio defensivo do fluxo de Mapa de Compras (a
-  API irmã `pedidos_usuarios_api` já mandou número como string apesar da
-  doc dizer "número").
-- **`raw jsonb` guarda o item inteiro** — rede de segurança padrão deste
-  projeto pra campo que a doc não detalhou o suficiente. Aqui é menos
-  necessário (este guia é o mais completo dos 3), mas se o host
-  continuar com pouco recurso mesmo depois do loop por obra, **remover
-  esta coluna é a próxima economia de memória/payload mais fácil** — o
-  item bruto praticamente duplica o tamanho de cada linha, e todos os
-  campos relevantes já foram extraídos individualmente.
+- **Sem coluna por campo — só `id`/`id_obra` + `raw jsonb`** (pedido
+  explícito, 2026-08-20, ver seção "Antes de importar" acima). O Code
+  node "Montar linhas da obra" ficou bem mais curto: não tem mais
+  tradução campo-a-campo nem `num()`/`bool()` — só extrai `id`, injeta
+  `id_obra` (vindo do loop, não da API, mesmo padrão de sempre) e joga o
+  item inteiro em `raw`. A checagem de paginação (`total` vs
+  `data.length`) continua, porque não é tradução de campo, é
+  integridade dos dados. Índices de expressão (`raw->>campo`) cobrem os
+  2 campos mais prováveis de filtro; se aparecer necessidade de filtrar
+  por outro campo com frequência, criar mais um índice de expressão é
+  mais barato que voltar a ter coluna própria pra tudo.
 
 ## Consumo no painel (ainda não implementado)
 
+Sem coluna própria, o filtro/ordenação por campo da API usa a sintaxe
+`raw->>campo` do PostgREST (funciona igual a uma coluna normal nos
+operadores de filtro):
+
 ```
-GET {SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.{obraId}&select=*&order=prazo_status.asc,codigo_seq.asc
+GET {SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.{obraId}&select=id,id_obra,raw&order=raw->>prazo_status.asc
+
+# só os itens atrasados de 1 obra:
+GET {SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.{obraId}&raw->>prazo_status=eq.atrasado&select=*
 ```
+
+No front-end, o item vem inteiro dentro de `row.raw` (ex.:
+`row.raw.descricao`, `row.raw.saldo_orcamentario_formatado` — essa API
+já manda a versão formatada em R$ pronta, então nem precisa de
+`fmtReais()` pra esses campos específicos, só pros que não tem
+`_formatado`).
 
 Pra montar a régua de "crítico" combinando as 2 fontes (ver tabela
 comparativa acima), o consumo provavelmente vai precisar ler
