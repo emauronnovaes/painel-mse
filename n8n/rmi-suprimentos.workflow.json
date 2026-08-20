@@ -13,7 +13,7 @@
       "name": "Agendamento Diário",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [-900, 300]
+      "position": [-1140, 300]
     },
     {
       "parameters": {
@@ -24,7 +24,19 @@
       "name": "Lista de obras",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-660, 300]
+      "position": [-900, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "loop-obras",
+      "name": "Loop obras (1 por vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [-660, 300],
+      "notes": "Processa UMA obra por vez -- busca, transforma e grava antes de passar pra próxima. Existe especificamente pra máquina com pouco hardware: o desenho anterior (buscar as 6 obras primeiro, só depois processar tudo) exigia manter as 6 respostas inteiras na memória ao mesmo tempo antes de gravar qualquer coisa -- numa máquina com pouca RAM isso trava sem erro nenhum aparecer (2026-08-20, relatado pelo usuário: \"o n8n fica rodando e não retorna\"). Com o loop, cada obra é liberada da memória assim que grava, antes de buscar a próxima."
     },
     {
       "parameters": {
@@ -47,7 +59,7 @@
       "name": "Buscar itens de RMI por obra",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [-420, 300],
+      "position": [-420, 200],
       "credentials": {
         "httpBearerAuth": { "name": "PortalMSE - RMI (Suprimentos)" }
       }
@@ -55,13 +67,13 @@
     {
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Modo padrão \"Run Once for All Items\" (não mexer) -- fan-out de 1 item\n// de obra pra N linhas de item de RMI, mesmo padrão dos outros fluxos de\n// Suprimentos.\n//\n// Casa cada resposta HTTP com sua obra de origem por POSIÇÃO. Guard\n// explícito: se as contagens não baterem, aborta em vez de arriscar\n// juntar item com obra errada.\nconst listaObras = $('Lista de obras').all();\nconst respostas = $input.all();\nif (listaObras.length !== respostas.length) {\n  throw new Error(`Descompasso entre lista de obras (${listaObras.length}) e respostas HTTP (${respostas.length}) -- abortando pra não misturar item com obra errada.`);\n}\n\nconst num = (v) => (v === null || v === undefined || v === '') ? null : Number(v);\nconst bool = (v) => v === true || v === 'true' || v === 1;\n\nreturn respostas.map((resp, i) => {\n  const idObra = listaObras[i].json.id_obra;\n  const corpo = resp.json;\n  const itens = Array.isArray(corpo?.data) ? corpo.data : [];\n\n  // Guard de paginação -- essa API (diferente da de Mapa de Compras)\n  // CONFIRMA um campo `total` no envelope da resposta. Com `all=true` o\n  // esperado é vir tudo numa resposta só; se `total` não bater com quantos\n  // itens vieram em `data`, `all=true` não desligou a paginação como\n  // esperado e falta implementar loop de `page` pra essa obra -- melhor\n  // travar aqui do que gravar só uma fatia dos itens sem avisar.\n  if (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n    throw new Error(`Obra ${idObra}: API reportou total=${corpo.total} mas 'data' trouxe ${itens.length} itens -- all=true não trouxe tudo de uma vez, precisa de paginação manual (page=1,2,3...) pra essa obra.`);\n  }\n\n  const linhas = itens.map(it => ({\n    id: num(it.id),\n    id_rmi: num(it.id_rmi),\n    nome_rmi: it.nome_rmi || null,\n    id_obra: idObra,\n    obra_nome: it.obra || null,\n    codigo_seq: it.codigo_seq != null ? String(it.codigo_seq) : null,\n    nivel: num(it.nivel),\n    eh_item_pai: bool(it.eh_item_pai),\n    codigo_lam: it.codigo_lam || null,\n    codigo_s1: it.codigo_s1 || null,\n    descricao: it.descricao || null,\n    unidade: it.unidade || null,\n    quantidade: num(it.quantidade),\n    quantidade_consumida: num(it.quantidade_consumida),\n    data_necessidade_compra: it.data_necessidade_compra || null,\n    preco_referencia_bd_s1: num(it.preco_referencia_bd_s1),\n    subtotal_referencia_bd_s1: num(it.subtotal_referencia_bd_s1),\n    custo_meta_orcamento: num(it.custo_meta_orcamento),\n    subtotal_custo_meta_orcamento: num(it.subtotal_custo_meta_orcamento),\n    total_consumido: num(it.total_consumido),\n    total_consumido_proprio: num(it.total_consumido_proprio),\n    saldo_orcamentario: num(it.saldo_orcamentario),\n    desvio_saldo_orcamentario: it.desvio_saldo_orcamentario || null,\n    desvio_cor: it.desvio_cor || null,\n    prazo_status: it.prazo_status || null,\n    prazo_cor: it.prazo_cor || null,\n    raw: it,\n    atualizado_em: new Date().toISOString(),\n  }));\n  return { json: { id_obra: idObra, linhas } };\n});"
+        "jsCode": "// Roda 1x por obra (dentro do loop \"Loop obras\"), não mais 1x pro\n// workflow inteiro -- por isso NÃO precisa mais do guard de \"contagem de\n// obras bate com contagem de respostas\" que a versão anterior tinha: o\n// loop já garante 1 obra <-> 1 resposta por natureza, sem risco de\n// misturar item com obra errada.\n//\n// `$('Loop obras (1 por vez)').item.json` pega o item ORIGINAL desta\n// volta do loop (id_obra/nome_obra) -- o `$json` daqui já é a resposta\n// HTTP (o node de HTTP substitui o item pelo corpo da resposta).\nconst idObra = $('Loop obras (1 por vez)').item.json.id_obra;\nconst nomeObra = $('Loop obras (1 por vez)').item.json.nome_obra;\nconst corpo = $json;\nconst itens = Array.isArray(corpo?.data) ? corpo.data : [];\n\n// Guard de paginação -- essa API CONFIRMA um campo `total` no envelope da\n// resposta. Com `all=true` o esperado é vir tudo numa resposta só; se\n// `total` não bater com quantos itens vieram em `data`, `all=true` não\n// desligou a paginação como esperado e falta implementar loop de `page`\n// pra essa obra -- melhor travar aqui do que gravar só uma fatia dos\n// itens sem avisar.\nif (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n  throw new Error(`Obra ${idObra}: API reportou total=${corpo.total} mas 'data' trouxe ${itens.length} itens -- all=true não trouxe tudo de uma vez, precisa de paginação manual (page=1,2,3...) pra essa obra.`);\n}\n\nconst num = (v) => (v === null || v === undefined || v === '') ? null : Number(v);\nconst bool = (v) => v === true || v === 'true' || v === 1;\n\nconst linhas = itens.map(it => ({\n  id: num(it.id),\n  id_rmi: num(it.id_rmi),\n  nome_rmi: it.nome_rmi || null,\n  id_obra: idObra,\n  obra_nome: it.obra || null,\n  codigo_seq: it.codigo_seq != null ? String(it.codigo_seq) : null,\n  nivel: num(it.nivel),\n  eh_item_pai: bool(it.eh_item_pai),\n  codigo_lam: it.codigo_lam || null,\n  codigo_s1: it.codigo_s1 || null,\n  descricao: it.descricao || null,\n  unidade: it.unidade || null,\n  quantidade: num(it.quantidade),\n  quantidade_consumida: num(it.quantidade_consumida),\n  data_necessidade_compra: it.data_necessidade_compra || null,\n  preco_referencia_bd_s1: num(it.preco_referencia_bd_s1),\n  subtotal_referencia_bd_s1: num(it.subtotal_referencia_bd_s1),\n  custo_meta_orcamento: num(it.custo_meta_orcamento),\n  subtotal_custo_meta_orcamento: num(it.subtotal_custo_meta_orcamento),\n  total_consumido: num(it.total_consumido),\n  total_consumido_proprio: num(it.total_consumido_proprio),\n  saldo_orcamentario: num(it.saldo_orcamentario),\n  desvio_saldo_orcamentario: it.desvio_saldo_orcamentario || null,\n  desvio_cor: it.desvio_cor || null,\n  prazo_status: it.prazo_status || null,\n  prazo_cor: it.prazo_cor || null,\n  raw: it,\n  atualizado_em: new Date().toISOString(),\n}));\n\nreturn [{ json: { id_obra: idObra, nome_obra: nomeObra, linhas } }];"
       },
       "id": "code-achatar-itens",
-      "name": "Montar linhas por obra",
+      "name": "Montar linhas da obra",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [-180, 300]
+      "position": [-180, 200]
     },
     {
       "parameters": {
@@ -81,10 +93,10 @@
         "jsonBody": "={{ JSON.stringify($json.linhas) }}"
       },
       "id": "http-upsert-supabase",
-      "name": "Upsert no Supabase (lote por obra)",
+      "name": "Upsert no Supabase (1 obra)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [60, 300],
+      "position": [60, 200],
       "credentials": {
         "httpCustomAuth": { "name": "Supabase - API Portal (service_role)" }
       }
@@ -92,9 +104,16 @@
   ],
   "connections": {
     "Agendamento Diário": { "main": [[{ "node": "Lista de obras", "type": "main", "index": 0 }]] },
-    "Lista de obras": { "main": [[{ "node": "Buscar itens de RMI por obra", "type": "main", "index": 0 }]] },
-    "Buscar itens de RMI por obra": { "main": [[{ "node": "Montar linhas por obra", "type": "main", "index": 0 }]] },
-    "Montar linhas por obra": { "main": [[{ "node": "Upsert no Supabase (lote por obra)", "type": "main", "index": 0 }]] }
+    "Lista de obras": { "main": [[{ "node": "Loop obras (1 por vez)", "type": "main", "index": 0 }]] },
+    "Loop obras (1 por vez)": {
+      "main": [
+        [],
+        [{ "node": "Buscar itens de RMI por obra", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar itens de RMI por obra": { "main": [[{ "node": "Montar linhas da obra", "type": "main", "index": 0 }]] },
+    "Montar linhas da obra": { "main": [[{ "node": "Upsert no Supabase (1 obra)", "type": "main", "index": 0 }]] },
+    "Upsert no Supabase (1 obra)": { "main": [[{ "node": "Loop obras (1 por vez)", "type": "main", "index": 0 }]] }
   },
   "pinData": {},
   "settings": { "executionOrder": "v1" }

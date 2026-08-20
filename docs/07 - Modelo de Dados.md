@@ -302,6 +302,17 @@ um grão/foco diferente do mesmo processo de compra — ver tabela
 comparativa no README do `rmi-suprimentos` pra quando for desenhar a
 tela.
 
+**Ajuste no workflow (2026-08-20)**: usuário testou a API e o Supabase
+funcionando via Postman, mas o workflow do `rmi-suprimentos` ficava
+"rodando e não retornava" no n8n — suspeita de limitação de hardware na
+máquina que hospeda. Causa provável: o desenho original buscava as 6
+obras primeiro e só depois processava tudo junto, exigindo manter as 6
+respostas inteiras na memória ao mesmo tempo antes de gravar qualquer
+coisa. Corrigido pra processar **1 obra por vez em loop** (`Split In
+Batches`) — busca, transforma e grava uma obra antes de buscar a
+próxima, liberando memória a cada volta. Ver `rmi-suprimentos.README.md`
+pra detalhe completo.
+
 ### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
 
 Tabela `itens_mapa_compras` desenhada (SQL em

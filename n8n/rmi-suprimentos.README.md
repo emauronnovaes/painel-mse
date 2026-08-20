@@ -135,8 +135,14 @@ create policy "service_role tem acesso total"
    (service_role)`, já cadastrada pelos outros fluxos de ingestão deste
    projeto — não precisa recriar.
 5. **Rodar manualmente uma vez** ("Execute Workflow") antes de ativar o
-   agendamento:
-   - Se o node "Montar linhas por obra" lançar erro de "total não bate
+   agendamento. **Se a máquina que hospeda o n8n for fraca/limitada**,
+   teste antes com 1 obra só: edite temporariamente o node "Lista de
+   obras" pra `return [{ json: { id_obra: 91, nome_obra: 'Novo Nordisk - UB/SP' } }];`
+   (comente a lista de 6 e volte depois), rode, confirme que termina e
+   grava, e só então volte a lista completa. Isso isola se o processamento
+   1-a-1 já resolveu o travamento ou se ainda existe alguma obra grande
+   demais pro hardware disponível.
+   - Se o node "Montar linhas da obra" lançar erro de "total não bate
      com data.length", `all=true` não trouxe tudo de uma vez pra alguma
      obra — precisa trocar por paginação manual (`page`) nessa obra
      específica.
@@ -149,15 +155,36 @@ create policy "service_role tem acesso total"
 
 ## Decisões de desenho, pra quem for mexer depois
 
+- **Processa 1 obra por vez, em loop (`Split In Batches`), não as 6 de
+  uma vez** — diferente dos outros 3 fluxos deste projeto (que buscam
+  TODAS as obras primeiro e só depois processam tudo junto). Mudança
+  feita em 2026-08-20 porque a 1ª versão (fan-out das 6 obras) ficava
+  "rodando e não retornava" numa máquina com hardware limitado —
+  provavelmente precisava manter as 6 respostas inteiras na memória ao
+  mesmo tempo antes de gravar qualquer coisa, e isso trava sem erro
+  nenhum aparecer (sintoma clássico de estouro de memória/troca com
+  disco num host fraco, não é bug de lógica). Com o loop, cada obra é
+  buscada → transformada → gravada → só então a próxima é buscada; a
+  memória da obra anterior é liberada antes de pegar a próxima.
+  **Efeito colateral bom**: o Code node "Montar linhas da obra" ficou
+  mais simples — não precisa mais do guard de "contagem de obras bate
+  com contagem de respostas" (o loop já garante 1-pra-1 por natureza).
+  Se mesmo assim travar na 1ª obra, o problema não é volume — é a chave
+  ou a rede; ver seção de teste no Postman/PowerShell mais acima.
 - **6 obras fixas na lista** (`Lista de obras`), sem CNPEM - Auditório
   (id 103) — mesmo padrão dos outros 3 fluxos de ingestão deste projeto.
 - **`?all=true` por obra, não globalmente** — mesmo raciocínio dos outros
   fluxos. Diferente deles, aqui dá pra CONFERIR se funcionou de verdade
   (o campo `total` no envelope da resposta), então o Code node trava com
   erro explícito se `all=true` não tiver trazido tudo — ver guard no
-  código.
-- **Upsert em LOTE por obra** (1 POST com array de N itens), mesmo padrão
-  dos outros fluxos.
+  código. Se uma obra específica tiver volume grande demais e travar
+  mesmo com o processamento 1-a-1, trocar `all=true` por paginação manual
+  (`per_page=100` + loop de `page`) só nessa obra é o próximo passo — o
+  campo `total` já confirmado facilita montar esse loop depois.
+- **Upsert por obra** (1 POST com array de N itens daquela obra), mesmo
+  padrão de "lote" dos outros fluxos — a diferença é só o TIMING: agora
+  cada obra é gravada e descartada da memória antes da próxima ser
+  buscada, em vez de acumular as 6 primeiro.
 - **`id` da própria API vira a PK direto** (sem coluna identity
   separada) — é a 1ª das 4 fontes de ingestão deste projeto que confirma
   ter um id numérico de verdade; as outras 3 precisaram de chave
@@ -167,9 +194,12 @@ create policy "service_role tem acesso total"
   API irmã `pedidos_usuarios_api` já mandou número como string apesar da
   doc dizer "número").
 - **`raw jsonb` guarda o item inteiro** — rede de segurança padrão deste
-  projeto pra campo que a doc não detalhou o suficiente (aqui, menos
-  necessário que nos outros fluxos, já que este guia é o mais completo,
-  mas mantido por consistência).
+  projeto pra campo que a doc não detalhou o suficiente. Aqui é menos
+  necessário (este guia é o mais completo dos 3), mas se o host
+  continuar com pouco recurso mesmo depois do loop por obra, **remover
+  esta coluna é a próxima economia de memória/payload mais fácil** — o
+  item bruto praticamente duplica o tamanho de cada linha, e todos os
+  campos relevantes já foram extraídos individualmente.
 
 ## Consumo no painel (ainda não implementado)
 
