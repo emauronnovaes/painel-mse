@@ -147,10 +147,21 @@
   .seletor-obra-wrap { position: relative; flex-shrink: 0; }
   .chart-area { flex: 1; min-height: 0; overflow: hidden; position: relative; }
   .table-scroll-x { overflow: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
-  .tabela-medicoes tbody tr{ transition: background .12s ease; }
+  .tabela-medicoes tbody tr{ transition: background .12s ease, opacity .12s ease; }
   .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
   .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
   .tabela-medicoes td, .tabela-medicoes th{ overflow: hidden; text-overflow: ellipsis; }
+  /* Três estados de linha (pedido explícito, 2026-08-19): o último BM
+     faturado em destaque, os faturados anteriores apagados, os não
+     faturados como estão. Estas regras vêm DEPOIS das duas acima de
+     propósito: a especificidade empata com `tr:nth-child(even)` e com
+     `tr:hover`, então quem vence é a ordem no arquivo. Passar o mouse
+     numa linha apagada devolve a opacidade cheia — apagado é hierarquia
+     visual, não pra impedir a leitura. */
+  .tabela-medicoes tbody tr.linha-ultimo-faturado{ background: rgba(31,157,87,0.13); }
+  .tabela-medicoes tbody tr.linha-ultimo-faturado:hover{ background: rgba(31,157,87,0.2); }
+  .tabela-medicoes tbody tr.linha-historico{ opacity: .5; }
+  .tabela-medicoes tbody tr.linha-historico:hover{ opacity: 1; }
 
   /* Grid de widgets do setor Medições (react-grid-layout). A folha de
      estilo da lib NÃO é carregada — estas regras são a versão enxuta
@@ -5108,22 +5119,26 @@ function BadgeStatusMedicao({ texto }){
 // amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
 // Medido×Físico, em vez de inventar um número só pra cá.
 //
-// Sem previsto (nulo ou zero) não há com o que comparar: devolve o slot
-// vazio, nunca um farol chutado (ADR-005). O slot tem largura fixa e é
-// renderizado mesmo vazio pra não desalinhar a coluna de números.
-const FAROL_LARGURA = 9;
+// Sem previsto (nulo ou zero) o farol fica CINZA (pedido explícito,
+// 2026-08-19: "quando não tiver previsto, deixe em cinza") — na 1ª versão
+// era um slot invisível, e um vazio se confundia com "não carregou".
+// Cinza é estado próprio: "não há previsto pra comparar", nunca uma cor
+// de severidade chutada (ADR-005).
+const FAROL_LARGURA = 10;
 function FarolMedidoPrevisto({ previsto, medido }){
   const p = previsto != null ? Number(previsto) : null;
   const m = medido != null ? Number(medido) : null;
-  const vazio = <span style={{ display:'inline-block', width:FAROL_LARGURA, flexShrink:0 }} />;
-  if (p == null || m == null || !p) return vazio;
+  const base = { display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'help' };
+  if (p == null || m == null || !p) {
+    return <span title={p == null || !p ? 'Sem valor previsto para comparar' : 'Sem valor medido para comparar'}
+      style={{ ...base, background:'#dfe3ea', border:'1px solid #c7cdd8' }} />;
+  }
   const desvioPP = (m / p - 1) * 100;
   const tom = corDesvioTom(desvioPP);
   const sinal = desvioPP > 0 ? '+' : '';
   return (
     <span title={`Medido ${fmtReais(m)} × Previsto ${fmtReais(p)} (${sinal}${desvioPP.toFixed(1)}%)`}
-      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%',
-        background:tom.cor, border:`1px solid ${tom.borda}`, flexShrink:0, cursor:'help' }} />
+      style={{ ...base, background:tom.cor, border:`1px solid ${tom.borda}` }} />
   );
 }
 
@@ -5151,6 +5166,11 @@ const COLUNAS_MEDICOES = [
   { label:'Período',               campo:'periodo_fim' },
   { label:'Valor Previsto',        campo:'valor_previsto',                   align:'right' },
   { label:'Valor Medido',          campo:'valor_medido',                     align:'right' },
+  // Coluna própria a pedido explícito (2026-08-19) — na 1ª versão o farol
+  // ficava dentro da célula de Valor Medido. `campo:'farol'` não existe em
+  // `boletins_medicao`: é sintético, e a ordenação dele é tratada à parte
+  // (ordena pelo desvio medido×previsto, ver `boletinsOrdenados`).
+  { label:'Farol',                 campo:'farol',                            align:'center' },
   { label:'Desconto FD',           campo:'desconto_fd',                      align:'right' },
   { label:'Valor Faturado',        campo:'valor_faturado',                   align:'right' },
   { label:'Data de Faturamento',   campo:'data_faturamento' },
@@ -5244,6 +5264,25 @@ function ModuloMedicoes({ obraId, obraNome }){
       else prev.push(b);
     });
     return { historico: hist, previsao: prev };
+  }, [boletinsRaw]);
+
+  // Qual boletim é o "último BM faturado" — ele ganha destaque na tabela
+  // e os faturados anteriores ficam apagados (pedido explícito,
+  // 2026-08-19). Chave cronológica é `periodo_fim`: sempre presente nas
+  // linhas faturadas e ordenável como texto (ISO). Empate cai no número
+  // do BM. Não uso `data_faturamento` porque ela falta em parte das
+  // linhas, e não uso só o número do BM porque há rótulo sem número
+  // ("BM 01 - Limpeza", "MSE x ROCKTEC").
+  const idUltimoFaturado = useMemo(() => {
+    if (!boletinsRaw) return null;
+    const faturados = boletinsRaw.filter(b => (b.status_faturamento || '').trim().toLowerCase() === 'faturado');
+    if (!faturados.length) return null;
+    const numBm = (b) => { const n = Number(bmCurto(b.bm_label)); return isNaN(n) ? -Infinity : n; };
+    return faturados.reduce((a, b) => {
+      const pa = a.periodo_fim || '', pb = b.periodo_fim || '';
+      if (pb !== pa) return pb > pa ? b : a;
+      return numBm(b) > numBm(a) ? b : a;
+    }).id;
   }, [boletinsRaw]);
 
   // (Aqui existia um ResizeObserver que media as colunas do Histórico pra
@@ -5425,6 +5464,15 @@ function ModuloMedicoes({ obraId, obraNome }){
     const dir = ordenarDirTabela === 'asc' ? 1 : -1;
     const valorDe = (r) => {
       if (ordenarPorTabela === 'bm_label') { const n = Number(bmCurto(r.bm_label)); return isNaN(n) ? -Infinity : n; }
+      // "Farol" não é campo do banco: ordena pelo desvio que ele
+      // representa, então clicar na coluna traz o pior (ou o melhor)
+      // desempenho primeiro. Linha sem previsto (farol cinza) não tem
+      // desvio e vai pro fim.
+      if (ordenarPorTabela === 'farol') {
+        const p = r.valor_previsto != null ? Number(r.valor_previsto) : null;
+        const m = r.valor_medido != null ? Number(r.valor_medido) : null;
+        return (p && m != null) ? (m / p - 1) * 100 : -Infinity;
+      }
       const v = r[ordenarPorTabela];
       if (v == null) return -Infinity;
       return v;
@@ -5615,13 +5663,13 @@ function ModuloMedicoes({ obraId, obraNome }){
                   espremidas. Com 12 colunas a tabela fica larga e rola na
                   horizontal por dentro do bloco. */}
               {/* Respiro horizontal das células é 10px (e não os 14px do
-                  resto do painel) só nesta tabela: com 12 colunas de
-                  moeda/data, 14px empurrava a largura natural pra ~1900px
-                  e as 2 últimas colunas caíam fora da tela em monitor de
+                  resto do painel) só nesta tabela: com 13 colunas de
+                  moeda/data, 14px empurrava a largura natural pra ~1950px
+                  e as últimas colunas caíam fora da tela em monitor de
                   1920. Continua rolando na horizontal em tela estreita —
-                  é o esperado num extrato de 12 colunas, e apertar mais já
+                  é o esperado num extrato desse tamanho, e apertar mais já
                   foi rejeitado antes ("colunas espremidas"). */}
-              <table className="tabela-medicoes" style={{ width:'100%', minWidth:1180, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+              <table className="tabela-medicoes" style={{ width:'100%', minWidth:1230, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
                 <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                   <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                     {COLUNAS_MEDICOES.map(col => {
@@ -5636,20 +5684,19 @@ function ModuloMedicoes({ obraId, obraNome }){
                   </tr>
                 </thead>
                 <tbody>
-                  {boletinsOrdenados.map((r) => (
-                    <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                  {boletinsOrdenados.map((r) => {
+                    // 3 estados de linha (pedido explícito, 2026-08-19):
+                    // último BM faturado em destaque verde, faturados
+                    // anteriores apagados, não faturados como estão.
+                    const ehFaturado = (r.status_faturamento || '').trim().toLowerCase() === 'faturado';
+                    const classeLinha = r.id === idUltimoFaturado ? 'linha-ultimo-faturado' : (ehFaturado ? 'linha-historico' : '');
+                    return (
+                    <tr key={r.id} className={classeLinha} style={{ borderBottom:'1px solid var(--line)' }}>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
-                      {/* Farol Medido × Previsto do próprio boletim, à
-                          direita do número. O slot é sempre renderizado
-                          (mesmo sem farol) pra não desalinhar a coluna. */}
-                      <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>
-                        <span style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:7 }}>
-                          <span style={{ fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</span>
-                          <FarolMedidoPrevisto previsto={r.valor_previsto} medido={r.valor_medido} />
-                        </span>
-                      </td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
+                      <td style={{ padding:'9px 10px', textAlign:'center' }}><FarolMedidoPrevisto previsto={r.valor_previsto} medido={r.valor_medido} /></td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
@@ -5659,7 +5706,8 @@ function ModuloMedicoes({ obraId, obraNome }){
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                   {boletinsOrdenados.length === 0 && (
                     <tr><td colSpan={COLUNAS_MEDICOES.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim lançado</td></tr>
                   )}
@@ -5675,28 +5723,20 @@ function ModuloMedicoes({ obraId, obraNome }){
                   <tr>
                     <td colSpan={2} className="mono" style={{ padding:'10px 10px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_previsto') || 0)}</td>
-                    {/* SEM farol no total, de propósito. Previsto e Medido
-                        estão preenchidos em conjuntos DIFERENTES de
-                        boletins na planilha (previsto só nos BMs antigos,
-                        medido em quase todos), então qualquer agregado
-                        compara laranja com maçã: pelo total cheio dava
-                        -47%, restringindo aos que têm os 2 valores dava
-                        -67% — os dois números dizem mais sobre o
+                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_medido') || 0)}</td>
+                    {/* Coluna Farol vazia no total, de propósito. Previsto
+                        e Medido estão preenchidos em conjuntos DIFERENTES
+                        de boletins na planilha (previsto só nos BMs
+                        antigos, medido em quase todos), então qualquer
+                        agregado compara laranja com maçã: pelo total cheio
+                        dava -47%, restringindo aos que têm os 2 valores
+                        dava -67% — os dois números dizem mais sobre o
                         preenchimento da planilha que sobre a obra. O farol
                         por linha, esse sim, compara o previsto e o medido
                         do MESMO boletim. Revisar quando o previsto estiver
                         completo (o usuário avisou em 2026-08-19 que a
                         planilha ainda está sendo preenchida). */}
-                    {/* Mesmo flex + slot vazio das linhas do corpo: sem
-                        isso o total encostava 16px mais à direita (a
-                        largura do farol + o gap) e caía embaixo dos pontos
-                        em vez de embaixo dos números. */}
-                    <td className="mono" style={{ padding:'10px 10px', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)' }}>
-                      <span style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:7 }}>
-                        <span style={{ fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_medido') || 0)}</span>
-                        <span style={{ display:'inline-block', width:FAROL_LARGURA, flexShrink:0 }} />
-                      </span>
-                    </td>
+                    <td style={{ borderTop:'2px solid var(--line)' }}></td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'desconto_fd') || 0)}</td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_faturado') || 0)}</td>
                     <td colSpan={6} style={{ borderTop:'2px solid var(--line)' }}></td>
