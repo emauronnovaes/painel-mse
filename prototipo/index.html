@@ -4800,6 +4800,19 @@ function GraficoPrevistoMedido({ pontos }){
   }, []).join(' ');
   const linhaPrevisto = linhaDe('previstoAcum');
   const linhaMedido = linhaDe('medidoAcum');
+  // Cores seguem a MESMA referência da Curva S (pedido explícito,
+  // 2026-08-19) — antes o previsto era âmbar e o medido azul fixo, ou
+  // seja, azul queria dizer coisas diferentes nas 2 telas. Na Curva S:
+  // Previsto é azul tracejado, e o Realizado tem cor DINÂMICA pelo desvio
+  // no corte (verde >= 0, âmbar até -5 p.p., vermelho abaixo, cinza sem
+  // dado — ver `desvioColor` em ModuloCurvaS). Aqui o medido é o
+  // equivalente do realizado, então ganha a mesma regra, calculada no
+  // corte com o mesmo limiar do farol da tabela (`corDesvio`).
+  const pontoCorte = pontos.find(pt => pt.ehCorte) || null;
+  const desvioNoCortePP = (pontoCorte && pontoCorte.previstoAcum && pontoCorte.medidoAcum != null)
+    ? (pontoCorte.medidoAcum / pontoCorte.previstoAcum - 1) * 100
+    : null;
+  const corMedido = desvioNoCortePP == null ? T.mut : corDesvio(desvioNoCortePP);
   // Colunas do período: 2 por ponto (previsto e medido), lado a lado e
   // centradas no ponto do eixo X. Largura acompanha o espaço disponível
   // por período — com o gráfico estreito e muitos períodos elas viram
@@ -4841,17 +4854,19 @@ function GraficoPrevistoMedido({ pontos }){
       {/* Legenda com as 2 séries; o par linha+coluna de cada cor aparece
           junto no marcador, e a nota explica quem é quem sem precisar de
           4 entradas. */}
+      {/* Legenda espelha a da Curva S: previsto azul tracejado, medido na
+          cor do desvio. O texto do "Medido" também vai colorido, igual lá. */}
       <div style={{ position:'absolute', top:2, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1, flexWrap:'wrap', justifyContent:'flex-end' }}>
         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
           <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
-            <span style={{ width:12, height:0, borderTop:`2px dashed ${T.amber}`, display:'inline-block' }} />
-            <span style={{ width:5, height:9, background:T.amber, opacity:0.35, display:'inline-block', borderRadius:1 }} />
+            <span style={{ width:12, height:0, borderTop:`2px dashed ${T.blue}`, opacity:0.7, display:'inline-block' }} />
+            <span style={{ width:5, height:9, background:T.blue, opacity:0.35, display:'inline-block', borderRadius:1 }} />
           </span>Previsto
         </span>
-        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:corMedido, fontWeight:600 }}>
           <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
-            <span style={{ width:12, height:2, background:T.blue, display:'inline-block', borderRadius:1 }} />
-            <span style={{ width:5, height:9, background:T.blue, opacity:0.35, display:'inline-block', borderRadius:1 }} />
+            <span style={{ width:12, height:3, background:corMedido, display:'inline-block', borderRadius:1 }} />
+            <span style={{ width:5, height:9, background:corMedido, opacity:0.6, display:'inline-block', borderRadius:1 }} />
           </span>Medido
         </span>
         <span style={{ fontSize:10, color:T.mut2 }}>linha = acumulado · coluna = do período</span>
@@ -4867,35 +4882,41 @@ function GraficoPrevistoMedido({ pontos }){
           ))}
           {/* Colunas antes das linhas: as linhas ficam por cima. Medido só
               existe até o corte, então a coluna dele também para lá. */}
+          {/* Opacidade das colunas também vem da Curva S: previsto 0.35,
+              realizado/medido 0.6. */}
           {pontos.map((pt, i) => (
             <g key={`col${i}`}>
               {pt.previstoDia > 0 && (
                 <rect x={xScale(i) - barW - 1} y={yScale(pt.previstoDia)} width={barW} height={Math.max(H - yScale(pt.previstoDia), 0)}
-                  fill={T.amber} opacity={hover === i ? 0.6 : 0.3} rx={1.5} />
+                  fill={T.blue} opacity={hover === i ? 0.55 : 0.35} rx={1.5} />
               )}
               {pt.medidoDia != null && pt.medidoDia > 0 && (
                 <rect x={xScale(i) + 1} y={yScale(pt.medidoDia)} width={barW} height={Math.max(H - yScale(pt.medidoDia), 0)}
-                  fill={T.blue} opacity={hover === i ? 0.6 : 0.3} rx={1.5} />
+                  fill={corMedido} opacity={hover === i ? 0.8 : 0.6} rx={1.5} />
               )}
             </g>
           ))}
-          <path d={linhaPrevisto} fill="none" stroke={T.amber} strokeWidth={2} strokeDasharray="5,4" />
-          <path d={linhaMedido} fill="none" stroke={T.blue} strokeWidth={2.5} />
+          {/* Traço copiado do GRÁFICO da Curva S (`LineSVG`): previsto
+              `8 4` em 2px/0.7, realizado cheio em 3px. A legenda da
+              Curva S usa `6 3`/2.5 — ela já divergia do próprio gráfico
+              lá, e o que vale como referência visual é a curva desenhada. */}
+          <path d={linhaPrevisto} fill="none" stroke={T.blue} strokeWidth={2} strokeDasharray="8 4" opacity={0.7} />
+          <path d={linhaMedido} fill="none" stroke={corMedido} strokeWidth={3} />
           {hover != null && (
             <line x1={xScale(hover)} x2={xScale(hover)} y1={0} y2={H} stroke={T.mut2} strokeWidth={1} strokeDasharray="3,3" opacity={0.6} />
           )}
           {pontos.map((pt, i) => (
             <g key={i}>
               {pt.previstoAcum != null && (
-                <circle cx={xScale(i)} cy={yScale(pt.previstoAcum)} r={hover === i ? 5 : 3} fill={T.amber} stroke="#fff" strokeWidth={1.5} />
+                <circle cx={xScale(i)} cy={yScale(pt.previstoAcum)} r={hover === i ? 5 : 3} fill={T.blue} stroke="#fff" strokeWidth={1.5} opacity={0.7} />
               )}
               {/* Ponto do medido só até o corte; o último ganha anel pra
                   deixar claro que a série acaba ali, não que sumiu. */}
               {pt.medidoAcum != null && (
-                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={hover === i ? 5 : (pt.ehCorte ? 4.5 : 3)} fill={T.blue} stroke="#fff" strokeWidth={1.5} />
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={hover === i ? 5 : (pt.ehCorte ? 4.5 : 3)} fill={corMedido} stroke="#fff" strokeWidth={1.5} />
               )}
               {pt.ehCorte && pt.medidoAcum != null && (
-                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={7.5} fill="none" stroke={T.blue} strokeWidth={1} opacity={0.45} />
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={7.5} fill="none" stroke={corMedido} strokeWidth={1} opacity={0.45} />
               )}
               {mostrarLabel(i) && (
                 <text x={xScale(i)} y={H + 20} textAnchor={i === pontos.length - 1 ? 'end' : 'middle'} fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}>{pt.label}</text>
