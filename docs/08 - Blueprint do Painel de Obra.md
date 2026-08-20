@@ -2893,6 +2893,573 @@ fazia sentido pra um extrato (mais recente primeiro). Trocado pra
 mesmo critério das colunas de valor). Testado: carga inicial mostra BM
 33→1, header com ▼ ativo, 0 erros de console.
 
+### Medições — Previsão ganha Período e Valor Previsto de volta (2026-08-19)
+
+Pedido explícito, "por hora" (sinaliza que pode mudar de novo): a
+tabela de Previsão volta a mostrar **Período** e **Valor Previsto**,
+direto de `boletins_medicao` (mesma leitura do Histórico —
+`fmtPeriodo`/`valor_previsto`). BM continua fora. Ordem final das 8
+colunas: Período | Valor Previsto | Data de Faturamento | Status Fat. |
+Data do Recebimento | Status Rec. | Saldo Previsto Acum. | Saldo
+Realizado Acum.
+
+Testado com Playwright (obra 91/CP236): 8 colunas na ordem certa,
+Período/Valor Previsto com valores sensatos, Histórico inalterado, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Período/Valor Previsto alinhados entre as 2 tabelas (2026-08-19)
+
+Pedido explícito: "faça com que as colunas iguais fiquem alinhadas
+entre as duas tables". Período e Valor Previsto aparecem nas duas
+tabelas (Histórico e Previsão) — passaram a usar a MESMA largura fixa
+em px (`<colgroup>` + `tableLayout:'fixed'`), então caem exatamente na
+mesma posição horizontal quando as tabelas ficam empilhadas. Previsão
+ganhou uma coluna fantasma sem rótulo no lugar do BM (que só existe no
+Histórico), só pra reservar o mesmo espaço.
+
+**Bug pego no meio do caminho**: com `table-layout:fixed`, se a soma
+das larguras das colunas for menor que a largura real do container
+(`width:100%`), o navegador estica TODAS as colunas proporcionalmente
+pra preencher — isso quebrava o alinhamento porque o Histórico (menos
+colunas, soma menor) esticava e a Previsão (mais colunas, soma maior,
+já forçava scroll horizontal) não. Corrigido com uma coluna-filler sem
+`width` no fim do Histórico — absorve a sobra, as colunas com largura
+fixa não são mais esticadas. De quebra, "Data de Faturamento"/"Data do
+Recebimento" estavam sendo cortadas (130px insuficiente pro rótulo) —
+subiu pra 160px.
+
+Testado com Playwright (obra 91/CP236, viewport 1440×900): Período e
+Valor Previsto com `left`/`width` idênticos entre as 2 tabelas
+(`getBoundingClientRect`), sem clipping nos cabeçalhos de data, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Histórico volta a ser auto, Previsão acompanha (2026-08-19)
+
+Correção do passo acima: forçar largura fixa em px deixou o Histórico
+espremido (valores grandes de moeda ficavam apertados). Pedido
+explícito: "a de cima deveria seguir como estava, a de baixo deveria,
+em caso de similaridade, acompanhar a de cima".
+
+- **Histórico** volta ao layout automático — sem `colgroup`/
+  `tableLayout:fixed`, largura por conteúdo, como era antes de toda
+  essa história de alinhamento.
+- **Previsão** mede ao vivo as colunas BM/Período/Valor Previsto já
+  renderizadas no Histórico (`refLarguraHist` + `ResizeObserver` no
+  wrapper do Histórico) e replica esses px nas suas próprias colunas
+  Período/Valor Previsto/spacer via `largurasHist` (estado). Reage a
+  resize de janela e a qualquer mudança de layout do Histórico — é
+  sempre a tabela de baixo que segue a de cima, nunca o contrário.
+
+Testado com Playwright (obra 91/CP236): "R$ 17.535.256,45" (Valor
+Faturado) sem quebra/corte, Período e Valor Previsto com `left`/`width`
+batendo a <1px entre as 2 tabelas, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — live tiles, resumo na Previsão, gráfico Previsto × Medido (2026-08-19)
+
+Pedido explícito, em 3 partes: "o previsto pode ter resumos também";
+"seria interessante que as tabelas fossem como live tiles... remover,
+incluir, mudar a posição"; "teremos um gráfico que plotará as duas
+curvas, do previsto e do medido". Escopo confirmado com o usuário:
+tabelas + gráfico entram no sistema de tiles, **sem KPIs** (o bloco de
+KPIs/pizza/gráfico antigo, `MOSTRAR_TOPO_MEDICOES`/
+`MOSTRAR_PIZZA_MEDICOES`, continua fora, intocado).
+
+- **`TileFrame`** (novo componente): bloco com cabeçalho (título +
+  contagem), arrastável via **HTML5 drag-and-drop nativo** (sem lib
+  externa — mesmo padrão "tudo à mão" do resto do arquivo) e um "✕" que
+  só OCULTA (nunca apaga) — reaparece por um botão "+ Nome do bloco"
+  que surge abaixo quando há algo oculto.
+- **3 tiles**: Histórico de Faturamentos, Previsão de Próximos
+  Faturamentos, e o novo **Previsto × Medido — Acumulado**. Ordem e
+  visibilidade persistem em `localStorage`
+  (`mse_medicoes_tile_ordem`/`mse_medicoes_tile_ocultos`) — chave
+  GLOBAL (preferência de interface, não dado por obra).
+- **Resumo na Previsão**: `<tfoot>` somando só Valor Previsto. As 2
+  colunas "Acum." (Saldo Previsto/Realizado) ficam de fora da soma de
+  propósito — são snapshot carregado da planilha (arrastam o último
+  valor real pra frente, ver [[modelo-dados-supabase]]), somar geraria
+  número sem sentido.
+- **`GraficoPrevistoMedido`** (novo): 2 curvas acumuladas por período —
+  **Previsto** (tracejado âmbar, soma `valor_previsto` de
+  histórico+previsão — a trajetória contratual completa, passado e
+  futuro já lançado) × **Medido** (linha cheia azul, só `valor_medido`
+  do histórico — o progresso real até agora, nunca ultrapassa o
+  presente). Mesmo padrão hand-rolled em SVG do `GraficoMedicoes`
+  existente (ResizeObserver, hover com tooltip mostrando os 2 valores).
+
+Testado com Playwright (obra 91/CP236): 0 erros de console; 3 tiles
+corretos (Histórico 35 linhas, Previsão com "Total", gráfico com
+legenda e tooltip Previsto/Medido); remover/restaurar bloco funciona;
+drag-reorder troca a ordem visual (testado arrastando Previsão sobre
+Histórico); reload da página preserva ordem/ocultos via `localStorage`.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — arrasto de tiles mais fluido, estilo widget (2026-08-19)
+
+Pedido explícito: "quero algo mais fluido, ao arrastar, como um
+widget". A 1ª versão dos live tiles usava HTML5 drag-and-drop nativo —
+só trocava a ordem no solto (`drop`), sem nenhum retorno visual durante
+o arrasto ("seco" demais pro efeito pedido).
+
+Reescrito com **Pointer Events + posicionamento absoluto**:
+- Container `position:relative` com altura explícita (soma das alturas
+  fixas por tipo de tile — `ALTURA_TILE = {historico:440, previsao:300,
+  grafico:340}` — mais `GAP_TILE=14` — dá pra calcular o "slot" de cada
+  bloco sem medir nada em tempo real).
+- Bloco arrastado: `transform:translateY` segue o cursor 1:1, **sem**
+  `transition` (senão fica com lag perceptível), ganha leve scale-up
+  (1.015) e sombra elevada — efeito de "peça levantada".
+- Outros blocos: `transition:transform 0.28s`, deslizam suavemente pro
+  novo slot assim que a prévia de ordem (`arrasto.ordemPreview`) muda —
+  recalculada a cada `pointermove` comparando o centro do bloco
+  arrastado com o meio de cada slot vizinho, ainda com o botão
+  pressionado (preview ao vivo, não só no soltar).
+- `setPointerCapture` no cabeçalho de cada tile garante que
+  `pointermove`/`pointerup` continuam chegando nele mesmo se o cursor
+  sair da área durante o arrasto.
+- Ordem definitiva (persistida em `localStorage`) só é gravada no
+  `pointerup`.
+
+Testado com Playwright (obra 91/CP236, arrasto contínuo via
+`mouse.move` interpolado): confirmado que o tile "Previsão" já sobe
+~454px **durante** o arrasto (antes do soltar) — reordenação ao vivo
+funcionando de fato, não só no drop. Ordem final persiste
+corretamente, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — grid de widgets de verdade: mover, redimensionar, lado a lado (2026-08-19)
+
+Pedido explícito: "preciso de algo realmente interativo, que seja capaz
+de re-dimensionar, colocar lado a lado... apesar da animação ter ficado
+mais interessante, ainda parece engessado". As duas versões anteriores
+(HTML5 drag-and-drop, depois Pointer Events com `translateY`) eram
+feitas à mão e **só reordenavam numa coluna** — nenhuma quantidade de
+polimento na animação resolve isso, porque o que faltava era o modelo
+de layout, não o efeito.
+
+**Entrou `react-grid-layout` via CDN UMD** (86KB, só React/ReactDOM
+externos; `react-draggable`/`react-resizable` vêm embutidos). Decisão
+consciente de trazer dependência externa num arquivo que é todo "à
+mão": reescrever colisão, compactação e resize em 2 eixos não se paga,
+e o projeto já carrega React/Babel de CDN.
+
+- 12 colunas × linhas de 40px, gap 14. Arrasta pelo cabeçalho
+  (`draggableHandle=".tile-handle"` — assim a tabela continua rolando e
+  ordenando por dentro do bloco), redimensiona pelo canto e pelas
+  bordas direita/inferior (`resizeHandles={['se','e','s']}`, alças
+  aparecem no hover). Sombra do slot de destino durante o arrasto.
+- O "✕" leva `tile-nao-arrasta` (é o `draggableCancel`) — sem isso,
+  clicar nele começaria um arrasto.
+- Posição (X **e** Y), tamanho e visibilidade persistem em
+  `localStorage` na chave **nova** `mse_medicoes_grid` (formato
+  `{i,x,y,w,h}`; a chave antiga guardava só a ordem, reaproveitar
+  carregaria lixo incompatível). A entrada de um bloco oculto continua
+  guardada, então ele volta na mesma posição/tamanho. Botão
+  **"Restaurar layout"** novo.
+- **A folha de estilo da lib NÃO é carregada** — o arquivo tem só as
+  regras equivalentes, no visual do painel (alças desenhadas com
+  `border`, placeholder azul translúcido). As essenciais são
+  `position:relative` no container e dar tamanho às alças (sem isso não
+  há o que agarrar).
+- **Layout padrão já vem lado a lado**: Histórico (w7) + gráfico (w5) na
+  primeira fileira, Previsão (w12) embaixo. Motivo: num grid onde tudo
+  nasce com w=12, "pôr lado a lado" exige primeiro encolher um bloco, e
+  quem abre a tela não descobre isso sozinho (o teste com Playwright
+  bateu exatamente nisso). Histórico em w7 (~890px) sobra pras suas 6
+  colunas; o gráfico é responsivo e cabe bem em w5; a Previsão, tabela
+  mais larga (~1450px), fica em w12 pra não virar tira que só rola.
+- **Fallback**: se o CDN falhar, `GridLayoutMedicoes` fica `null` e a
+  tela cai num empilhamento simples com as alturas antigas — nunca fica
+  em branco por causa disso.
+
+**Dois bugs pegos no teste:**
+1. O grid é filho de um flex column e a altura inline calculada pela lib
+   era **esmagada pelo `flex-shrink` padrão**; como os blocos são
+   `position:absolute`, eles mantinham o offset real e vazavam pra fora
+   do container, cobrindo a barra de apoio — o botão "Restaurar layout"
+   ficava inclicável sempre que o grid passava da altura da tela.
+   Corrigido com `style={{flexShrink:0}}` no grid.
+2. `.medicoes-row` (a fileira da pizza + gráfico antigo, ambos
+   desligados por flag) ficava **vazia com `flex:1`**, roubando altura.
+   Agora só renderiza quando `MOSTRAR_PIZZA_MEDICOES` ou
+   `MOSTRAR_TOPO_MEDICOES` está ligado.
+
+De quebra: a decimação dos rótulos do eixo X do gráfico Previsto×Medido
+passou a derivar o espaçamento mínimo da **largura estimada do rótulo**
+(`LARGURA_ROTULO_X`), em vez de um `70` mágico — com o gráfico estreito
+(w5) as datas colidiam. O último rótulo é ancorado à direita, então
+ocupa espaço à esquerda do ponto final: daí a folga de 1.5× o rótulo.
+
+Testado com Playwright (obra 91/CP236, 1600×1000): 0 erros de console;
+grid real (não o fallback); padrão lado a lado confirmado por
+`getBoundingClientRect` (sobrepõe na vertical, não na horizontal);
+resize pela alça SE grava `w` menor no `localStorage`; arrasto mostra
+`.react-grid-placeholder` ao vivo antes de soltar; layout persiste no
+reload; tabela continua rolando e ordenando por coluna dentro do bloco;
+"Restaurar layout" e "+ Nome" clicáveis sem `force`; rótulos do eixo X
+sem sobreposição na largura padrão e também 250px mais estreito. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — redimensionar por qualquer lado + botão "Organizar" (2026-08-19)
+
+Pedido explícito: "só consigo ajustar o tamanho para baixo ou para o
+lado direito". A entrada do grid tinha ficado com só 3 alças
+(`['se','e','s']`), o padrão da lib.
+
+- **8 alças** agora: `['nw','n','ne','w','e','sw','s','se']`. CSS
+  próprio pras novas (a folha da lib continua não sendo carregada):
+  cantos são um "L" de 2 bordas apontando pra fora, laterais são uma
+  barrinha no meio do lado, cada uma com o cursor diagonal certo.
+  Confirmado no bundle 1.5.0 que a lib tem a lógica de pivô que ajusta
+  `x`/`y` quando a alça é do lado norte/oeste — sem isso, redimensionar
+  por cima só cresceria pra baixo.
+- **`compactType` foi de `"vertical"` pra `null`, e isso não é
+  opcional**: redimensionar pelo topo/esquerda mexe no `x`/`y` do bloco,
+  não só no `w`/`h`; com compactação vertical ligada a lib puxava o
+  bloco de volta pra cima logo depois e o gesto não surtia efeito
+  nenhum. Sem compactação, cada bloco fica exatamente onde foi posto.
+- **`padding-right` do cabeçalho de 10 → 18px**: a alça do canto
+  nordeste (12px + 3px de recuo) ficava por cima do "✕" e roubava o
+  clique de ocultar. Verificado com `elementFromPoint`.
+- **Botão "Organizar" novo** — é o preço de ter tirado a compactação
+  automática: empurrar um vizinho pra baixo deixava faixa vazia que não
+  fechava mais sozinha. Ele sobe cada bloco até encostar, **sem mudar
+  largura, altura nem coluna** (só o `y`). Diferente de "Restaurar
+  layout": organiza sem desfazer o arranjo escolhido. Implementado à mão
+  (uma dúzia de linhas, 3 blocos) em vez de chamar
+  `ReactGridLayout.utils.compact` — não amarra em export interno da lib.
+
+**Decisão de projeto registrada:** ficou `preventCollision={false}`
+(padrão) de propósito. Com `true`, o resize pararia de empurrar vizinho
+(fecharia a faixa vazia na origem), mas o arrasto passaria a só aceitar
+espaço livre — não daria pra trocar dois blocos de lugar. Preferi manter
+o arrasto permissivo e resolver a faixa vazia com o "Organizar", pra não
+tirar liberdade de novo (é exatamente o erro dos passos 89-90).
+
+Testado com Playwright (obra 91/CP236, 1600×1000): as 4 direções novas
+funcionam de fato — topo (`n`) sobe a borda superior e aumenta a altura;
+esquerda (`w`) move a borda esquerda e aumenta a largura; cantos `nw` e
+`sw` idem nos 2 eixos, todas gravando no `localStorage`. 8 alças nos 3
+blocos (24 no total). "✕" clicável normalmente. "Organizar" fechou uma
+faixa de 716px mexendo só no `y`, é idempotente, persiste no reload e
+respeita coluna (blocos em colunas diferentes sobem os dois, sem
+empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
+depois da sequência toda. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — as 2 tabelas viram 1 só, consolidada (2026-08-19)
+
+Pedido explícito: "ajuste tudo em uma única tabela, compile todas as
+informações de uma só vez". Fecha o ciclo que começou com a reescrita da
+tela: Histórico (boletim faturado) e Previsão (boletim pendente) eram
+duas tabelas com filtro de linha oposto e recortes de coluna diferentes.
+
+- **`COLUNAS_MEDICOES`** substitui `COLUNAS_HISTORICO` +
+  `COLUNAS_PREVISAO`: 12 colunas, união das duas, na ordem do ciclo de
+  vida do boletim (identificação → medição → faturamento →
+  recebimento → saldo acumulado): BM | Período | Valor Previsto | Valor
+  Medido | Desconto FD | Valor Faturado | Data de Faturamento | Status
+  Fat. | Data do Recebimento | Status Rec. | Saldo Previsto Acum. |
+  Saldo Realizado Acum.
+- **Uma linha por boletim, faturado OU pendente.** Quem separa os dois
+  casos agora é o badge da coluna "Status Fat.", não a tabela.
+- Rodapé "Total" soma sobre TODOS os boletins, nas 4 colunas de valor
+  por boletim. As 2 "Acum." continuam fora da soma (snapshot carregado
+  da planilha, ver [[modelo-dados-supabase]] — somar daria número sem
+  sentido).
+- Ordenação em qualquer das 12 colunas, padrão BM decrescente. Como a
+  direção inicial de toda coluna é decrescente, o mapa
+  `DIRECAO_INICIAL_HIST` escrito à mão saiu: coluna nova já nasce com o
+  comportamento certo, sem precisar cadastrar.
+- **Grid: 3 blocos viraram 2** (`tabela` + `grafico`), ambos `w12`
+  empilhados. Lado a lado continua possível, mas não como padrão — com
+  12 colunas a tabela viraria uma tira que só rola.
+- **Migração automática de layout**: os ids mudaram
+  (`historico`/`previsao` → `tabela`), então um layout salvo da versão
+  anterior não passa na validação de `layoutTiles` e cai no padrão novo
+  sozinho. Não precisou de chave nova no `localStorage` — e a lista de
+  ocultos também filtra id desconhecido, então um `["previsao"]` velho
+  não esconde nada.
+- **Saiu** a maquinaria que espelhava as larguras de BM/Período/Valor
+  Previsto entre as duas tabelas (`ResizeObserver` + refs + estado
+  `largurasHist`): não há mais duas tabelas pra alinhar.
+- Respiro horizontal das células é **10px** só nesta tabela (o resto do
+  painel usa 14): com 14 a largura natural ia a ~1900px e as 2 últimas
+  colunas caíam fora da tela num monitor de 1920. Com 10, cabe inteira
+  em 1920 sem rolagem; abaixo disso rola na horizontal, que é o
+  esperado num extrato de 12 colunas (apertar mais já foi rejeitado —
+  "colunas espremidas").
+
+Testado com Playwright (obra 91/CP236): 36 linhas = o total (antes 35 +
+1 em tabelas separadas), com o boletim pendente (BM 34, "Dentro do
+prazo") na mesma tabela dos faturados; 12 cabeçalhos na ordem certa;
+ordenação por "Saldo Realizado Acum." (coluna que só existia na
+Previsão) funciona; rodapé com os 4 totais e as "Acum." em branco;
+layout salvo no formato antigo não quebra nada; arrastar e redimensionar
+(8 alças) seguem funcionando; em 1920×1080 a tabela cabe inteira sem
+rolagem horizontal e nenhuma célula fica truncada; 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — farol Medido × Previsto, corte e colunas no gráfico (2026-08-19)
+
+Pedido explícito: "incluir um farol ao lado do valor medido, que ficará
+verde quando o medido for maior que o previsto, amarelo quando for pouca
+coisa menor, vermelho quando bem abaixo. No gráfico, a curva do real
+deve ir somente ao corte com dados, é importante incluir as colunas
+também".
+
+**Farol (`FarolMedidoPrevisto`, novo)** — ponto colorido à direita do
+número, na coluna Valor Medido, uma por linha.
+
+- "Pouca coisa menor" e "bem abaixo" saem do limiar que o painel **já**
+  usa pra severidade de desvio (`corDesvio`: `>= 0` verde, até `-5` p.p.
+  amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
+  Medido×Físico, em vez de inventar um número só pra cá.
+- Tooltip mostra os 2 valores e o percentual.
+- Sem previsto (nulo ou zero) não há com o que comparar: renderiza um
+  **slot vazio de largura fixa**, nunca um farol chutado (ADR-005). O
+  slot existe pra não desalinhar a coluna de números — o rodapé também
+  tem o slot, pelo mesmo motivo (sem ele, o total encostava 16px mais à
+  direita e caía embaixo dos pontos em vez dos números).
+- **SEM farol agregado no rodapé, de propósito.** Tentei e reverti:
+  Previsto e Medido estão preenchidos em conjuntos DIFERENTES de
+  boletins na planilha (previsto só nos BMs antigos, medido em quase
+  todos), então o total cheio dava −47% e, restringindo aos boletins com
+  os 2 valores, −67%. Os dois números falam mais do estado de
+  preenchimento da planilha que da obra. Revisar quando o previsto
+  estiver completo — o usuário avisou em 2026-08-19 que a planilha ainda
+  está sendo preenchida, "inclusive o valor previsto".
+
+**Gráfico**
+
+- **Curva do Medido para no CORTE** (último período com `valor_medido`
+  lançado). Depois dele `medidoAcum`/`medidoDia` vêm `null` e nada é
+  desenhado — antes esticava uma reta horizontal que parecia "medição
+  parada" quando o certo é "ainda não medido". Mesma ideia do realizado
+  da Curva S. O último ponto ganha um anel pra deixar claro que a série
+  acaba ali, não que sumiu.
+- **Colunas por período**, 2 por ponto (previsto âmbar, medido azul),
+  no MESMO eixo Y das curvas acumuladas — convenção que o
+  `GraficoMedicoes` já fixou (barra com escala própria foi tentada e
+  revertida lá). Coluna do medido também para no corte.
+- Tooltip mostra acumulado **e** valor do período das 2 séries, e "sem
+  medição lançada" depois do corte. Legenda ganhou o par linha+coluna
+  por cor mais a nota "linha = acumulado · coluna = do período".
+- **O que conta como medido** passou a ser `valor_medido != null` em
+  QUALQUER boletim, não só nos já faturados: boletim medido e ainda não
+  faturado é dado real e tem que entrar no corte.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 29 faróis + 7 slots
+vazios nas 36 linhas, com **0 divergência de cor** contra a regra
+recalculada de forma independente pelo teste; coluna de números alinhada
+inclusive no rodapé (0px de diferença); no gráfico 36 pontos âmbar × 35
+azuis, com o azul terminando à esquerda do âmbar tanto nos pontos quanto
+no `path`; 35 colunas azuis e 29 âmbar, sem `NaN` nem altura negativa;
+tooltip mostra "sem medição lançada" depois do corte. 0 erros de
+console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — coluna Farol, cinza sem previsto, destaque por estado da linha (2026-08-19)
+
+Pedido explícito: "quando não tiver previsto, deixe em cinza. Gere uma
+coluna chamada 'Farol', para contemplar isso. O último BM faturado vai
+ter mais destaque, talvez com um fundo em um tom de verde claro, o
+histórico de faturamentos terá de ficar mais apagado, os futuros ficarão
+como está".
+
+- **Coluna "Farol" própria**, entre Valor Medido e Desconto FD — a
+  tabela vai a **13 colunas**. O ponto saiu de dentro da célula de Valor
+  Medido, que volta a ser texto puro alinhado à direita; o slot vazio que
+  reservava espaço no rodapé saiu junto, não é mais necessário.
+- **Cinza quando não há previsto** (`#dfe3ea`, tooltip "Sem valor
+  previsto para comparar"), no lugar do slot invisível da 1ª versão: um
+  vazio se confundia com "não carregou". Cinza é estado próprio — "não
+  há o que comparar" — não uma cor de severidade chutada (ADR-005).
+- **A coluna é ordenável**: `campo:'farol'` é sintético (não existe em
+  `boletins_medicao`) e a ordenação é tratada à parte, pelo desvio
+  medido×previsto — dá pra trazer o pior desempenho primeiro. Linha sem
+  previsto (farol cinza) não tem desvio e vai pro fim.
+- **3 estados de linha, via classe CSS**:
+  - último BM faturado → fundo `rgba(31,157,87,0.13)` (0.2 no hover);
+  - faturados anteriores → `opacity: .5`, voltando a `1` no hover
+    (apagado é hierarquia visual, não pra impedir a leitura);
+  - não faturados → sem classe, como estavam.
+  As regras vêm **depois** das de zebra/hover de propósito: a
+  especificidade empata (`tr.classe` vs `tr:nth-child(even)`) e quem
+  decide é a ordem no arquivo.
+- **Qual é o "último BM faturado"**: maior `periodo_fim` entre as linhas
+  com `status_faturamento = 'Faturado'`, desempate pelo número do BM.
+  Não uso `data_faturamento` (falta em parte das linhas) nem só o número
+  do BM (há rótulo sem número — "BM 01 - Limpeza", "MSE x ROCKTEC").
+  Detalhe que o teste confirmou: em CP236 o destaque cai no **BM 33**, e
+  não no BM 34, que tem período posterior mas está "Dentro do prazo" —
+  ou seja, ainda não faturado. Correto.
+- `minWidth` da tabela de 1180 → 1230 por causa da coluna nova.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 13 cabeçalhos na
+ordem certa; 36 de 36 linhas com exatamente 1 ponto na coluna Farol (10
+verdes, 19 vermelhos, 7 cinzas — nenhum âmbar porque nenhuma linha caiu
+na faixa −5..0), com **0 divergência** contra a regra recalculada de
+forma independente pelo teste; Valor Medido sem tooltip e alinhado com o
+rodapé (611.2px nos dois); 1 linha destacada, 34 apagadas em `opacity
+.5` que volta a `1` no hover, 1 sem classe; rodapé com a célula de Farol
+vazia e os 4 totais intactos; ordenação pela coluna Farol funciona nos 2
+sentidos com as cinzas no fim; a tabela ainda cabe em 1920 sem rolagem
+horizontal (1854 = 1854). 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — cores da curva seguem a referência da Curva S (2026-08-19)
+
+Pedido explícito: "com relação as cores da curva, utilize a mesma
+referência da Curva S". O gráfico Previsto × Medido tinha nascido com
+previsto âmbar e medido azul fixo — ou seja, **azul queria dizer coisas
+diferentes nas duas telas** (na Curva S azul é o PREVISTO). Erro meu de
+não ter olhado a convenção que já existia antes de escolher cor.
+
+Convenção da Curva S, agora aplicada aqui:
+
+- **Previsto**: azul `#2563eb`, tracejado `8 4`, 2px, `opacity` 0.7.
+  Colunas do período em azul, `opacity` 0.35 (0.55 no hover).
+- **Medido** (equivalente do Realizado): cor **dinâmica pelo desvio no
+  corte**, linha cheia de 3px — mesma regra do `desvioColor` da Curva S,
+  que por sua vez é o mesmo limiar do `corDesvio` usado no farol da
+  tabela (verde `>= 0`, âmbar até `-5` p.p., vermelho abaixo, cinza
+  quando não há desvio a calcular). Colunas na mesma cor, `opacity` 0.6
+  (0.8 no hover). Em CP236 o desvio no corte é −47%, então sai vermelho.
+- Pontos e o anel do corte acompanham a cor da respectiva série; a
+  legenda espelha a da Curva S, inclusive o texto do "Medido" colorido e
+  em negrito.
+
+**Divergência interna da tela de Curva S, registrada e NÃO mexida** (fora
+do pedido): a legenda dela usa `6 3`/2.5px, mas o `LineSVG` desenha
+`8 4`/3px. Copiei o **gráfico**, que é a referência visual de fato — se
+um dia alguém alinhar a legenda da Curva S ao gráfico dela, esta tela já
+está no valor certo.
+
+Testado com Playwright nas 2 telas (obra 91): **match exato nos 8
+atributos** comparados (cor, largura, `dasharray` e `opacity` das 2
+séries) — Previsto `rgb(37,99,235)`/2/`8 4`/0.7 e Realizado-Medido
+`rgb(210,59,59)`/3/sem dash/1 nas duas. Sem regressão em Medições: 29
+colunas azuis @0.35 + 35 vermelhas @0.6, anel do corte vermelho, 13
+cabeçalhos, 36 linhas, 1 destacada + 34 apagadas, "Medido" da legenda
+vermelho e em negrito. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Avanço Previsto/Realizado Acumulado na tabela (2026-08-19)
+
+Pedido explícito: "incluir também o avanço previsto acumulado e o avanço
+realizado acumulado". Entraram no fim da tabela, junto das outras 2
+colunas de acumulado — **15 colunas** agora.
+
+**Descoberta que mudou a implementação — o nome engana.** Apesar de
+"avanço", `avanco_previsto_acumulado` e `avanco_realizado_acumulado`
+**não são percentuais**: guardam valor em REAIS. Conferi no dado antes
+de decidir o formato (CP236, CP002 e CP022, via fetch direto no
+PostgREST, já que o MCP do Supabase estava fora):
+
+- no 1º BM, `avanco_realizado_acumulado` == `valor_medido` da linha;
+- o máximo de `avanco_previsto_acumulado` == total da coluna Valor
+  Previsto (R$ 336.302.373,48);
+- o máximo de `avanco_realizado_acumulado` == total de Valor Medido
+  (R$ 177.460.890,18);
+- `saldo_previsto_acumulado` = contrato − `avanco_previsto_acumulado`.
+
+Ou seja: são o acumulado do previsto e do medido, em moeda — os mesmos
+números que o gráfico Previsto×Medido calcula por conta própria a partir
+dos valores por BM. Formatadas com `fmtReais`, alinhadas à direita.
+Vieram do PostgREST como `number` (não string), com o ruído de float
+esperado (`336302373.4799999`).
+
+Não entram na soma do rodapé (ficam em branco): já **são** acumulado — o
+último valor É o total — e ainda carregam o valor pra frente em linha sem
+atividade real (a armadilha catalogada em [[modelo-dados-supabase]]).
+Mesmo motivo das 2 colunas de Saldo Acum. `colSpan` final do rodapé foi
+de 6 → 8.
+
+Nota de dado achada de passagem: em **CP022** o acumulado NÃO é
+monotônico porque o mesmo `cp_codigo` mistura frentes distintas no
+`bm_label` ("2 - Oleoduto", "1 - Mesa") e o acumulado reinicia por
+frente. Só afeta quem for validar monotonicidade — a exibição não se
+importa.
+
+`minWidth` da tabela de 1230 → 1450. Com 15 colunas ela passa dos
+~2100px e **rola na horizontal mesmo em 1920** (2165 contra 1854 de
+container) — inevitável nesse tamanho; apertar mais as colunas já foi
+rejeitado antes, e o bloco é redimensionável.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 15 cabeçalhos na
+ordem certa, 36 linhas **todas** com 15 células, as 2 colunas novas em
+formato de moeda e alinhadas à direita, máximos batendo exatamente com
+os totais do rodapé (a prova de que é moeda acumulada), rodapé com as 2
+novas em branco e slots somando 15, ordenação funcionando nos 2 sentidos
+nas colunas novas, rolagem horizontal revelando a última coluna por
+completo. Sem regressão: 1 linha destacada + 34 apagadas, 36 faróis (10
+verdes / 19 vermelhos / 7 cinzas), curvas do gráfico intactas. 0 erros
+de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Saldo/Avanço Acumulado saem da tabela e viram pop-up por linha (2026-08-19)
+
+Pedido explícito: "vamos colocar as 4 últimas colunas dentro de um
+pop-up, acessado ao clicar no item". Ajuste feito diretamente no editor
+(fora desta sessão de chat) e já com deploy confirmado.
+
+- Tabela volta de 15 pra **11 colunas**: Saldo Previsto Acum., Saldo
+  Realizado Acum., Avanço Previsto Acum. e Avanço Realizado Acum. saem
+  de `COLUNAS_MEDICOES` e das células do corpo.
+- Linha da tabela agora é clicável (`hoverable`, `cursor:pointer`) e abre
+  um pop-up (`linhaSelecionada`) com essas 4 colunas do boletim clicado,
+  mais a diferença Previsto−Realizado (Saldo) e Realizado−Previsto
+  (Avanço), coloridas por sinal.
+- **Rodapé de totais da tabela removido por completo** (não só as 4
+  colunas novas — Total/Valor Previsto/Valor Medido/Desconto FD/Valor
+  Faturado também saíram). Confirmado como intencional.
+- **Farol Medido × Físico ganhou um cartão horizontal fixo no topo da
+  tela**, fora do gate `MOSTRAR_TOPO_MEDICOES` — sempre visível agora,
+  não mais atrás da flag. Mesmo clique de sempre abre o pop-up de
+  detalhe (`farolAberto`).
+- Pop-up do Farol ganhou uma seção "Totais Financeiros da Obra" (Previsto
+  = valor do contrato; Medido = Desconto FD + Retenção + Valor Faturado,
+  com o detalhamento dos 3 componentes).
+
+Não testado nem revisado por mim antes do deploy — o ajuste e a
+publicação já estavam prontos quando entrei, só fiz o commit/push do que
+já estava no arquivo.
+
+### Medições — tooltip do gráfico cortado perto da borda (2026-08-19)
+
+Pedido explícito: "ao passar o mouse em um ponto do gráfico perto da
+borda, o detalhamento fica cortado". O clamping da posição do tooltip
+(`GraficoPrevistoMedido`) usava uma margem fixa "chutada" (metade de uma
+largura estimada, `70px`), que não batia com o tamanho real do
+tooltip — o conteúdo varia bastante em comprimento (4 linhas de
+acumulado/período contra "Medido: sem medição lançada" a partir do
+corte).
+
+Agora mede o tooltip de verdade via ref (`tipRef`/estado `tipTam`,
+recalculado a cada troca de ponto por um `useEffect` que roda depois do
+render) e usa o tamanho REAL pro clamping nos dois eixos:
+
+- **horizontal**: continua centralizado no ponto, mas a borda do
+  tooltip nunca passa da borda do gráfico — o cálculo usa a metade da
+  largura medida, não uma constante;
+- **vertical**: mesma lógica de acima/abaixo do ponto conforme a altura
+  na tela (herdada), agora limitando pelo topo/fundo REAIS do bloco —
+  relevante desde que o bloco virou redimensionável (91º passo): um
+  bloco encolhido também cortava o tooltip por cima/baixo com a margem
+  fixa antiga.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): ponto mais à esquerda
+e mais à direita com o tooltip inteiro dentro do container (nenhuma
+borda extrapolada); ponto do meio continua centralizado (diferença
+<0.1px); bloco encolhido ~150px de altura via alça sul (`.react-
+resizable-handle-s`) ainda mantém o tooltip dentro dos limites
+verticais; conteúdo legível em todos os casos. 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,

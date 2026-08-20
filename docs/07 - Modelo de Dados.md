@@ -266,6 +266,94 @@ Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
 
+### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
+
+Tabela `itens_rmi` desenhada (SQL em `painel-mse\n8n\rmi-suprimentos.README.md`)
+e workflow n8n criado (`rmi-suprimentos.workflow.json`, mesma pasta) —
+ainda não aplicado no Supabase nem rodado.
+
+Fonte: API externa `rmi_api` do PortalMSE
+(`https://portalmse.com.br/microservices/rmi_api/GUIA_USUARIO.php`) —
+**serviço distinto de `mapa_compras_api`**, confirmado pelo `/health` de
+cada um (nomes de `service` diferentes) e por uma chave de um dar 403 no
+outro. Guia bem mais completo que o de Mapa de Compras: confirma o
+formato do envelope (`{page,per_page,total,data:[...]}`) e traz exemplo
+de JSON de resposta real.
+
+**Achado que muda o jogo pra regra de "crítico"** (pendente desde
+2026-08-05/08-11, ver seção "Suprimentos ganha fonte nova" abaixo e
+[[02 - Escopo e Telas]]): os itens da `rmi_api` já vêm com
+`prazo_status` (atrasado/no_prazo/sem_data) e `desvio_saldo_orcamentario`
+(positivo/negativo) **prontos da origem**, algo que nenhuma das outras 2
+fontes de Suprimentos tinha por item. A API até aceita filtrar direto
+por esses 2 campos via query string. Ainda não virou regra de produto
+("crítico = o quê exatamente"), mas agora existe dado pronto pra decidir
+em cima.
+
+1 linha por item, chave = `id` (o próprio id numérico do item na
+origem) — é a 1ª das 4 fontes de ingestão do projeto a ter um id
+numérico confirmado; as outras 3 (`pedidos_suprimentos`,
+`orcamentos_complementares_obra`, `itens_mapa_compras`) precisaram de
+chave composta "no chute" por falta disso.
+
+Suprimentos agora tem **3 fontes de ingestão coexistindo**
+(`pedidos_suprimentos`, `itens_mapa_compras`, `itens_rmi`), cada uma com
+um grão/foco diferente do mesmo processo de compra — ver tabela
+comparativa no README do `rmi-suprimentos` pra quando for desenhar a
+tela.
+
+**Ajuste no workflow (2026-08-20)**: usuário testou a API e o Supabase
+funcionando via Postman, mas o workflow do `rmi-suprimentos` ficava
+"rodando e não retornava" no n8n — suspeita de limitação de hardware na
+máquina que hospeda. Causa provável: o desenho original buscava as 6
+obras primeiro e só depois processava tudo junto, exigindo manter as 6
+respostas inteiras na memória ao mesmo tempo antes de gravar qualquer
+coisa. Corrigido pra processar **1 obra por vez em loop** (`Split In
+Batches`) — busca, transforma e grava uma obra antes de buscar a
+próxima, liberando memória a cada volta.
+
+**Schema de `itens_rmi` simplificado (2026-08-20)**: a pedido explícito
+("é possível retirar esta etapa?", referindo-se à tradução campo-a-campo
+no Code node), a tabela deixou de ter uma coluna por campo da API — agora
+é só `id` (chave), `id_obra` (filtro) + `raw jsonb` (item inteiro), mesmo
+padrão de `orcamentos_complementares_obra`. Filtro por `prazo_status`/
+`desvio_saldo_orcamentario` continua possível via `raw->>campo` no
+PostgREST, com índice de expressão nos dois. Ver `rmi-suprimentos.README.md`
+pra detalhe completo e exemplos de consulta.
+
+### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
+
+Tabela `itens_mapa_compras` desenhada (SQL em
+`painel-mse\n8n\mapa-compras-suprimentos.README.md`) e workflow n8n criado
+(`mapa-compras-suprimentos.workflow.json`, mesma pasta) — ainda não
+aplicado no Supabase nem rodado.
+
+Fonte: API externa `mapa_compras_api` do PortalMSE
+(`https://portalmse.com.br/microservices/mapa_compras_api/GUIA_USUARIO.php`)
+— itens de requisição/mapa de compra (código, descrição, quantidade,
+preço de referência, custo meta de orçamento, saldo orçamentário, quanto
+já foi pedido/consumido, melhor oferta). 1 linha por item (chave composta
+`id_obra`+`id_mapa_compras`+`codigo_seq`, suposição a confirmar com dado
+real).
+
+**Guia da API bem mais magro que os das 2 ingestões anteriores** — sem
+nenhum exemplo de JSON de resposta completo. Por isso ficaram 3 pontos em
+aberto (detalhados no README do workflow, seção "Antes de importar"):
+formato do envelope da resposta (`{data:[...]}` presumido, com fallback e
+erro explícito se não bater), nomes exatos dos 3 campos `melhor_oferta_*`
+(a doc só descreve em texto corrido, não nomeia), e a tabela de
+requisições (cabeçalho do RMI) **não foi criada** — a doc não detalha os
+campos de `/v1/requisicoes` o suficiente pra desenhar schema sem
+fabricar dado.
+
+Não confundir com `pedidos_suprimentos` (ingestão anterior, mesma aba
+Suprimentos): são 2 fontes/grãos diferentes do mesmo ERP —
+`pedidos_suprimentos` é o pedido de compra já fechado (fornecedor, valor,
+prazo de entrega); `itens_mapa_compras` é o item dentro da requisição,
+antes/durante a compra (orçamento, saldo, se já tem pedido). A regra de
+"crítico" do setor Suprimentos provavelmente vai precisar cruzar as duas
+— nenhuma tem sozinha tanto o lado do prazo quanto o lado do orçamento.
+
 ### Suprimentos ganha fonte nova em ingestão (2026-08-11)
 
 Tabela `pedidos_suprimentos` desenhada (SQL em

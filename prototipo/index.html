@@ -9,6 +9,15 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<!-- react-grid-layout (UMD, 86KB) — grid de widgets do setor Medições:
+     arrastar livre, redimensionar e pôr lado a lado (pedido explícito,
+     2026-08-19). 1ª e 2ª versões eram feitas à mão (HTML5 DnD, depois
+     Pointer Events) e continuavam "engessadas" — colisão/compactação/
+     resize de verdade não vale reescrever à mão. Só o React/ReactDOM
+     ficam externos neste bundle (react-draggable/react-resizable vêm
+     embutidos). Se o CDN falhar, `GridLayoutMedicoes` fica null e a tela
+     cai num empilhamento simples — ver ModuloMedicoes. -->
+<script crossorigin src="https://unpkg.com/react-grid-layout@1.5.0/dist/react-grid-layout.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
 <style>
   :root{
@@ -138,9 +147,87 @@
   .seletor-obra-wrap { position: relative; flex-shrink: 0; }
   .chart-area { flex: 1; min-height: 0; overflow: hidden; position: relative; }
   .table-scroll-x { overflow: auto; flex: 1; min-height: 0; -webkit-overflow-scrolling: touch; }
-  .tabela-medicoes tbody tr{ transition: background .12s ease; }
+  .tabela-medicoes tbody tr{ transition: background .12s ease, opacity .12s ease; }
   .tabela-medicoes tbody tr:nth-child(even){ background: #f7f8fa; }
   .tabela-medicoes tbody tr:hover{ background: rgba(37,99,235,0.06); }
+  .tabela-medicoes td, .tabela-medicoes th{ overflow: hidden; text-overflow: ellipsis; }
+  /* Três estados de linha (pedido explícito, 2026-08-19): o último BM
+     faturado em destaque, os faturados anteriores apagados, os não
+     faturados como estão. Estas regras vêm DEPOIS das duas acima de
+     propósito: a especificidade empata com `tr:nth-child(even)` e com
+     `tr:hover`, então quem vence é a ordem no arquivo. Passar o mouse
+     numa linha apagada devolve a opacidade cheia — apagado é hierarquia
+     visual, não pra impedir a leitura. */
+  .tabela-medicoes tbody tr.linha-ultimo-faturado{ background: rgba(31,157,87,0.13); }
+  .tabela-medicoes tbody tr.linha-ultimo-faturado:hover{ background: rgba(31,157,87,0.2); }
+  .tabela-medicoes tbody tr.linha-historico{ opacity: .5; }
+  .tabela-medicoes tbody tr.linha-historico:hover{ opacity: 1; }
+
+  /* Grid de widgets do setor Medições (react-grid-layout). A folha de
+     estilo da lib NÃO é carregada — estas regras são a versão enxuta
+     equivalente, no visual do painel. As essenciais são: `position:
+     relative` no container (os itens são absolutos, posicionados por
+     `transform` inline pela própria lib) e uma área clicável nas alças
+     de resize (sem tamanho, não há o que agarrar). */
+  .react-grid-layout { position: relative; transition: height 200ms ease; }
+  .react-grid-item { transition: transform 200ms ease, width 200ms ease, height 200ms ease; }
+  .react-grid-item.resizing,
+  .react-grid-item.react-draggable-dragging { transition: none; z-index: 4; }
+  .react-grid-item.react-draggable-dragging > .card { box-shadow: 0 20px 44px -10px rgba(16,24,40,.34); }
+  /* Sombra do "slot" de destino durante o arrasto — é o feedback que faz
+     o grid parecer vivo (a peça abre espaço antes de você soltar). */
+  .react-grid-item.react-grid-placeholder {
+    background: var(--blue); opacity: .14; border-radius: 14px;
+    transition-duration: 110ms; z-index: 2; user-select: none;
+  }
+  .react-grid-item > .react-resizable-handle {
+    position: absolute; opacity: 0; transition: opacity .15s ease; z-index: 3;
+  }
+  .react-grid-item:hover > .react-resizable-handle,
+  .react-grid-item.resizing > .react-resizable-handle { opacity: 1; }
+  /* As 8 alças (pedido explícito, 2026-08-19: "só consigo ajustar o
+     tamanho para baixo ou para o lado direito"). Cantos = "L" desenhado
+     com 2 bordas apontando pra fora; laterais = barrinha no meio do lado.
+     Os cantos são 12px e recuados 3px de propósito: o "✕" do cabeçalho
+     começa depois disso (padding-right 18px), senão a alça do canto
+     nordeste roubaria o clique do botão de ocultar. */
+  .react-grid-item > .react-resizable-handle-se {
+    right: 3px; bottom: 3px; width: 12px; height: 12px; cursor: nwse-resize;
+    border-right: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
+    border-bottom-right-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-sw {
+    left: 3px; bottom: 3px; width: 12px; height: 12px; cursor: nesw-resize;
+    border-left: 2px solid var(--mut); border-bottom: 2px solid var(--mut);
+    border-bottom-left-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-ne {
+    right: 3px; top: 3px; width: 12px; height: 12px; cursor: nesw-resize;
+    border-right: 2px solid var(--mut); border-top: 2px solid var(--mut);
+    border-top-right-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-nw {
+    left: 3px; top: 3px; width: 12px; height: 12px; cursor: nwse-resize;
+    border-left: 2px solid var(--mut); border-top: 2px solid var(--mut);
+    border-top-left-radius: 5px;
+  }
+  .react-grid-item > .react-resizable-handle-e {
+    right: 1px; top: 50%; margin-top: -20px; width: 9px; height: 40px; cursor: ew-resize;
+    border-right: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .react-grid-item > .react-resizable-handle-w {
+    left: 1px; top: 50%; margin-top: -20px; width: 9px; height: 40px; cursor: ew-resize;
+    border-left: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .react-grid-item > .react-resizable-handle-s {
+    bottom: 1px; left: 50%; margin-left: -20px; width: 40px; height: 9px; cursor: ns-resize;
+    border-bottom: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .react-grid-item > .react-resizable-handle-n {
+    top: 1px; left: 50%; margin-left: -20px; width: 40px; height: 9px; cursor: ns-resize;
+    border-top: 3px solid var(--mut2); border-radius: 3px;
+  }
+  .tile-handle:active { cursor: grabbing; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4648,6 +4735,312 @@ function GraficoMedicoes({ pontos }){
   );
 }
 
+// Gráfico Previsto × Medido — pedido explícito (2026-08-19): "um gráfico
+// que plotará as duas curvas, do previsto e do medido", depois "a curva
+// do real deve ir somente ao corte com dados, é importante incluir as
+// colunas também". Mesmo padrão hand-rolled em SVG do `GraficoMedicoes`
+// acima (sem lib de gráfico), responsivo via ResizeObserver.
+//
+// Desenha 4 coisas sobre o MESMO eixo Y:
+//  - colunas = valor do próprio período (`previstoDia`/`medidoDia`);
+//  - linhas  = valor acumulado (`previstoAcum`/`medidoAcum`).
+// Escala única de propósito: é a convenção que o `GraficoMedicoes` já
+// fixou ("MESMA escala/eixo Y da curva acumulada, não uma faixa à parte
+// com escala própria" — a versão com 2 escalas foi tentada e revertida).
+// A coluna fica pequena perto do acumulado, e é isso mesmo: sob o mesmo
+// eixo a proporção real aparece.
+//
+// `medidoAcum`/`medidoDia` vêm `null` depois do corte (último período com
+// medição lançada) — aí a linha e a coluna do medido simplesmente param,
+// em vez de esticar uma reta que pareceria medição travada.
+//
+// `pontos`: [{label, previstoAcum, previstoDia, medidoAcum, medidoDia,
+// ehCorte}], já ordenado por período (ver `serieDuasCurvas`).
+function GraficoPrevistoMedido({ pontos }){
+  const wrapRef = useRef(null);
+  const [tam, setTam] = useState({ width: 900, height: 280 });
+  const [hover, setHover] = useState(null);
+
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const el = wrapRef.current;
+    const obs = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect;
+      if (w && h) setTam({ width: w, height: h });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Tamanho REAL do tooltip (pedido explícito, 2026-08-19: "ao passar o
+  // mouse em um ponto do gráfico perto da borda, o detalhamento fica
+  // cortado") — a 1ª versão clampava a posição por uma margem fixa
+  // (metade de uma largura "chutada"), que não bate com o tooltip real
+  // (varia por conteúdo — "Medido: sem medição lançada" é bem mais curto
+  // que as 4 linhas de acumulado/período). Mede via ref depois de cada
+  // troca de ponto e usa o tamanho de verdade pra clamping, tanto
+  // horizontal quanto vertical (importante agora que o bloco é
+  // redimensionável — um bloco baixo cortava o tooltip por cima também).
+  const tipRef = useRef(null);
+  const [tipTam, setTipTam] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!tipRef.current) { setTipTam({ w: 0, h: 0 }); return; }
+    const r = tipRef.current.getBoundingClientRect();
+    setTipTam({ w: r.width, h: r.height });
+  }, [hover]);
+
+  if (!pontos || pontos.length < 2) {
+    return (
+      <div ref={wrapRef} style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span className="mono" style={{ fontSize:12, color:T.mut }}>Dado insuficiente pra plotar (precisa de ao menos 2 períodos)</span>
+      </div>
+    );
+  }
+
+  const { width, height } = tam;
+  const pad = { top: 28, right: 20, bottom: 32, left: 84 };
+  const W = Math.max(width - pad.left - pad.right, 10);
+  const H = Math.max(height - pad.top - pad.bottom, 10);
+  // `medidoAcum` pode ser null (depois do corte) — o `?? 0` evita que um
+  // null envenene o Math.max e derrube a escala inteira pra NaN.
+  const maxV = Math.max(...pontos.map(p => Math.max(p.previstoAcum ?? 0, p.medidoAcum ?? 0))) * 1.15 || 1;
+  const xScale = i => pontos.length > 1 ? (i / (pontos.length - 1)) * W : 0;
+  const yScale = v => H - (v / maxV) * H;
+  const yTicks = Array.from({ length: 5 }, (_, i) => maxV * (i / 4));
+  // Pula ponto sem valor em vez de traçar até ele — é o que faz a linha do
+  // medido terminar no corte. (`M` no primeiro ponto desenhado, não no
+  // índice 0, senão uma série que começasse vazia sairia sem `M`.)
+  const linhaDe = campo => pontos.reduce((acc, p, i) => {
+    if (p[campo] == null) return acc;
+    acc.push(`${acc.length === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(p[campo]).toFixed(1)}`);
+    return acc;
+  }, []).join(' ');
+  const linhaPrevisto = linhaDe('previstoAcum');
+  const linhaMedido = linhaDe('medidoAcum');
+  // Cores seguem a MESMA referência da Curva S (pedido explícito,
+  // 2026-08-19) — antes o previsto era âmbar e o medido azul fixo, ou
+  // seja, azul queria dizer coisas diferentes nas 2 telas. Na Curva S:
+  // Previsto é azul tracejado, e o Realizado tem cor DINÂMICA pelo desvio
+  // no corte (verde >= 0, âmbar até -5 p.p., vermelho abaixo, cinza sem
+  // dado — ver `desvioColor` em ModuloCurvaS). Aqui o medido é o
+  // equivalente do realizado, então ganha a mesma regra, calculada no
+  // corte com o mesmo limiar do farol da tabela (`corDesvio`).
+  const pontoCorte = pontos.find(pt => pt.ehCorte) || null;
+  const desvioNoCortePP = (pontoCorte && pontoCorte.previstoAcum && pontoCorte.medidoAcum != null)
+    ? (pontoCorte.medidoAcum / pontoCorte.previstoAcum - 1) * 100
+    : null;
+  const corMedido = desvioNoCortePP == null ? T.mut : corDesvio(desvioNoCortePP);
+  // Colunas do período: 2 por ponto (previsto e medido), lado a lado e
+  // centradas no ponto do eixo X. Largura acompanha o espaço disponível
+  // por período — com o gráfico estreito e muitos períodos elas viram
+  // tracinhos finos, mas nunca somem nem se sobrepõem.
+  const passoX = W / Math.max(pontos.length, 1);
+  const barW = Math.max(2, Math.min(11, passoX * 0.34));
+
+  // Decimação dos rótulos do eixo X. Com o grid de widgets o gráfico pode
+  // ficar bem estreito (ex.: 5 de 12 colunas), então nada de número
+  // mágico: o espaçamento sai da largura aproximada do rótulo
+  // "dd/mm/aa" nesta fonte/tamanho. O último ponto SEMPRE aparece e é
+  // ancorado à direita — ou seja, ocupa ~`LARGURA_ROTULO_X` à ESQUERDA do
+  // ponto final; um rótulo centrado antes dele precisa caber com a
+  // própria metade mais uma folga, daí o 1.5×.
+  const LARGURA_ROTULO_X = 50;
+  const maxLabelsVisiveis = Math.max(2, Math.floor(W / (LARGURA_ROTULO_X + 14)));
+  const passoLabel = Math.max(1, Math.ceil(pontos.length / maxLabelsVisiveis));
+  const mostrarLabel = i => {
+    if (i === pontos.length - 1) return true;
+    if (i % passoLabel !== 0) return false;
+    return (xScale(pontos.length - 1) - xScale(i)) > (LARGURA_ROTULO_X * 1.5 + 10);
+  };
+
+  const handleMove = e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xLocal = ((e.clientX - rect.left) / rect.width) * width - pad.left;
+    let idx = pontos.length > 1 ? Math.round((xLocal / W) * (pontos.length - 1)) : 0;
+    idx = Math.max(0, Math.min(pontos.length - 1, idx));
+    setHover(idx);
+  };
+
+  const p = hover != null ? pontos[hover] : null;
+  const topoPonto = p ? yScale(Math.max(p.previstoAcum ?? 0, p.medidoAcum ?? 0)) : 0;
+  const tipAcimaDoPonto = p ? topoPonto < H * 0.35 : false;
+  // Clamping horizontal/vertical pelo tamanho REAL do tooltip (ver
+  // `tipTam` acima), não mais por uma metade-de-largura chutada. Enquanto
+  // o tooltip ainda não foi medido (1º hover), usa um palpite conservador
+  // só pra esse único frame — o efeito já corrige no próximo.
+  const MARGEM_BORDA = 8;
+  const metadeTip = (tipTam.w || 160) / 2 + MARGEM_BORDA;
+  const pontoAbsX = xScale(hover || 0) + pad.left;
+  const centroTipX = Math.min(Math.max(pontoAbsX, metadeTip), Math.max(width - metadeTip, metadeTip));
+  const alturaTip = tipTam.h || 90;
+  const topoTip = tipAcimaDoPonto
+    ? Math.min(pad.top + topoPonto + 14, height - alturaTip - MARGEM_BORDA)
+    : Math.max(pad.top + topoPonto - alturaTip - 10, MARGEM_BORDA);
+
+  return (
+    <div ref={wrapRef} style={{ position:'relative', width:'100%', height:'100%' }}>
+      {/* Legenda com as 2 séries; o par linha+coluna de cada cor aparece
+          junto no marcador, e a nota explica quem é quem sem precisar de
+          4 entradas. */}
+      {/* Legenda espelha a da Curva S: previsto azul tracejado, medido na
+          cor do desvio. O texto do "Medido" também vai colorido, igual lá. */}
+      <div style={{ position:'absolute', top:2, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1, flexWrap:'wrap', justifyContent:'flex-end' }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
+            <span style={{ width:12, height:0, borderTop:`2px dashed ${T.blue}`, opacity:0.7, display:'inline-block' }} />
+            <span style={{ width:5, height:9, background:T.blue, opacity:0.35, display:'inline-block', borderRadius:1 }} />
+          </span>Previsto
+        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:corMedido, fontWeight:600 }}>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
+            <span style={{ width:12, height:3, background:corMedido, display:'inline-block', borderRadius:1 }} />
+            <span style={{ width:5, height:9, background:corMedido, opacity:0.6, display:'inline-block', borderRadius:1 }} />
+          </span>Medido
+        </span>
+        <span style={{ fontSize:10, color:T.mut2 }}>linha = acumulado · coluna = do período</span>
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
+        onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
+        <g transform={`translate(${pad.left},${pad.top})`}>
+          {yTicks.map((v, i) => (
+            <g key={i}>
+              <line x1={0} x2={W} y1={yScale(v)} y2={yScale(v)} stroke="#eef0f3" strokeWidth={1} />
+              <text x={-10} y={yScale(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={T.mut2}>{fmtReaisCompacto(v)}</text>
+            </g>
+          ))}
+          {/* Colunas antes das linhas: as linhas ficam por cima. Medido só
+              existe até o corte, então a coluna dele também para lá. */}
+          {/* Opacidade das colunas também vem da Curva S: previsto 0.35,
+              realizado/medido 0.6. */}
+          {pontos.map((pt, i) => (
+            <g key={`col${i}`}>
+              {pt.previstoDia > 0 && (
+                <rect x={xScale(i) - barW - 1} y={yScale(pt.previstoDia)} width={barW} height={Math.max(H - yScale(pt.previstoDia), 0)}
+                  fill={T.blue} opacity={hover === i ? 0.55 : 0.35} rx={1.5} />
+              )}
+              {pt.medidoDia != null && pt.medidoDia > 0 && (
+                <rect x={xScale(i) + 1} y={yScale(pt.medidoDia)} width={barW} height={Math.max(H - yScale(pt.medidoDia), 0)}
+                  fill={corMedido} opacity={hover === i ? 0.8 : 0.6} rx={1.5} />
+              )}
+            </g>
+          ))}
+          {/* Traço copiado do GRÁFICO da Curva S (`LineSVG`): previsto
+              `8 4` em 2px/0.7, realizado cheio em 3px. A legenda da
+              Curva S usa `6 3`/2.5 — ela já divergia do próprio gráfico
+              lá, e o que vale como referência visual é a curva desenhada. */}
+          <path d={linhaPrevisto} fill="none" stroke={T.blue} strokeWidth={2} strokeDasharray="8 4" opacity={0.7} />
+          <path d={linhaMedido} fill="none" stroke={corMedido} strokeWidth={3} />
+          {hover != null && (
+            <line x1={xScale(hover)} x2={xScale(hover)} y1={0} y2={H} stroke={T.mut2} strokeWidth={1} strokeDasharray="3,3" opacity={0.6} />
+          )}
+          {pontos.map((pt, i) => (
+            <g key={i}>
+              {pt.previstoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.previstoAcum)} r={hover === i ? 5 : 3} fill={T.blue} stroke="#fff" strokeWidth={1.5} opacity={0.7} />
+              )}
+              {/* Ponto do medido só até o corte; o último ganha anel pra
+                  deixar claro que a série acaba ali, não que sumiu. */}
+              {pt.medidoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={hover === i ? 5 : (pt.ehCorte ? 4.5 : 3)} fill={corMedido} stroke="#fff" strokeWidth={1.5} />
+              )}
+              {pt.ehCorte && pt.medidoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={7.5} fill="none" stroke={corMedido} strokeWidth={1} opacity={0.45} />
+              )}
+              {mostrarLabel(i) && (
+                <text x={xScale(i)} y={H + 20} textAnchor={i === pontos.length - 1 ? 'end' : 'middle'} fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}>{pt.label}</text>
+              )}
+            </g>
+          ))}
+        </g>
+      </svg>
+      {p && (
+        <div ref={tipRef} className="mono" style={{
+          position:'absolute',
+          left: centroTipX,
+          top: topoTip,
+          transform:'translateX(-50%)',
+          background: T.ink, color:'#fff', borderRadius:8, padding:'6px 10px',
+          fontSize:11, lineHeight:1.5, pointerEvents:'none', boxShadow:'0 4px 14px rgba(0,0,0,0.18)', whiteSpace:'nowrap', zIndex:5,
+        }}>
+          <div style={{ fontWeight:700, marginBottom:2 }}>{p.label}</div>
+          <div>Previsto acumulado: {fmtReais(p.previstoAcum)}</div>
+          <div style={{ opacity:0.75 }}>Previsto no período: {fmtReais(p.previstoDia || 0)}</div>
+          {p.medidoAcum != null ? (
+            <React.Fragment>
+              <div>Medido acumulado: {fmtReais(p.medidoAcum)}</div>
+              <div style={{ opacity:0.75 }}>Medido no período: {fmtReais(p.medidoDia || 0)}</div>
+            </React.Fragment>
+          ) : (
+            <div style={{ opacity:0.75 }}>Medido: sem medição lançada</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Grid de widgets do setor Medições — pedido explícito (2026-08-19):
+// "preciso de algo realmente interativo, que seja capaz de
+// re-dimensionar, colocar lado a lado". As 2 versões anteriores eram
+// feitas à mão (HTML5 drag-and-drop, depois Pointer Events com
+// `translateY`) e só reordenavam numa coluna — daí a sensação de
+// "engessado". Grid de verdade (colisão, compactação, resize em 2 eixos,
+// posição livre em X e Y) não vale reescrever à mão: entrou
+// `react-grid-layout` via CDN UMD (ver <script> no <head>).
+// `WidthProvider` mede o container e passa a largura pro grid.
+// Se o CDN falhar, isto fica `null` e `ModuloMedicoes` cai num
+// empilhamento simples — a tela nunca fica em branco por causa disso.
+const GridLayoutMedicoes = (typeof ReactGridLayout !== 'undefined' && ReactGridLayout)
+  ? ReactGridLayout.WidthProvider(ReactGridLayout)
+  : null;
+
+// 12 colunas × linhas de 40px (+14 de gap): h=11 dá ~580px, h=7 ~364px.
+// Duas tabelas viraram UMA (pedido explícito, 2026-08-19: "ajuste tudo
+// em uma única tabela, compile todas as informações de uma só vez"), daí
+// só 2 blocos. Ambos nascem em w=12 e empilhados: a tabela consolidada
+// tem 12 colunas (~1500px), lado a lado com o gráfico ela viraria uma
+// tira que só rola. Pôr lado a lado continua possível a qualquer
+// momento — é escolha de quem usa, e fica salva.
+// Os ids mudaram ('historico'+'previsao' → 'tabela'): um layout salvo da
+// versão anterior não passa na validação de `layoutTiles` e cai no padrão
+// sozinho, sem precisar de chave nova no localStorage.
+const TILES_MEDICOES_IDS = ['tabela', 'grafico'];
+const LAYOUT_MEDICOES_PADRAO = [
+  { i:'tabela',  x:0, y:0,  w:12, h:11 },
+  { i:'grafico', x:0, y:11, w:12, h:7  },
+];
+const MIN_TILE_MEDICOES = {
+  tabela:  { minW:4, minH:5 },
+  grafico: { minW:3, minH:4 },
+};
+// Só usado no fallback sem grid (CDN fora).
+const ALTURA_FALLBACK_TILE = { tabela:580, grafico:364 };
+
+// Moldura do bloco. O cabeçalho (`tile-handle`) é a única área que
+// arrasta — assim tabela rola e coluna ordena normalmente por dentro do
+// bloco. O "✕" leva `tile-nao-arrasta` (é o `draggableCancel` do grid),
+// senão clicar nele iniciaria um arrasto. Remover só OCULTA — nada é
+// apagado, o bloco volta pelos botões "+ Nome" e reaparece na MESMA
+// posição/tamanho (a entrada dele continua guardada no layout).
+function TileFrame({ titulo, contagem, onRemover, children }){
+  return (
+    <div className="card" style={{ height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+      {/* padding-right 18: deixa o "✕" fora da alça de resize do canto
+          nordeste (12px + 3px de recuo), senão o clique de ocultar cai na
+          alça. padding-left 16 já passa da alça do canto noroeste. */}
+      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
+        <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+          {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
+        </span>
+        <span title="Arraste para mover" style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0 }}>⠿⠿</span>
+        <button onClick={onRemover} title="Remover bloco (pode trazer de volta depois)" className="mono tile-nao-arrasta"
+          style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:7, width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, lineHeight:1, flexShrink:0 }}>✕</button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 // Donut simples via stroke-dasharray (sem lib de gráfico) — situação do
 // contrato. `fatias`: [{label, valor, cor}]; valores negativos são tratados
 // como 0 no arco (não dá pra desenhar fatia negativa). Legenda não mostra
@@ -4767,34 +5160,68 @@ function BadgeStatusMedicao({ texto }){
   return <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor, whiteSpace:'nowrap' }}>{texto}</span>;
 }
 
-// Tabela 1 — Histórico de Faturamentos: todo boletim já com
-// `status_faturamento = 'Faturado'`. Colunas ordenáveis, mais recente
-// primeiro por padrão. Colunas restritas a pedido explícito (2026-08-19,
-// a 1ª versão tinha ~14 colunas — larga demais); o resto do dado
-// (retenção/ISS/recebimento/vencimento) continua em `boletins_medicao`,
-// só saiu da tela por ora.
-const COLUNAS_HISTORICO = [
-  { label:'BM',              campo:'bm_label' },
-  { label:'Período',         campo:'periodo_fim' },
-  { label:'Valor Previsto',  campo:'valor_previsto', align:'right' },
-  { label:'Valor Medido',    campo:'valor_medido',   align:'right' },
-  { label:'Desconto FD',     campo:'desconto_fd',    align:'right' },
-  { label:'Valor Faturado',  campo:'valor_faturado', align:'right' },
-];
+// Farol Medido × Previsto — pedido explícito (2026-08-19): "um farol ao
+// lado do valor medido, que ficará verde quando o medido for maior que o
+// previsto, amarelo quando for pouca coisa menor, vermelho quando bem
+// abaixo". "Pouca coisa" e "bem abaixo" saem do limiar que o painel já
+// usa pra severidade de desvio (`corDesvio`: >= 0 verde, até -5 p.p.
+// amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
+// Medido×Físico, em vez de inventar um número só pra cá.
+//
+// Sem previsto (nulo ou zero) o farol fica CINZA (pedido explícito,
+// 2026-08-19: "quando não tiver previsto, deixe em cinza") — na 1ª versão
+// era um slot invisível, e um vazio se confundia com "não carregou".
+// Cinza é estado próprio: "não há previsto pra comparar", nunca uma cor
+// de severidade chutada (ADR-005).
+const FAROL_LARGURA = 10;
+function FarolMedidoPrevisto({ previsto, medido }){
+  const p = previsto != null ? Number(previsto) : null;
+  const m = medido != null ? Number(medido) : null;
+  const base = { display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'help' };
+  if (p == null || m == null || !p) {
+    return <span title={p == null || !p ? 'Sem valor previsto para comparar' : 'Sem valor medido para comparar'}
+      style={{ ...base, background:'#dfe3ea', border:'1px solid #c7cdd8' }} />;
+  }
+  const desvioPP = (m / p - 1) * 100;
+  const tom = corDesvioTom(desvioPP);
+  const sinal = desvioPP > 0 ? '+' : '';
+  return (
+    <span title={`Medido ${fmtReais(m)} × Previsto ${fmtReais(p)} (${sinal}${desvioPP.toFixed(1)}%)`}
+      style={{ ...base, background:tom.cor, border:`1px solid ${tom.borda}` }} />
+  );
+}
 
-// Tabela 2 — Previsão de Próximos Faturamentos: todo boletim ainda SEM
-// `status_faturamento = 'Faturado'` (continua o mesmo filtro de linha de
-// antes — só as colunas mudaram, 2026-08-19). Sem BM/Período de
-// propósito (pedido explícito): normalmente só tem 1 linha pendente (o
-// "BM vigente"), então o foco vira o status de pagamento/recebimento e o
-// saldo acumulado corrente, não a identidade do boletim.
-const COLUNAS_PREVISAO = [
-  { label:'Data de Faturamento',       campo:'data_faturamento' },
-  { label:'Status Fat.',               campo:'status_faturamento' },
-  { label:'Data do Recebimento',       campo:'data_recebimento' },
-  { label:'Status Rec.',               campo:'status_recebimento' },
-  { label:'Saldo Previsto Acum.',      campo:'saldo_previsto_acumulado',              align:'right' },
-  { label:'Saldo Realizado Acum.',     campo:'saldo_realizado_acumulado_medido',      align:'right' },
+// TABELA ÚNICA de Medições — pedido explícito (2026-08-19): "ajuste tudo
+// em uma única tabela, compile todas as informações de uma só vez". Antes
+// eram duas (Histórico = boletim faturado; Previsão = boletim pendente),
+// cada uma com seu recorte de colunas; agora é UMA linha por boletim,
+// faturado ou não, com a união das colunas das duas. Quem separa faturado
+// de pendente é a coluna "Status Fat." (badge), não a tabela.
+//
+// Ordem das colunas segue o ciclo de vida do boletim: identificação →
+// medição → faturamento → recebimento → saldo acumulado.
+//
+// Continua de fora o que saiu da tela em 2026-08-19 e nunca voltou
+// (retenção, ISS, desconto de adiantamento, recebimento previsto/real,
+// vencimento) — tudo isso segue gravado em `boletins_medicao`.
+//
+// Largura das colunas é AUTO (conteúdo decide, sem
+// `colgroup`/`tableLayout:fixed`) — pedido explícito de 2026-08-19,
+// quando px fixo deixou a tabela espremida. Com 12 colunas ela fica
+// larga e rola na horizontal por dentro do bloco; a alternativa
+// (apertar tudo) já foi rejeitada.
+const COLUNAS_MEDICOES = [
+  { label:'BM',                    campo:'bm_label' },
+  { label:'Período',               campo:'periodo_fim' },
+  { label:'Valor Previsto',        campo:'valor_previsto',                   align:'right' },
+  { label:'Valor Medido',          campo:'valor_medido',                     align:'right' },
+  { label:'Farol',                 campo:'farol',                            align:'center' },
+  { label:'Desconto FD',           campo:'desconto_fd',                      align:'right' },
+  { label:'Valor Faturado',        campo:'valor_faturado',                   align:'right' },
+  { label:'Data de Faturamento',   campo:'data_faturamento' },
+  { label:'Status Fat.',           campo:'status_faturamento' },
+  { label:'Data do Recebimento',   campo:'data_recebimento' },
+  { label:'Status Rec.',           campo:'status_recebimento' }
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
@@ -4812,7 +5239,14 @@ function ModuloMedicoes({ obraId, obraNome }){
   const [contratoAberto, setContratoAberto] = useState(false);
   const [medidoAberto, setMedidoAberto] = useState(false);
   const [farolAberto, setFarolAberto] = useState(false);
-  useEffect(() => { setContratoAberto(false); setMedidoAberto(false); setFarolAberto(false); }, [obraId]);
+  const [linhaSelecionada, setLinhaSelecionada] = useState(null);
+
+  useEffect(() => { 
+    setContratoAberto(false); 
+    setMedidoAberto(false); 
+    setFarolAberto(false); 
+    setLinhaSelecionada(null); 
+  }, [obraId]);
 
   // 2 divisores arrastáveis (pedido explícito original: "preciso ter os
   // comandos de ajuste entre ele [pizza] e a curva também") — pizza fica à
@@ -4882,6 +5316,30 @@ function ModuloMedicoes({ obraId, obraNome }){
     return { historico: hist, previsao: prev };
   }, [boletinsRaw]);
 
+  // Qual boletim é o "último BM faturado" — ele ganha destaque na tabela
+  // e os faturados anteriores ficam apagados (pedido explícito,
+  // 2026-08-19). Chave cronológica é `periodo_fim`: sempre presente nas
+  // linhas faturadas e ordenável como texto (ISO). Empate cai no número
+  // do BM. Não uso `data_faturamento` porque ela falta em parte das
+  // linhas, e não uso só o número do BM porque há rótulo sem número
+  // ("BM 01 - Limpeza", "MSE x ROCKTEC").
+  const idUltimoFaturado = useMemo(() => {
+    if (!boletinsRaw) return null;
+    const faturados = boletinsRaw.filter(b => (b.status_faturamento || '').trim().toLowerCase() === 'faturado');
+    if (!faturados.length) return null;
+    const numBm = (b) => { const n = Number(bmCurto(b.bm_label)); return isNaN(n) ? -Infinity : n; };
+    return faturados.reduce((a, b) => {
+      const pa = a.periodo_fim || '', pb = b.periodo_fim || '';
+      if (pb !== pa) return pb > pa ? b : a;
+      return numBm(b) > numBm(a) ? b : a;
+    }).id;
+  }, [boletinsRaw]);
+
+  // (Aqui existia um ResizeObserver que media as colunas do Histórico pra
+  // a tabela de Previsão copiar as larguras e as duas alinharem. Saiu em
+  // 2026-08-19 junto com a fusão das duas tabelas numa só — não há mais
+  // duas tabelas pra alinhar.)
+
   // Curva por VALOR faturado — mesmo padrão de antes (uma NF por ponto no
   // eixo X = data de emissão), agora a partir do HISTÓRICO
   // (data_faturamento + valor_faturado, já líquido de FD/retenção — é o
@@ -4905,32 +5363,175 @@ function ModuloMedicoes({ obraId, obraNome }){
     });
   }, [historico]);
 
-  // Ordenação do Histórico — BM decrescente (mais recente primeiro) por
-  // padrão, pedido explícito (2026-08-19: "tem que vir ordenado do maior
-  // para o menor"). Clicar num cabeçalho ainda reordena por qualquer
-  // coluna; toda coluna nasce em decrescente no primeiro clique — maior
-  // valor/BM/data mais recente primeiro, mesmo critério em todas.
-  const DIRECAO_INICIAL_HIST = { bm_label:'desc', periodo_fim:'desc', valor_previsto:'desc', valor_medido:'desc', desconto_fd:'desc', valor_faturado:'desc' };
-  const [ordenarHist, setOrdenarHist] = useState('bm_label');
-  const [ordenarHistDir, setOrdenarHistDir] = useState('desc');
-  const alternarOrdenacaoHist = (campo) => {
-    if (ordenarHist === campo) setOrdenarHistDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setOrdenarHist(campo); setOrdenarHistDir(DIRECAO_INICIAL_HIST[campo] || 'desc'); }
+  // Curva Previsto × Medido — pedido explícito (2026-08-19): "um gráfico
+  // que plotará as duas curvas, do previsto e do medido". Agrupa TODO
+  // boletim por `periodo_fim`. Previsto acumula `valor_previsto` de todos
+  // (é a trajetória contratual completa, passado + futuro já lançado).
+  //
+  // Medido para no CORTE (pedido explícito, 2026-08-19: "a curva do real
+  // deve ir somente ao corte com dados") — mesma ideia do realizado da
+  // Curva S. Corte = último período com `valor_medido` lançado; depois
+  // dele `medidoAcum`/`medidoDia` vêm `null` e o gráfico simplesmente não
+  // desenha, em vez de esticar uma reta horizontal que pareceria "medição
+  // parada" quando o certo é "ainda não medido".
+  //
+  // O que conta como medido é `valor_medido != null` em QUALQUER boletim,
+  // não só nos já faturados: um boletim medido e ainda não faturado é
+  // dado real e tem que entrar no corte.
+  //
+  // `previstoDia`/`medidoDia` (valor do próprio período, não acumulado)
+  // alimentam as colunas do gráfico — também pedido explícito.
+  const serieDuasCurvas = useMemo(() => {
+    if (!boletinsRaw) return null;
+    const porPeriodo = {};
+    boletinsRaw.forEach(r => {
+      if (!r.periodo_fim) return;
+      const g = (porPeriodo[r.periodo_fim] = porPeriodo[r.periodo_fim] || { previstoDia:0, medidoDia:0, temMedido:false });
+      if (r.valor_previsto != null) g.previstoDia += Number(r.valor_previsto) || 0;
+      if (r.valor_medido != null) { g.medidoDia += Number(r.valor_medido) || 0; g.temMedido = true; }
+    });
+    const datas = Object.keys(porPeriodo).sort();
+    let idxCorte = -1;
+    datas.forEach((d, i) => { if (porPeriodo[d].temMedido) idxCorte = i; });
+    let accPrevisto = 0, accMedido = 0;
+    return datas.map((data, i) => {
+      const g = porPeriodo[data];
+      accPrevisto += g.previstoDia;
+      const dentroDoCorte = i <= idxCorte;
+      if (dentroDoCorte) accMedido += g.medidoDia;
+      return {
+        label: fmtDataLonga(data),
+        previstoAcum: accPrevisto,
+        previstoDia: g.previstoDia,
+        medidoAcum: dentroDoCorte ? accMedido : null,
+        medidoDia: dentroDoCorte ? g.medidoDia : null,
+        ehCorte: i === idxCorte,
+      };
+    });
+  }, [boletinsRaw]);
+
+  // Grid de widgets (pedido explícito, 2026-08-19): posição livre (X e
+  // Y), tamanho e visibilidade de Histórico/Previsão/Gráfico ficam salvos
+  // no navegador — é preferência de interface, não dado da obra, por isso
+  // a chave é global (não por obraId). Guardamos a entrada de TODOS os
+  // blocos, inclusive os ocultos: assim um bloco escondido volta na mesma
+  // posição/tamanho em que estava. "Sem KPIs" (pedido explícito) — o
+  // bloco de KPIs/pizza/gráfico antigo (`MOSTRAR_TOPO_MEDICOES`/
+  // `MOSTRAR_PIZZA_MEDICOES`, ambos `false`) fica fora deste sistema.
+  // Chave `_grid` nova de propósito: o formato mudou de lista de ids
+  // (versão anterior, só ordem) pra lista de {i,x,y,w,h} — reaproveitar a
+  // chave antiga carregaria lixo incompatível.
+  const [layoutTiles, setLayoutTiles] = useState(() => {
+    try {
+      const salvo = JSON.parse(localStorage.getItem('mse_medicoes_grid'));
+      if (Array.isArray(salvo) && salvo.length && salvo.every(l => l && TILES_MEDICOES_IDS.includes(l.i) && Number.isFinite(l.x) && Number.isFinite(l.y) && Number.isFinite(l.w) && Number.isFinite(l.h))) {
+        // completa com o padrão qualquer bloco que ainda não esteja salvo
+        const faltando = LAYOUT_MEDICOES_PADRAO.filter(p => !salvo.some(l => l.i === p.i));
+        return [...salvo, ...faltando];
+      }
+    } catch {}
+    return LAYOUT_MEDICOES_PADRAO;
+  });
+  const [tileOcultos, setTileOcultos] = useState(() => {
+    try {
+      const salvo = JSON.parse(localStorage.getItem('mse_medicoes_tile_ocultos'));
+      return Array.isArray(salvo) ? salvo.filter(id => TILES_MEDICOES_IDS.includes(id)) : [];
+    } catch { return []; }
+  });
+  useEffect(() => { localStorage.setItem('mse_medicoes_grid', JSON.stringify(layoutTiles)); }, [layoutTiles]);
+  useEffect(() => { localStorage.setItem('mse_medicoes_tile_ocultos', JSON.stringify(tileOcultos)); }, [tileOcultos]);
+
+  const idsVisiveis = TILES_MEDICOES_IDS.filter(id => !tileOcultos.includes(id));
+  const entradaLayout = (id) => layoutTiles.find(l => l.i === id) || LAYOUT_MEDICOES_PADRAO.find(l => l.i === id);
+  // `minW/minH` são reaplicados da constante a cada render (em vez de
+  // saírem do localStorage) — se um dia mudarem no código, valem na hora,
+  // sem depender de limpar o que já está salvo no navegador.
+  const layoutVisivel = idsVisiveis.map(id => ({ ...entradaLayout(id), ...MIN_TILE_MEDICOES[id] }));
+  const aoMudarLayoutTiles = (novo) => {
+    setLayoutTiles(prev => {
+      const ocultos = prev.filter(l => tileOcultos.includes(l.i));
+      const visiveis = novo.map(l => ({ i:l.i, x:l.x, y:l.y, w:l.w, h:l.h }));
+      // só grava se algo mudou de fato — `onLayoutChange` também dispara
+      // na montagem, e gravar igual re-renderizaria de graça.
+      const igual = visiveis.length === prev.length - ocultos.length
+        && visiveis.every(v => { const a = prev.find(p => p.i === v.i); return a && a.x === v.x && a.y === v.y && a.w === v.w && a.h === v.h; });
+      return igual ? prev : [...visiveis, ...ocultos];
+    });
   };
-  const historicoOrdenado = useMemo(() => {
-    if (!historico) return null;
-    const dir = ordenarHistDir === 'asc' ? 1 : -1;
+  // Clona o padrão em vez de guardar a referência da constante — nada
+  // hoje muta essas entradas, mas o estado passa a ser dono do array.
+  const restaurarLayoutPadrao = () => { setLayoutTiles(LAYOUT_MEDICOES_PADRAO.map(l => ({ ...l }))); setTileOcultos([]); };
+
+  // "Organizar": sobe cada bloco até encostar, sem mudar largura, altura
+  // nem coluna. Existe porque o grid roda SEM compactação automática (é o
+  // que faz o resize pelo topo funcionar, ver comentário no
+  // <GridLayoutMedicoes>): em troca, empurrar um vizinho pra baixo deixa
+  // faixa vazia que não se fecha sozinha. Isto fecha, sob demanda, sem
+  // tirar liberdade de posicionamento — e sem desfazer o arranjo, ao
+  // contrário do "Restaurar layout".
+  const organizarLayout = () => {
+    setLayoutTiles(prev => {
+      const ocultos = prev.filter(l => tileOcultos.includes(l.i));
+      const emOrdem = idsVisiveis.map(id => ({ ...entradaLayout(id) })).sort((a, b) => a.y - b.y || a.x - b.x);
+      const postos = [];
+      emOrdem.forEach(item => {
+        let y = 0;
+        const colide = (yTeste) => postos.some(p =>
+          p.x < item.x + item.w && item.x < p.x + p.w &&
+          yTeste < p.y + p.h && p.y < yTeste + item.h);
+        while (colide(y)) y++;
+        postos.push({ ...item, y });
+      });
+      return [...postos, ...ocultos];
+    });
+  };
+
+  const TILES_MEDICOES_META = {
+    tabela: { titulo: 'Boletins de Medição' },
+    grafico: { titulo: 'Previsto × Medido — Acumulado' },
+  };
+
+  // Ordenação da tabela — BM decrescente (mais recente primeiro) por
+  // padrão, pedido explícito (2026-08-19: "tem que vir ordenado do maior
+  // para o menor"). Clicar num cabeçalho reordena por qualquer coluna;
+  // toda coluna nasce em decrescente no primeiro clique — maior valor /
+  // BM mais alto / data mais recente primeiro, mesmo critério em todas.
+  // Por isso a direção inicial sai de `COLUNAS_MEDICOES` em vez de um
+  // mapa escrito à mão: coluna nova entra já com o comportamento certo,
+  // sem precisar lembrar de cadastrar aqui.
+  const [ordenarPorTabela, setOrdenarPorTabela] = useState('bm_label');
+  const [ordenarDirTabela, setOrdenarDirTabela] = useState('desc');
+  const alternarOrdenacaoTabela = (campo) => {
+    if (ordenarPorTabela === campo) setOrdenarDirTabela(d => d === 'asc' ? 'desc' : 'asc');
+    else { setOrdenarPorTabela(campo); setOrdenarDirTabela('desc'); }
+  };
+  // Ordena a lista COMPLETA (faturado + pendente) — é uma tabela só
+  // agora. `bm_label` ordena pelo número extraído do rótulo (o texto
+  // cru colocaria "10" antes de "9"); rótulo sem número nenhum
+  // (ex.: "MSE x ROCKTEC") vai pro fim.
+  const boletinsOrdenados = useMemo(() => {
+    if (!boletinsRaw) return null;
+    const dir = ordenarDirTabela === 'asc' ? 1 : -1;
     const valorDe = (r) => {
-      if (ordenarHist === 'bm_label') { const n = Number(bmCurto(r.bm_label)); return isNaN(n) ? -Infinity : n; }
-      const v = r[ordenarHist];
+      if (ordenarPorTabela === 'bm_label') { const n = Number(bmCurto(r.bm_label)); return isNaN(n) ? -Infinity : n; }
+      // "Farol" não é campo do banco: ordena pelo desvio que ele
+      // representa, então clicar na coluna traz o pior (ou o melhor)
+      // desempenho primeiro. Linha sem previsto (farol cinza) não tem
+      // desvio e vai pro fim.
+      if (ordenarPorTabela === 'farol') {
+        const p = r.valor_previsto != null ? Number(r.valor_previsto) : null;
+        const m = r.valor_medido != null ? Number(r.valor_medido) : null;
+        return (p && m != null) ? (m / p - 1) * 100 : -Infinity;
+      }
+      const v = r[ordenarPorTabela];
       if (v == null) return -Infinity;
-      return typeof v === 'number' ? v : v;
+      return v;
     };
-    return historico.slice().sort((a, b) => {
+    return boletinsRaw.slice().sort((a, b) => {
       const va = valorDe(a), vb = valorDe(b);
       return va < vb ? -1 * dir : va > vb ? 1 * dir : 0;
     });
-  }, [historico, ordenarHist, ordenarHistDir]);
+  }, [boletinsRaw, ordenarPorTabela, ordenarDirTabela]);
 
   if (!obraCfg?.origemCP) return <CartaoEstado texto="Sem código de contrato (CP) mapeado ainda para esta obra" maxHeight={620} />;
   if (contratoRaw === null || boletinsRaw === null) return <CartaoEstado texto="Carregando medições…" maxHeight={620} />;
@@ -4982,6 +5583,43 @@ function ModuloMedicoes({ obraId, obraNome }){
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
+      
+      {/* NOVO WIDGET: FAROL HORIZONTAL COM FUNDO COLORIDO (Acima de tudo) */}
+      <div 
+        className={farolDiff != null ? "card hoverable balao-clicavel" : "card"} 
+        onClick={farolDiff != null ? () => setFarolAberto(true) : undefined} 
+        style={{ 
+          display:'flex', alignItems:'center', gap:16, padding:'10px 16px', borderRadius:10, 
+          cursor: farolDiff != null ? 'pointer' : 'default', flexShrink:0,
+          background: farolTom ? farolTom.bg : '#eef0f3',
+          borderColor: farolTom ? farolTom.borda : 'var(--line)'
+        }}
+      >
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ width:12, height:12, borderRadius:'50%', background: farolTom ? farolTom.cor : T.mut, boxShadow:`0 0 0 3px ${farolTom ? farolTom.borda : 'rgba(0,0,0,0.05)'}` }} />
+          <span className="mono" style={{ fontSize:11.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:T.ink }}>Farol Medido × Físico</span>
+        </div>
+        
+        <div style={{ width:1, height:16, background: farolTom ? farolTom.borda : 'var(--line)' }} />
+        
+        {farolDiff != null ? (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:20, fontSize:12.5 }}>
+              <span><span style={{ color:T.mut }}>Medido: </span><span style={{ fontWeight:600, color:T.ink }}>{percMedido.toFixed(2)}%</span></span>
+              <span><span style={{ color:T.mut }}>Físico (Curva S): </span><span style={{ fontWeight:600, color:T.ink }}>{percFisico.toFixed(2)}%</span></span>
+              <span><span style={{ color:T.mut }}>Diferença: </span><span className="mono" style={{ fontWeight:700, color:farolTom.cor }}>{farolDiff > 0 ? '+' : ''}{farolDiff.toFixed(2)}%</span></span>
+            </div>
+            <div style={{ marginLeft:'auto', fontSize:11, color:T.mut2 }}>
+              Clique para ver o detalhamento e totais
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize:12.5, color:T.mut }}>
+            Dados insuficientes no momento para comparar o medido com o físico.
+          </div>
+        )}
+      </div>
+
       {MOSTRAR_TOPO_MEDICOES && (
       <div className="kpi-row-flex">
         {/* Farol Medido × Físico — balão BEM MENOR (só a luz, largura fixa,
@@ -5030,9 +5668,13 @@ function ModuloMedicoes({ obraId, obraNome }){
       )}
 
       {/* `overflowX:'auto'` é a rede de segurança: se os mínimos (pizza 220
-          + gráfico 320 + tabela 480, + as faixas de 22px dos resizers)
-          somados passarem da largura real da tela, a fileira rola por
-          dentro dela mesma em vez de estourar a página inteira pra direita. */}
+          + gráfico 320, + as faixas de 22px dos resizers) somados passarem
+          da largura real da tela, a fileira rola por dentro dela mesma em
+          vez de estourar a página inteira pra direita. A fileira inteira
+          só entra quando pizza ou KPIs/gráfico antigo estão ligados —
+          `.medicoes-row` é `flex:1`, e vazia ela roubaria a altura toda
+          do grid de widgets abaixo. */}
+      {(MOSTRAR_PIZZA_MEDICOES || MOSTRAR_TOPO_MEDICOES) && (
       <div ref={areaRef} className="medicoes-row">
         {temContrato && MOSTRAR_PIZZA_MEDICOES && (
           <React.Fragment>
@@ -5079,98 +5721,165 @@ function ModuloMedicoes({ obraId, obraNome }){
           </React.Fragment>
         )}
 
-        {/* minWidth explícito — sem isso, `flex:1` com `overflow:auto` no
-            filho zera o mínimo automático do item flex, deixando a tabela
-            encolher até esmagar as colunas quando pizza/gráfico são
-            arrastados maiores. Abaixo do mínimo, rola horizontal. */}
-        <div className="card" style={{ flex:1, minWidth:480, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
-          <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
-            Histórico de Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({historico.length})</span>
-          </div>
-          <div style={{ overflow:'auto', flex:1 }}>
-            <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
-              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
-                <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
-                  {COLUNAS_HISTORICO.map(col => {
-                    const ativo = ordenarHist === col.campo;
+      </div>
+      )}
+
+      {/* Blocos do grid de widgets — pedido explícito (2026-08-19):
+          "algo realmente interativo, que seja capaz de re-dimensionar,
+          colocar lado a lado". Histórico, Previsão e o gráfico
+          Previsto×Medido formam o conjunto (sem KPIs, pedido explícito);
+          posição/tamanho/visibilidade persistem no navegador (ver
+          `layoutTiles`/`tileOcultos` acima). `renderTile` devolve só o
+          conteúdo de cada bloco — quem posiciona é o grid (ou, se o CDN
+          do react-grid-layout falhar, o empilhamento de reserva). */}
+      {(() => {
+      const renderTile = (id) => {
+        const meta = TILES_MEDICOES_META[id];
+        const tileProps = {
+          titulo: meta.titulo,
+          onRemover: () => setTileOcultos(o => [...o, id]),
+        };
+
+        if (id === 'tabela') return (
+          <TileFrame key={id} contagem={boletinsOrdenados.length} {...tileProps}>
+            <div style={{ overflow:'auto', flex:1 }}>
+              {/* Uma linha por boletim, faturado ou pendente, com a união
+                  das colunas das 2 tabelas antigas (pedido explícito,
+                  2026-08-19). Largura AUTO (sem colgroup/tableLayout:
+                  fixed): px fixo já foi tentado e deixou as colunas
+                  espremidas. Com 12 colunas a tabela fica larga e rola na
+                  horizontal por dentro do bloco. */}
+              {/* Respiro horizontal das células é 10px (e não os 14px do
+                  resto do painel) só nesta tabela, pra economizar largura.
+                  Com 15 colunas de moeda/data ela passa dos ~2100px e rola
+                  na horizontal mesmo em monitor de 1920 — inevitável nesse
+                  tamanho, e apertar mais já foi rejeitado antes ("colunas
+                  espremidas"). O bloco é redimensionável, então quem
+                  precisa ver tudo alarga o bloco ou rola. */}
+              <table className="tabela-medicoes" style={{ width:'100%', minWidth:1450, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+                <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
+                  <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
+                    {COLUNAS_MEDICOES.map(col => {
+                      const ativo = ordenarPorTabela === col.campo;
+                      return (
+                        <th key={col.campo} onClick={() => alternarOrdenacaoTabela(col.campo)} title="Ordenar por esta coluna"
+                          style={{ padding:'10px 10px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'2px solid var(--line)' }}>
+                          {col.label}{ativo ? (ordenarDirTabela === 'asc' ? ' ▲' : ' ▼') : ''}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {boletinsOrdenados.map((r) => {
+                    const ehFaturado = (r.status_faturamento || '').trim().toLowerCase() === 'faturado';
+                    const classeLinha = r.id === idUltimoFaturado ? 'linha-ultimo-faturado' : (ehFaturado ? 'linha-historico' : '');
                     return (
-                      <th key={col.campo} onClick={() => alternarOrdenacaoHist(col.campo)} title="Ordenar por esta coluna"
-                        style={{ padding:'10px 14px', textAlign:col.align || 'left', cursor:'pointer', userSelect:'none', color: ativo ? T.blue : undefined, borderBottom:'2px solid var(--line)' }}>
-                        {col.label}{ativo ? (ordenarHistDir === 'asc' ? ' ▲' : ' ▼') : ''}
-                      </th>
+                    <tr 
+                      key={r.id} 
+                      className={`${classeLinha} hoverable`} 
+                      style={{ borderBottom:'1px solid var(--line)', cursor:'pointer' }}
+                      onClick={() => setLinhaSelecionada(r)}
+                    >
+                      <td className="mono" style={{ padding:'9px 10px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
+                      <td style={{ padding:'9px 10px', textAlign:'center' }}><FarolMedidoPrevisto previsto={r.valor_previsto} medido={r.valor_medido} /></td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
+                      <td style={{ padding:'9px 10px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
+                      <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
+                      <td style={{ padding:'9px 10px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
+                    </tr>
                     );
                   })}
-                </tr>
-              </thead>
-              <tbody>
-                {historicoOrdenado.map((r) => (
-                  <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                    <td className="mono" style={{ padding:'9px 14px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
-                    <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
-                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
-                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
-                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
-                    <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
-                  </tr>
-                ))}
-                {historicoOrdenado.length === 0 && (
-                  <tr><td colSpan={COLUNAS_HISTORICO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim faturado ainda</td></tr>
-                )}
-              </tbody>
-              {/* Linha de resumo — nas 3 colunas de valor, `sticky bottom`
-                  mesmo padrão do `thead`. */}
-              <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
-                <tr>
-                  <td colSpan={2} className="mono" style={{ padding:'10px 14px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
-                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_previsto') || 0)}</td>
-                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(valorMedido || 0)}</td>
-                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'desconto_fd') || 0)}</td>
-                  <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      </div>
+                  {boletinsOrdenados.length === 0 && (
+                    <tr><td colSpan={COLUNAS_MEDICOES.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim lançado</td></tr>
+                  )}
+                </tbody>
+                {/* Resumo — soma sobre TODOS os boletins (faturado +
+                    pendente), agora que é uma tabela só. Só as 4 colunas de
+                    valor por boletim entram: as 2 "Acum." são snapshot
+                    carregado da planilha (ver nota em
+                    [[modelo-dados-supabase]]), somar daria número sem
+                    sentido; datas e status não somam. `sticky bottom`,
+                    mesmo padrão do `thead`. */}
+              </table>
+            </div>
+          </TileFrame>
+        );
 
-      {/* Tabela 2 — Previsão de Próximos Faturamentos: tudo que ainda não
-          tem `status_faturamento = 'Faturado'` (BM vigente + qualquer BM
-          futuro que já tenha ganhado valor previsto na planilha). Fica
-          FORA da fileira redimensionável — lista curta, altura própria.
-          Sem coluna de BM/Período de propósito (pedido explícito,
-          2026-08-19) — foco no status de pagamento/recebimento e no saldo
-          acumulado corrente, não na identidade do boletim (normalmente só
-          tem 1 linha pendente mesmo). */}
-      <div className="card" style={{ minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0, maxHeight:260, flexShrink:0 }}>
-        <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
-          Previsão de Próximos Faturamentos <span style={{ color:T.mut2, fontWeight:500 }}>({previsao.length})</span>
+        if (id === 'grafico') return (
+          <TileFrame key={id} {...tileProps}>
+            <div style={{ flex:1, minHeight:0, padding:'2px 16px 16px' }}>
+              <GraficoPrevistoMedido pontos={serieDuasCurvas} />
+            </div>
+          </TileFrame>
+        );
+
+        return null;
+      };
+
+      // O grid embrulha cada bloco num <div> próprio (é nele que a lib
+      // injeta className/style de posição e as alças de resize) — daí o
+      // <div key> em volta do TileFrame, em vez do TileFrame direto.
+      if (!GridLayoutMedicoes) return (
+        <div style={{ display:'flex', flexDirection:'column', gap:14, flexShrink:0 }}>
+          {idsVisiveis.map(id => (
+            <div key={id} style={{ height:ALTURA_FALLBACK_TILE[id], flexShrink:0 }}>{renderTile(id)}</div>
+          ))}
         </div>
-        <div style={{ overflow:'auto', flex:1 }}>
-          <table className="tabela-medicoes" style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
-            <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
-              <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
-                {COLUNAS_PREVISAO.map(col => (
-                  <th key={col.campo} style={{ padding:'10px 14px', textAlign:col.align || 'left', borderBottom:'2px solid var(--line)' }}>{col.label}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {previsao.map((r) => (
-                <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
-                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
-                  <td className="mono" style={{ padding:'9px 14px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
-                  <td style={{ padding:'9px 14px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
-                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
-                  <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
-                </tr>
-              ))}
-              {previsao.length === 0 && (
-                <tr><td colSpan={COLUNAS_PREVISAO.length} style={{ padding:20, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum boletim pendente — todos já faturados</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      );
+      return (
+        // `flexShrink:0` NÃO é decoração: este grid é filho de um flex
+        // column, e a altura que a lib calcula (inline, em px) era
+        // esmagada pelo shrink padrão. Os blocos são `position:absolute`
+        // e mantêm o offset real, então vazavam pra fora do container e
+        // cobriam a barra de apoio abaixo (o botão "Restaurar layout"
+        // ficava inclicável quando o grid passava da altura da tela).
+        // `resizeHandles` com as 8 alças e `compactType={null}` andam
+        // juntos (2026-08-19: "só consigo ajustar o tamanho para baixo ou
+        // para o lado direito"). Redimensionar pelo topo/esquerda mexe no
+        // x/y do bloco, não só no w/h — com compactação vertical ligada, a
+        // lib puxava o bloco de volta pra cima logo depois e o gesto não
+        // surtia efeito nenhum. Sem compactação, cada bloco fica exatamente
+        // onde foi posto (e pode sobrar espaço vazio no meio — é o preço da
+        // liberdade, e o botão "Restaurar layout" resolve).
+        <GridLayoutMedicoes layout={layoutVisivel} onLayoutChange={aoMudarLayoutTiles}
+          style={{ flexShrink:0 }}
+          cols={12} rowHeight={40} margin={[14, 14]} containerPadding={[0, 0]}
+          draggableHandle=".tile-handle" draggableCancel=".tile-nao-arrasta"
+          resizeHandles={['nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se']} compactType={null}>
+          {idsVisiveis.map(id => <div key={id}>{renderTile(id)}</div>)}
+        </GridLayoutMedicoes>
+      );
+      })()}
+
+      {/* Barra de apoio do grid: dica de uso (sem ela o resize/lado a lado
+          fica escondido — a alça só aparece no hover), blocos ocultos e
+          volta ao padrão. */}
+      <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
+        <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
+          Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
+        </span>
+        <span style={{ flex:1, minWidth:8 }} />
+        {tileOcultos.map(id => (
+          <button key={id} onClick={() => setTileOcultos(o => o.filter(x => x !== id))} className="mono"
+            title="Trazer o bloco de volta (na posição em que estava)"
+            style={{ background:'#eef0f3', border:'1px solid var(--line)', color:T.body, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+            + {TILES_MEDICOES_META[id].titulo}
+          </button>
+        ))}
+        <button onClick={organizarLayout} className="mono" title="Subir os blocos para fechar espaços vazios, mantendo tamanho e coluna de cada um"
+          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+          Organizar
+        </button>
+        <button onClick={restaurarLayoutPadrao} className="mono" title="Voltar posição, tamanho e visibilidade ao padrão"
+          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
+          Restaurar layout
+        </button>
       </div>
 
       {contratoAberto && temContrato && (
@@ -5248,7 +5957,8 @@ function ModuloMedicoes({ obraId, obraNome }){
 
       {farolAberto && farolDiff != null && (
         <div onClick={() => setFarolAberto(false)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+          {/* Aumentei a largura máxima (maxWidth) para 480 para acomodar bem os dois blocos lado a lado */}
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:480, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Farol</div>
@@ -5258,6 +5968,7 @@ function ModuloMedicoes({ obraId, obraNome }){
               <button onClick={() => setFarolAberto(false)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+              
               <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
                 <span>% Medido (Valor Medido ÷ Valor Contrato)</span>
                 <span className="mono" style={{ fontWeight:600, color:T.ink }}>{percMedido.toFixed(2)}%</span>
@@ -5275,10 +5986,119 @@ function ModuloMedicoes({ obraId, obraNome }){
                 faturamento ({fmtDataLonga(dataUltimoFaturamento)}): corte de{' '}
                 {fmtDataLonga(corteFisico.linha.data)}.
               </div>
+
+              {/* TOTAIS DA OBRA (Layout Aprimorado com Retenção) */}
+              {(() => {
+                // Cálculo das variáveis solicitadas
+                const totalFd = soma(boletinsRaw, 'desconto_fd') || 0;
+                const totalRetencao = soma(boletinsRaw, 'retencao') || 0;
+                const totalFaturado = soma(boletinsRaw, 'valor_faturado') || 0;
+                const medidoComposto = totalFd + totalRetencao + totalFaturado;
+
+                return (
+                  <div style={{ marginTop:24, paddingTop:16, borderTop:'1px dashed #eef0f3' }}>
+                    <div className="mono" style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Totais Financeiros da Obra</div>
+                    
+                    <div style={{ display:'flex', gap:12, marginBottom:16 }}>
+                      <div style={{ flex:1, background:'#f7f8fa', padding:'12px 14px', borderRadius:8, border:'1px solid #eef0f3' }}>
+                        <div style={{ fontSize:11, color:T.mut, marginBottom:6 }}>Previsto (Valor do Contrato)</div>
+                        <div className="mono" style={{ fontSize:15, fontWeight:700, color:T.ink }}>{valorContrato != null ? fmtReais(valorContrato) : '—'}</div>
+                      </div>
+                      <div style={{ flex:1, background:'rgba(31,157,87,0.06)', padding:'12px 14px', borderRadius:8, border:'1px solid rgba(31,157,87,0.15)' }}>
+                        <div style={{ fontSize:11, color:T.green, marginBottom:6, fontWeight:600 }}>Medido (FD + Ret. + Fat.)</div>
+                        <div className="mono" style={{ fontSize:15, fontWeight:700, color:T.green }}>{fmtReais(medidoComposto)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                      <span>Desconto FD</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalFd)}</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                      <span>Retenção</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalRetencao)}</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', fontSize:13, color:T.body }}>
+                      <span>Faturado</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalFaturado)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              
             </div>
           </div>
         </div>
       )}
+      {linhaSelecionada && (() => {
+        // Cálculos de Saldo (Previsto - Realizado)
+        const saldoPrev = linhaSelecionada.saldo_previsto_acumulado;
+        const saldoReal = linhaSelecionada.saldo_realizado_acumulado_medido;
+        const diffSaldo = (saldoReal != null && saldoPrev != null) ? saldoPrev - saldoReal : null;
+        const corSaldo = diffSaldo > 0 ? T.green : diffSaldo < 0 ? T.red : T.mut;
+
+        // Cálculos de Avanço (Realizado - Previsto)
+        const avancoPrev = linhaSelecionada.avanco_previsto_acumulado;
+        const avancoReal = linhaSelecionada.avanco_realizado_acumulado;
+        const diffAvanco = (avancoReal != null && avancoPrev != null) ? avancoReal - avancoPrev : null;
+        const corAvanco = diffAvanco > 0 ? T.green : diffAvanco < 0 ? T.red : T.mut;
+
+        return (
+          <div onClick={() => setLinhaSelecionada(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+            <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:460, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Detalhes do Boletim</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>BM {bmCurto(linhaSelecionada.bm_label) || '—'}</div>
+                </div>
+                <button onClick={() => setLinhaSelecionada(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+              </div>
+              
+              <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+                
+                {/* BLOCO DE SALDOS */}
+                <div style={{ padding:'12px 0', borderBottom:'1px dashed #eef0f3' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Saldos Acumulados</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Saldo Previsto</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoPrev != null ? fmtReais(saldoPrev) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Saldo Realizado (Medido)</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoReal != null ? fmtReais(saldoReal) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
+                    <span>Diferença de Saldo</span>
+                    <span className="mono" style={{ color:corSaldo }}>
+                      {diffSaldo != null ? (diffSaldo > 0 ? '+' : '') + fmtReais(diffSaldo) : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* BLOCO DE AVANÇOS */}
+                <div style={{ padding:'16px 0 6px' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Avanços Acumulados</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Avanço Previsto</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoPrev != null ? fmtReais(avancoPrev) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Avanço Realizado</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoReal != null ? fmtReais(avancoReal) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
+                    <span>Diferença de Avanço</span>
+                    <span className="mono" style={{ color:corAvanco }}>
+                      {diffAvanco != null ? (diffAvanco > 0 ? '+' : '') + fmtReais(diffAvanco) : '—'}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
