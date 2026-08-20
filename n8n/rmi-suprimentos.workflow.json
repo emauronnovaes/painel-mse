@@ -1,0 +1,101 @@
+{
+  "name": "RMI (Suprimentos) → Supabase (painel-mse)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "daysInterval": 1, "triggerAtHour": 8, "triggerAtMinute": 0 }
+          ]
+        }
+      },
+      "id": "trigger-diario",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Mesma lista/ids do array OBRAS em prototipo/index.html -- mesmo motivo\n// dos outros 2 fluxos de Suprimentos/OC: essa API exige `obra_id` (ou\n// `rmi_id`) por chamada, sem endpoint \"lista todas as obras\". CNPEM -\n// Auditório (id 103) fica DE FORA de propósito, mesma decisão já tomada\n// nos outros fluxos. Se uma obra nova entrar no painel, adicionar aqui\n// também.\nconst OBRAS = [\n  { id: 106, nome: 'CNPEM - Faseado' },\n  { id: 110, nome: 'Hitachi' },\n  { id: 94,  nome: 'Porto Itapoá' },\n  { id: 107, nome: 'Novo Nordisk - AP' },\n  { id: 108, nome: 'Novo Nordisk - AP - Reforço' },\n  { id: 91,  nome: 'Novo Nordisk - UB/SP' },\n];\n\nreturn OBRAS.map(o => ({ json: { id_obra: o.id, nome_obra: o.nome } }));"
+      },
+      "id": "code-lista-obras",
+      "name": "Lista de obras",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-660, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "url": "=https://portalmse.com.br/microservices/rmi_api/v1/itens",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "obra_id", "value": "={{$json.id_obra}}" },
+            { "name": "all", "value": "true" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "timeout": 60000
+        }
+      },
+      "id": "http-itens-por-obra",
+      "name": "Buscar itens de RMI por obra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-420, 300],
+      "credentials": {
+        "httpBearerAuth": { "name": "PortalMSE - RMI (Suprimentos)" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Modo padrão \"Run Once for All Items\" (não mexer) -- fan-out de 1 item\n// de obra pra N linhas de item de RMI, mesmo padrão dos outros fluxos de\n// Suprimentos.\n//\n// Casa cada resposta HTTP com sua obra de origem por POSIÇÃO. Guard\n// explícito: se as contagens não baterem, aborta em vez de arriscar\n// juntar item com obra errada.\nconst listaObras = $('Lista de obras').all();\nconst respostas = $input.all();\nif (listaObras.length !== respostas.length) {\n  throw new Error(`Descompasso entre lista de obras (${listaObras.length}) e respostas HTTP (${respostas.length}) -- abortando pra não misturar item com obra errada.`);\n}\n\nconst num = (v) => (v === null || v === undefined || v === '') ? null : Number(v);\nconst bool = (v) => v === true || v === 'true' || v === 1;\n\nreturn respostas.map((resp, i) => {\n  const idObra = listaObras[i].json.id_obra;\n  const corpo = resp.json;\n  const itens = Array.isArray(corpo?.data) ? corpo.data : [];\n\n  // Guard de paginação -- essa API (diferente da de Mapa de Compras)\n  // CONFIRMA um campo `total` no envelope da resposta. Com `all=true` o\n  // esperado é vir tudo numa resposta só; se `total` não bater com quantos\n  // itens vieram em `data`, `all=true` não desligou a paginação como\n  // esperado e falta implementar loop de `page` pra essa obra -- melhor\n  // travar aqui do que gravar só uma fatia dos itens sem avisar.\n  if (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n    throw new Error(`Obra ${idObra}: API reportou total=${corpo.total} mas 'data' trouxe ${itens.length} itens -- all=true não trouxe tudo de uma vez, precisa de paginação manual (page=1,2,3...) pra essa obra.`);\n  }\n\n  const linhas = itens.map(it => ({\n    id: num(it.id),\n    id_rmi: num(it.id_rmi),\n    nome_rmi: it.nome_rmi || null,\n    id_obra: idObra,\n    obra_nome: it.obra || null,\n    codigo_seq: it.codigo_seq != null ? String(it.codigo_seq) : null,\n    nivel: num(it.nivel),\n    eh_item_pai: bool(it.eh_item_pai),\n    codigo_lam: it.codigo_lam || null,\n    codigo_s1: it.codigo_s1 || null,\n    descricao: it.descricao || null,\n    unidade: it.unidade || null,\n    quantidade: num(it.quantidade),\n    quantidade_consumida: num(it.quantidade_consumida),\n    data_necessidade_compra: it.data_necessidade_compra || null,\n    preco_referencia_bd_s1: num(it.preco_referencia_bd_s1),\n    subtotal_referencia_bd_s1: num(it.subtotal_referencia_bd_s1),\n    custo_meta_orcamento: num(it.custo_meta_orcamento),\n    subtotal_custo_meta_orcamento: num(it.subtotal_custo_meta_orcamento),\n    total_consumido: num(it.total_consumido),\n    total_consumido_proprio: num(it.total_consumido_proprio),\n    saldo_orcamentario: num(it.saldo_orcamentario),\n    desvio_saldo_orcamentario: it.desvio_saldo_orcamentario || null,\n    desvio_cor: it.desvio_cor || null,\n    prazo_status: it.prazo_status || null,\n    prazo_cor: it.prazo_cor || null,\n    raw: it,\n    atualizado_em: new Date().toISOString(),\n  }));\n  return { json: { id_obra: idObra, linhas } };\n});"
+      },
+      "id": "code-achatar-itens",
+      "name": "Montar linhas por obra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/itens_rmi?on_conflict=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.linhas) }}"
+      },
+      "id": "http-upsert-supabase",
+      "name": "Upsert no Supabase (lote por obra)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 300],
+      "credentials": {
+        "httpCustomAuth": { "name": "Supabase - API Portal (service_role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": { "main": [[{ "node": "Lista de obras", "type": "main", "index": 0 }]] },
+    "Lista de obras": { "main": [[{ "node": "Buscar itens de RMI por obra", "type": "main", "index": 0 }]] },
+    "Buscar itens de RMI por obra": { "main": [[{ "node": "Montar linhas por obra", "type": "main", "index": 0 }]] },
+    "Montar linhas por obra": { "main": [[{ "node": "Upsert no Supabase (lote por obra)", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

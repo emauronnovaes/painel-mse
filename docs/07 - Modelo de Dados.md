@@ -266,6 +266,42 @@ Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
 
+### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
+
+Tabela `itens_rmi` desenhada (SQL em `painel-mse\n8n\rmi-suprimentos.README.md`)
+e workflow n8n criado (`rmi-suprimentos.workflow.json`, mesma pasta) —
+ainda não aplicado no Supabase nem rodado.
+
+Fonte: API externa `rmi_api` do PortalMSE
+(`https://portalmse.com.br/microservices/rmi_api/GUIA_USUARIO.php`) —
+**serviço distinto de `mapa_compras_api`**, confirmado pelo `/health` de
+cada um (nomes de `service` diferentes) e por uma chave de um dar 403 no
+outro. Guia bem mais completo que o de Mapa de Compras: confirma o
+formato do envelope (`{page,per_page,total,data:[...]}`) e traz exemplo
+de JSON de resposta real.
+
+**Achado que muda o jogo pra regra de "crítico"** (pendente desde
+2026-08-05/08-11, ver seção "Suprimentos ganha fonte nova" abaixo e
+[[02 - Escopo e Telas]]): os itens da `rmi_api` já vêm com
+`prazo_status` (atrasado/no_prazo/sem_data) e `desvio_saldo_orcamentario`
+(positivo/negativo) **prontos da origem**, algo que nenhuma das outras 2
+fontes de Suprimentos tinha por item. A API até aceita filtrar direto
+por esses 2 campos via query string. Ainda não virou regra de produto
+("crítico = o quê exatamente"), mas agora existe dado pronto pra decidir
+em cima.
+
+1 linha por item, chave = `id` (o próprio id numérico do item na
+origem) — é a 1ª das 4 fontes de ingestão do projeto a ter um id
+numérico confirmado; as outras 3 (`pedidos_suprimentos`,
+`orcamentos_complementares_obra`, `itens_mapa_compras`) precisaram de
+chave composta "no chute" por falta disso.
+
+Suprimentos agora tem **3 fontes de ingestão coexistindo**
+(`pedidos_suprimentos`, `itens_mapa_compras`, `itens_rmi`), cada uma com
+um grão/foco diferente do mesmo processo de compra — ver tabela
+comparativa no README do `rmi-suprimentos` pra quando for desenhar a
+tela.
+
 ### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
 
 Tabela `itens_mapa_compras` desenhada (SQL em
