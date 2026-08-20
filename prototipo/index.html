@@ -5187,30 +5187,13 @@ const COLUNAS_MEDICOES = [
   { label:'Período',               campo:'periodo_fim' },
   { label:'Valor Previsto',        campo:'valor_previsto',                   align:'right' },
   { label:'Valor Medido',          campo:'valor_medido',                     align:'right' },
-  // Coluna própria a pedido explícito (2026-08-19) — na 1ª versão o farol
-  // ficava dentro da célula de Valor Medido. `campo:'farol'` não existe em
-  // `boletins_medicao`: é sintético, e a ordenação dele é tratada à parte
-  // (ordena pelo desvio medido×previsto, ver `boletinsOrdenados`).
   { label:'Farol',                 campo:'farol',                            align:'center' },
   { label:'Desconto FD',           campo:'desconto_fd',                      align:'right' },
   { label:'Valor Faturado',        campo:'valor_faturado',                   align:'right' },
   { label:'Data de Faturamento',   campo:'data_faturamento' },
   { label:'Status Fat.',           campo:'status_faturamento' },
   { label:'Data do Recebimento',   campo:'data_recebimento' },
-  { label:'Status Rec.',           campo:'status_recebimento' },
-  { label:'Saldo Previsto Acum.',  campo:'saldo_previsto_acumulado',         align:'right' },
-  { label:'Saldo Realizado Acum.', campo:'saldo_realizado_acumulado_medido', align:'right' },
-  // Pedido explícito (2026-08-19). ATENÇÃO ao nome: apesar de "avanço",
-  // estas 2 colunas NÃO são percentuais — guardam valor em REAIS, o
-  // acumulado do previsto e do medido. Conferido no dado (CP236/CP002/
-  // CP022): no 1º BM `avanco_realizado_acumulado` == `valor_medido` da
-  // linha, o máximo de `avanco_previsto_acumulado` == total da coluna
-  // Valor Previsto (R$ 336.302.373,48) e o de
-  // `avanco_realizado_acumulado` == total de Valor Medido
-  // (R$ 177.460.890,18); e `saldo_previsto_acumulado` = contrato menos
-  // `avanco_previsto_acumulado`. Por isso são formatadas como moeda.
-  { label:'Avanço Previsto Acum.',  campo:'avanco_previsto_acumulado',  align:'right' },
-  { label:'Avanço Realizado Acum.', campo:'avanco_realizado_acumulado', align:'right' },
+  { label:'Status Rec.',           campo:'status_recebimento' }
 ];
 
 function ModuloMedicoes({ obraId, obraNome }){
@@ -5228,7 +5211,14 @@ function ModuloMedicoes({ obraId, obraNome }){
   const [contratoAberto, setContratoAberto] = useState(false);
   const [medidoAberto, setMedidoAberto] = useState(false);
   const [farolAberto, setFarolAberto] = useState(false);
-  useEffect(() => { setContratoAberto(false); setMedidoAberto(false); setFarolAberto(false); }, [obraId]);
+  const [linhaSelecionada, setLinhaSelecionada] = useState(null);
+
+  useEffect(() => { 
+    setContratoAberto(false); 
+    setMedidoAberto(false); 
+    setFarolAberto(false); 
+    setLinhaSelecionada(null); 
+  }, [obraId]);
 
   // 2 divisores arrastáveis (pedido explícito original: "preciso ter os
   // comandos de ajuste entre ele [pizza] e a curva também") — pizza fica à
@@ -5565,6 +5555,43 @@ function ModuloMedicoes({ obraId, obraNome }){
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
+      
+      {/* NOVO WIDGET: FAROL HORIZONTAL COM FUNDO COLORIDO (Acima de tudo) */}
+      <div 
+        className={farolDiff != null ? "card hoverable balao-clicavel" : "card"} 
+        onClick={farolDiff != null ? () => setFarolAberto(true) : undefined} 
+        style={{ 
+          display:'flex', alignItems:'center', gap:16, padding:'10px 16px', borderRadius:10, 
+          cursor: farolDiff != null ? 'pointer' : 'default', flexShrink:0,
+          background: farolTom ? farolTom.bg : '#eef0f3',
+          borderColor: farolTom ? farolTom.borda : 'var(--line)'
+        }}
+      >
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ width:12, height:12, borderRadius:'50%', background: farolTom ? farolTom.cor : T.mut, boxShadow:`0 0 0 3px ${farolTom ? farolTom.borda : 'rgba(0,0,0,0.05)'}` }} />
+          <span className="mono" style={{ fontSize:11.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', color:T.ink }}>Farol Medido × Físico</span>
+        </div>
+        
+        <div style={{ width:1, height:16, background: farolTom ? farolTom.borda : 'var(--line)' }} />
+        
+        {farolDiff != null ? (
+          <>
+            <div style={{ display:'flex', alignItems:'center', gap:20, fontSize:12.5 }}>
+              <span><span style={{ color:T.mut }}>Medido: </span><span style={{ fontWeight:600, color:T.ink }}>{percMedido.toFixed(2)}%</span></span>
+              <span><span style={{ color:T.mut }}>Físico (Curva S): </span><span style={{ fontWeight:600, color:T.ink }}>{percFisico.toFixed(2)}%</span></span>
+              <span><span style={{ color:T.mut }}>Diferença: </span><span className="mono" style={{ fontWeight:700, color:farolTom.cor }}>{farolDiff > 0 ? '+' : ''}{farolDiff.toFixed(2)}%</span></span>
+            </div>
+            <div style={{ marginLeft:'auto', fontSize:11, color:T.mut2 }}>
+              Clique para ver o detalhamento e totais
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize:12.5, color:T.mut }}>
+            Dados insuficientes no momento para comparar o medido com o físico.
+          </div>
+        )}
+      </div>
+
       {MOSTRAR_TOPO_MEDICOES && (
       <div className="kpi-row-flex">
         {/* Farol Medido × Físico — balão BEM MENOR (só a luz, largura fixa,
@@ -5717,13 +5744,15 @@ function ModuloMedicoes({ obraId, obraNome }){
                 </thead>
                 <tbody>
                   {boletinsOrdenados.map((r) => {
-                    // 3 estados de linha (pedido explícito, 2026-08-19):
-                    // último BM faturado em destaque verde, faturados
-                    // anteriores apagados, não faturados como estão.
                     const ehFaturado = (r.status_faturamento || '').trim().toLowerCase() === 'faturado';
                     const classeLinha = r.id === idUltimoFaturado ? 'linha-ultimo-faturado' : (ehFaturado ? 'linha-historico' : '');
                     return (
-                    <tr key={r.id} className={classeLinha} style={{ borderBottom:'1px solid var(--line)' }}>
+                    <tr 
+                      key={r.id} 
+                      className={`${classeLinha} hoverable`} 
+                      style={{ borderBottom:'1px solid var(--line)', cursor:'pointer' }}
+                      onClick={() => setLinhaSelecionada(r)}
+                    >
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
@@ -5735,10 +5764,6 @@ function ModuloMedicoes({ obraId, obraNome }){
                       <td style={{ padding:'9px 10px' }}><BadgeStatusMedicao texto={r.status_faturamento} /></td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>{r.data_recebimento ? fmtDataLonga(r.data_recebimento) : '—'}</td>
                       <td style={{ padding:'9px 10px' }}><BadgeStatusMedicao texto={r.status_recebimento} /></td>
-                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.saldo_previsto_acumulado != null ? fmtReais(r.saldo_previsto_acumulado) : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.saldo_realizado_acumulado_medido != null ? fmtReais(r.saldo_realizado_acumulado_medido) : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.avanco_previsto_acumulado != null ? fmtReais(r.avanco_previsto_acumulado) : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.avanco_realizado_acumulado != null ? fmtReais(r.avanco_realizado_acumulado) : '—'}</td>
                     </tr>
                     );
                   })}
@@ -5753,33 +5778,6 @@ function ModuloMedicoes({ obraId, obraNome }){
                     [[modelo-dados-supabase]]), somar daria número sem
                     sentido; datas e status não somam. `sticky bottom`,
                     mesmo padrão do `thead`. */}
-                <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
-                  <tr>
-                    <td colSpan={2} className="mono" style={{ padding:'10px 10px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
-                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_previsto') || 0)}</td>
-                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_medido') || 0)}</td>
-                    {/* Coluna Farol vazia no total, de propósito. Previsto
-                        e Medido estão preenchidos em conjuntos DIFERENTES
-                        de boletins na planilha (previsto só nos BMs
-                        antigos, medido em quase todos), então qualquer
-                        agregado compara laranja com maçã: pelo total cheio
-                        dava -47%, restringindo aos que têm os 2 valores
-                        dava -67% — os dois números dizem mais sobre o
-                        preenchimento da planilha que sobre a obra. O farol
-                        por linha, esse sim, compara o previsto e o medido
-                        do MESMO boletim. Revisar quando o previsto estiver
-                        completo (o usuário avisou em 2026-08-19 que a
-                        planilha ainda está sendo preenchida). */}
-                    <td style={{ borderTop:'2px solid var(--line)' }}></td>
-                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'desconto_fd') || 0)}</td>
-                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_faturado') || 0)}</td>
-                    {/* Datas, status e as 4 colunas de acumulado não somam:
-                        as de "Acum." já SÃO acumulado (o último valor é o
-                        total), e ainda carregam o valor pra frente em linha
-                        sem atividade — somar daria número sem sentido. */}
-                    <td colSpan={8} style={{ borderTop:'2px solid var(--line)' }}></td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
           </TileFrame>
@@ -5931,7 +5929,8 @@ function ModuloMedicoes({ obraId, obraNome }){
 
       {farolAberto && farolDiff != null && (
         <div onClick={() => setFarolAberto(false)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+          {/* Aumentei a largura máxima (maxWidth) para 480 para acomodar bem os dois blocos lado a lado */}
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:480, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Farol</div>
@@ -5941,6 +5940,7 @@ function ModuloMedicoes({ obraId, obraNome }){
               <button onClick={() => setFarolAberto(false)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+              
               <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
                 <span>% Medido (Valor Medido ÷ Valor Contrato)</span>
                 <span className="mono" style={{ fontWeight:600, color:T.ink }}>{percMedido.toFixed(2)}%</span>
@@ -5958,10 +5958,119 @@ function ModuloMedicoes({ obraId, obraNome }){
                 faturamento ({fmtDataLonga(dataUltimoFaturamento)}): corte de{' '}
                 {fmtDataLonga(corteFisico.linha.data)}.
               </div>
+
+              {/* TOTAIS DA OBRA (Layout Aprimorado com Retenção) */}
+              {(() => {
+                // Cálculo das variáveis solicitadas
+                const totalFd = soma(boletinsRaw, 'desconto_fd') || 0;
+                const totalRetencao = soma(boletinsRaw, 'retencao') || 0;
+                const totalFaturado = soma(boletinsRaw, 'valor_faturado') || 0;
+                const medidoComposto = totalFd + totalRetencao + totalFaturado;
+
+                return (
+                  <div style={{ marginTop:24, paddingTop:16, borderTop:'1px dashed #eef0f3' }}>
+                    <div className="mono" style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Totais Financeiros da Obra</div>
+                    
+                    <div style={{ display:'flex', gap:12, marginBottom:16 }}>
+                      <div style={{ flex:1, background:'#f7f8fa', padding:'12px 14px', borderRadius:8, border:'1px solid #eef0f3' }}>
+                        <div style={{ fontSize:11, color:T.mut, marginBottom:6 }}>Previsto (Valor do Contrato)</div>
+                        <div className="mono" style={{ fontSize:15, fontWeight:700, color:T.ink }}>{valorContrato != null ? fmtReais(valorContrato) : '—'}</div>
+                      </div>
+                      <div style={{ flex:1, background:'rgba(31,157,87,0.06)', padding:'12px 14px', borderRadius:8, border:'1px solid rgba(31,157,87,0.15)' }}>
+                        <div style={{ fontSize:11, color:T.green, marginBottom:6, fontWeight:600 }}>Medido (FD + Ret. + Fat.)</div>
+                        <div className="mono" style={{ fontSize:15, fontWeight:700, color:T.green }}>{fmtReais(medidoComposto)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                      <span>Desconto FD</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalFd)}</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                      <span>Retenção</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalRetencao)}</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', padding:'8px 4px', fontSize:13, color:T.body }}>
+                      <span>Faturado</span>
+                      <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(totalFaturado)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              
             </div>
           </div>
         </div>
       )}
+      {linhaSelecionada && (() => {
+        // Cálculos de Saldo (Previsto - Realizado)
+        const saldoPrev = linhaSelecionada.saldo_previsto_acumulado;
+        const saldoReal = linhaSelecionada.saldo_realizado_acumulado_medido;
+        const diffSaldo = (saldoReal != null && saldoPrev != null) ? saldoPrev - saldoReal : null;
+        const corSaldo = diffSaldo > 0 ? T.green : diffSaldo < 0 ? T.red : T.mut;
+
+        // Cálculos de Avanço (Realizado - Previsto)
+        const avancoPrev = linhaSelecionada.avanco_previsto_acumulado;
+        const avancoReal = linhaSelecionada.avanco_realizado_acumulado;
+        const diffAvanco = (avancoReal != null && avancoPrev != null) ? avancoReal - avancoPrev : null;
+        const corAvanco = diffAvanco > 0 ? T.green : diffAvanco < 0 ? T.red : T.mut;
+
+        return (
+          <div onClick={() => setLinhaSelecionada(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+            <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:460, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+              <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Detalhes do Boletim</div>
+                  <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>BM {bmCurto(linhaSelecionada.bm_label) || '—'}</div>
+                </div>
+                <button onClick={() => setLinhaSelecionada(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+              </div>
+              
+              <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+                
+                {/* BLOCO DE SALDOS */}
+                <div style={{ padding:'12px 0', borderBottom:'1px dashed #eef0f3' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Saldos Acumulados</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Saldo Previsto</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoPrev != null ? fmtReais(saldoPrev) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Saldo Realizado (Medido)</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoReal != null ? fmtReais(saldoReal) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
+                    <span>Diferença de Saldo</span>
+                    <span className="mono" style={{ color:corSaldo }}>
+                      {diffSaldo != null ? (diffSaldo > 0 ? '+' : '') + fmtReais(diffSaldo) : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* BLOCO DE AVANÇOS */}
+                <div style={{ padding:'16px 0 6px' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Avanços Acumulados</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Avanço Previsto</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoPrev != null ? fmtReais(avancoPrev) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
+                    <span>Avanço Realizado</span>
+                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoReal != null ? fmtReais(avancoReal) : '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
+                    <span>Diferença de Avanço</span>
+                    <span className="mono" style={{ color:corAvanco }}>
+                      {diffAvanco != null ? (diffAvanco > 0 ? '+' : '') + fmtReais(diffAvanco) : '—'}
+                    </span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
