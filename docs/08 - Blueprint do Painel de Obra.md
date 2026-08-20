@@ -3030,6 +3030,79 @@ funcionando de fato, não só no drop. Ordem final persiste
 corretamente, 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — grid de widgets de verdade: mover, redimensionar, lado a lado (2026-08-19)
+
+Pedido explícito: "preciso de algo realmente interativo, que seja capaz
+de re-dimensionar, colocar lado a lado... apesar da animação ter ficado
+mais interessante, ainda parece engessado". As duas versões anteriores
+(HTML5 drag-and-drop, depois Pointer Events com `translateY`) eram
+feitas à mão e **só reordenavam numa coluna** — nenhuma quantidade de
+polimento na animação resolve isso, porque o que faltava era o modelo
+de layout, não o efeito.
+
+**Entrou `react-grid-layout` via CDN UMD** (86KB, só React/ReactDOM
+externos; `react-draggable`/`react-resizable` vêm embutidos). Decisão
+consciente de trazer dependência externa num arquivo que é todo "à
+mão": reescrever colisão, compactação e resize em 2 eixos não se paga,
+e o projeto já carrega React/Babel de CDN.
+
+- 12 colunas × linhas de 40px, gap 14. Arrasta pelo cabeçalho
+  (`draggableHandle=".tile-handle"` — assim a tabela continua rolando e
+  ordenando por dentro do bloco), redimensiona pelo canto e pelas
+  bordas direita/inferior (`resizeHandles={['se','e','s']}`, alças
+  aparecem no hover). Sombra do slot de destino durante o arrasto.
+- O "✕" leva `tile-nao-arrasta` (é o `draggableCancel`) — sem isso,
+  clicar nele começaria um arrasto.
+- Posição (X **e** Y), tamanho e visibilidade persistem em
+  `localStorage` na chave **nova** `mse_medicoes_grid` (formato
+  `{i,x,y,w,h}`; a chave antiga guardava só a ordem, reaproveitar
+  carregaria lixo incompatível). A entrada de um bloco oculto continua
+  guardada, então ele volta na mesma posição/tamanho. Botão
+  **"Restaurar layout"** novo.
+- **A folha de estilo da lib NÃO é carregada** — o arquivo tem só as
+  regras equivalentes, no visual do painel (alças desenhadas com
+  `border`, placeholder azul translúcido). As essenciais são
+  `position:relative` no container e dar tamanho às alças (sem isso não
+  há o que agarrar).
+- **Layout padrão já vem lado a lado**: Histórico (w7) + gráfico (w5) na
+  primeira fileira, Previsão (w12) embaixo. Motivo: num grid onde tudo
+  nasce com w=12, "pôr lado a lado" exige primeiro encolher um bloco, e
+  quem abre a tela não descobre isso sozinho (o teste com Playwright
+  bateu exatamente nisso). Histórico em w7 (~890px) sobra pras suas 6
+  colunas; o gráfico é responsivo e cabe bem em w5; a Previsão, tabela
+  mais larga (~1450px), fica em w12 pra não virar tira que só rola.
+- **Fallback**: se o CDN falhar, `GridLayoutMedicoes` fica `null` e a
+  tela cai num empilhamento simples com as alturas antigas — nunca fica
+  em branco por causa disso.
+
+**Dois bugs pegos no teste:**
+1. O grid é filho de um flex column e a altura inline calculada pela lib
+   era **esmagada pelo `flex-shrink` padrão**; como os blocos são
+   `position:absolute`, eles mantinham o offset real e vazavam pra fora
+   do container, cobrindo a barra de apoio — o botão "Restaurar layout"
+   ficava inclicável sempre que o grid passava da altura da tela.
+   Corrigido com `style={{flexShrink:0}}` no grid.
+2. `.medicoes-row` (a fileira da pizza + gráfico antigo, ambos
+   desligados por flag) ficava **vazia com `flex:1`**, roubando altura.
+   Agora só renderiza quando `MOSTRAR_PIZZA_MEDICOES` ou
+   `MOSTRAR_TOPO_MEDICOES` está ligado.
+
+De quebra: a decimação dos rótulos do eixo X do gráfico Previsto×Medido
+passou a derivar o espaçamento mínimo da **largura estimada do rótulo**
+(`LARGURA_ROTULO_X`), em vez de um `70` mágico — com o gráfico estreito
+(w5) as datas colidiam. O último rótulo é ancorado à direita, então
+ocupa espaço à esquerda do ponto final: daí a folga de 1.5× o rótulo.
+
+Testado com Playwright (obra 91/CP236, 1600×1000): 0 erros de console;
+grid real (não o fallback); padrão lado a lado confirmado por
+`getBoundingClientRect` (sobrepõe na vertical, não na horizontal);
+resize pela alça SE grava `w` menor no `localStorage`; arrasto mostra
+`.react-grid-placeholder` ao vivo antes de soltar; layout persiste no
+reload; tabela continua rolando e ordenando por coluna dentro do bloco;
+"Restaurar layout" e "+ Nome" clicáveis sem `force`; rótulos do eixo X
+sem sobreposição na largura padrão e também 250px mais estreito. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
