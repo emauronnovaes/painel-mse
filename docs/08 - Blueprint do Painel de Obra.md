@@ -3311,6 +3311,43 @@ sentidos com as cinzas no fim; a tabela ainda cabe em 1920 sem rolagem
 horizontal (1854 = 1854). 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — cores da curva seguem a referência da Curva S (2026-08-19)
+
+Pedido explícito: "com relação as cores da curva, utilize a mesma
+referência da Curva S". O gráfico Previsto × Medido tinha nascido com
+previsto âmbar e medido azul fixo — ou seja, **azul queria dizer coisas
+diferentes nas duas telas** (na Curva S azul é o PREVISTO). Erro meu de
+não ter olhado a convenção que já existia antes de escolher cor.
+
+Convenção da Curva S, agora aplicada aqui:
+
+- **Previsto**: azul `#2563eb`, tracejado `8 4`, 2px, `opacity` 0.7.
+  Colunas do período em azul, `opacity` 0.35 (0.55 no hover).
+- **Medido** (equivalente do Realizado): cor **dinâmica pelo desvio no
+  corte**, linha cheia de 3px — mesma regra do `desvioColor` da Curva S,
+  que por sua vez é o mesmo limiar do `corDesvio` usado no farol da
+  tabela (verde `>= 0`, âmbar até `-5` p.p., vermelho abaixo, cinza
+  quando não há desvio a calcular). Colunas na mesma cor, `opacity` 0.6
+  (0.8 no hover). Em CP236 o desvio no corte é −47%, então sai vermelho.
+- Pontos e o anel do corte acompanham a cor da respectiva série; a
+  legenda espelha a da Curva S, inclusive o texto do "Medido" colorido e
+  em negrito.
+
+**Divergência interna da tela de Curva S, registrada e NÃO mexida** (fora
+do pedido): a legenda dela usa `6 3`/2.5px, mas o `LineSVG` desenha
+`8 4`/3px. Copiei o **gráfico**, que é a referência visual de fato — se
+um dia alguém alinhar a legenda da Curva S ao gráfico dela, esta tela já
+está no valor certo.
+
+Testado com Playwright nas 2 telas (obra 91): **match exato nos 8
+atributos** comparados (cor, largura, `dasharray` e `opacity` das 2
+séries) — Previsto `rgb(37,99,235)`/2/`8 4`/0.7 e Realizado-Medido
+`rgb(210,59,59)`/3/sem dash/1 nas duas. Sem regressão em Medições: 29
+colunas azuis @0.35 + 35 vermelhas @0.6, anel do corte vermelho, 13
+cabeçalhos, 36 linhas, 1 destacada + 34 apagadas, "Medido" da legenda
+vermelho e em negrito. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
