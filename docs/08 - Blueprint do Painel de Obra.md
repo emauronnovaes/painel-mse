@@ -3401,6 +3401,34 @@ verdes / 19 vermelhos / 7 cinzas), curvas do gráfico intactas. 0 erros
 de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — Saldo/Avanço Acumulado saem da tabela e viram pop-up por linha (2026-08-19)
+
+Pedido explícito: "vamos colocar as 4 últimas colunas dentro de um
+pop-up, acessado ao clicar no item". Ajuste feito diretamente no editor
+(fora desta sessão de chat) e já com deploy confirmado.
+
+- Tabela volta de 15 pra **11 colunas**: Saldo Previsto Acum., Saldo
+  Realizado Acum., Avanço Previsto Acum. e Avanço Realizado Acum. saem
+  de `COLUNAS_MEDICOES` e das células do corpo.
+- Linha da tabela agora é clicável (`hoverable`, `cursor:pointer`) e abre
+  um pop-up (`linhaSelecionada`) com essas 4 colunas do boletim clicado,
+  mais a diferença Previsto−Realizado (Saldo) e Realizado−Previsto
+  (Avanço), coloridas por sinal.
+- **Rodapé de totais da tabela removido por completo** (não só as 4
+  colunas novas — Total/Valor Previsto/Valor Medido/Desconto FD/Valor
+  Faturado também saíram). Confirmado como intencional.
+- **Farol Medido × Físico ganhou um cartão horizontal fixo no topo da
+  tela**, fora do gate `MOSTRAR_TOPO_MEDICOES` — sempre visível agora,
+  não mais atrás da flag. Mesmo clique de sempre abre o pop-up de
+  detalhe (`farolAberto`).
+- Pop-up do Farol ganhou uma seção "Totais Financeiros da Obra" (Previsto
+  = valor do contrato; Medido = Desconto FD + Retenção + Valor Faturado,
+  com o detalhamento dos 3 componentes).
+
+Não testado nem revisado por mim antes do deploy — o ajuste e a
+publicação já estavam prontos quando entrei, só fiz o commit/push do que
+já estava no arquivo.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
