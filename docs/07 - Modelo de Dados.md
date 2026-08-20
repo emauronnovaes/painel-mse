@@ -266,6 +266,39 @@ Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
 
+### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
+
+Tabela `itens_mapa_compras` desenhada (SQL em
+`painel-mse\n8n\mapa-compras-suprimentos.README.md`) e workflow n8n criado
+(`mapa-compras-suprimentos.workflow.json`, mesma pasta) — ainda não
+aplicado no Supabase nem rodado.
+
+Fonte: API externa `mapa_compras_api` do PortalMSE
+(`https://portalmse.com.br/microservices/mapa_compras_api/GUIA_USUARIO.php`)
+— itens de requisição/mapa de compra (código, descrição, quantidade,
+preço de referência, custo meta de orçamento, saldo orçamentário, quanto
+já foi pedido/consumido, melhor oferta). 1 linha por item (chave composta
+`id_obra`+`id_mapa_compras`+`codigo_seq`, suposição a confirmar com dado
+real).
+
+**Guia da API bem mais magro que os das 2 ingestões anteriores** — sem
+nenhum exemplo de JSON de resposta completo. Por isso ficaram 3 pontos em
+aberto (detalhados no README do workflow, seção "Antes de importar"):
+formato do envelope da resposta (`{data:[...]}` presumido, com fallback e
+erro explícito se não bater), nomes exatos dos 3 campos `melhor_oferta_*`
+(a doc só descreve em texto corrido, não nomeia), e a tabela de
+requisições (cabeçalho do RMI) **não foi criada** — a doc não detalha os
+campos de `/v1/requisicoes` o suficiente pra desenhar schema sem
+fabricar dado.
+
+Não confundir com `pedidos_suprimentos` (ingestão anterior, mesma aba
+Suprimentos): são 2 fontes/grãos diferentes do mesmo ERP —
+`pedidos_suprimentos` é o pedido de compra já fechado (fornecedor, valor,
+prazo de entrega); `itens_mapa_compras` é o item dentro da requisição,
+antes/durante a compra (orçamento, saldo, se já tem pedido). A regra de
+"crítico" do setor Suprimentos provavelmente vai precisar cruzar as duas
+— nenhuma tem sozinha tanto o lado do prazo quanto o lado do orçamento.
+
 ### Suprimentos ganha fonte nova em ingestão (2026-08-11)
 
 Tabela `pedidos_suprimentos` desenhada (SQL em
