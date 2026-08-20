@@ -3203,6 +3203,65 @@ layout salvo no formato antigo não quebra nada; arrastar e redimensionar
 rolagem horizontal e nenhuma célula fica truncada; 0 erros de console.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — farol Medido × Previsto, corte e colunas no gráfico (2026-08-19)
+
+Pedido explícito: "incluir um farol ao lado do valor medido, que ficará
+verde quando o medido for maior que o previsto, amarelo quando for pouca
+coisa menor, vermelho quando bem abaixo. No gráfico, a curva do real
+deve ir somente ao corte com dados, é importante incluir as colunas
+também".
+
+**Farol (`FarolMedidoPrevisto`, novo)** — ponto colorido à direita do
+número, na coluna Valor Medido, uma por linha.
+
+- "Pouca coisa menor" e "bem abaixo" saem do limiar que o painel **já**
+  usa pra severidade de desvio (`corDesvio`: `>= 0` verde, até `-5` p.p.
+  amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
+  Medido×Físico, em vez de inventar um número só pra cá.
+- Tooltip mostra os 2 valores e o percentual.
+- Sem previsto (nulo ou zero) não há com o que comparar: renderiza um
+  **slot vazio de largura fixa**, nunca um farol chutado (ADR-005). O
+  slot existe pra não desalinhar a coluna de números — o rodapé também
+  tem o slot, pelo mesmo motivo (sem ele, o total encostava 16px mais à
+  direita e caía embaixo dos pontos em vez dos números).
+- **SEM farol agregado no rodapé, de propósito.** Tentei e reverti:
+  Previsto e Medido estão preenchidos em conjuntos DIFERENTES de
+  boletins na planilha (previsto só nos BMs antigos, medido em quase
+  todos), então o total cheio dava −47% e, restringindo aos boletins com
+  os 2 valores, −67%. Os dois números falam mais do estado de
+  preenchimento da planilha que da obra. Revisar quando o previsto
+  estiver completo — o usuário avisou em 2026-08-19 que a planilha ainda
+  está sendo preenchida, "inclusive o valor previsto".
+
+**Gráfico**
+
+- **Curva do Medido para no CORTE** (último período com `valor_medido`
+  lançado). Depois dele `medidoAcum`/`medidoDia` vêm `null` e nada é
+  desenhado — antes esticava uma reta horizontal que parecia "medição
+  parada" quando o certo é "ainda não medido". Mesma ideia do realizado
+  da Curva S. O último ponto ganha um anel pra deixar claro que a série
+  acaba ali, não que sumiu.
+- **Colunas por período**, 2 por ponto (previsto âmbar, medido azul),
+  no MESMO eixo Y das curvas acumuladas — convenção que o
+  `GraficoMedicoes` já fixou (barra com escala própria foi tentada e
+  revertida lá). Coluna do medido também para no corte.
+- Tooltip mostra acumulado **e** valor do período das 2 séries, e "sem
+  medição lançada" depois do corte. Legenda ganhou o par linha+coluna
+  por cor mais a nota "linha = acumulado · coluna = do período".
+- **O que conta como medido** passou a ser `valor_medido != null` em
+  QUALQUER boletim, não só nos já faturados: boletim medido e ainda não
+  faturado é dado real e tem que entrar no corte.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 29 faróis + 7 slots
+vazios nas 36 linhas, com **0 divergência de cor** contra a regra
+recalculada de forma independente pelo teste; coluna de números alinhada
+inclusive no rodapé (0px de diferença); no gráfico 36 pontos âmbar × 35
+azuis, com o azul terminando à esquerda do âmbar tanto nos pontos quanto
+no `path`; 35 colunas azuis e 29 âmbar, sem `NaN` nem altura negativa;
+tooltip mostra "sem medição lançada" depois do corte. 0 erros de
+console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
