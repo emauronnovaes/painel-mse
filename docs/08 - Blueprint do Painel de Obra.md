@@ -3262,6 +3262,55 @@ tooltip mostra "sem medição lançada" depois do corte. 0 erros de
 console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — coluna Farol, cinza sem previsto, destaque por estado da linha (2026-08-19)
+
+Pedido explícito: "quando não tiver previsto, deixe em cinza. Gere uma
+coluna chamada 'Farol', para contemplar isso. O último BM faturado vai
+ter mais destaque, talvez com um fundo em um tom de verde claro, o
+histórico de faturamentos terá de ficar mais apagado, os futuros ficarão
+como está".
+
+- **Coluna "Farol" própria**, entre Valor Medido e Desconto FD — a
+  tabela vai a **13 colunas**. O ponto saiu de dentro da célula de Valor
+  Medido, que volta a ser texto puro alinhado à direita; o slot vazio que
+  reservava espaço no rodapé saiu junto, não é mais necessário.
+- **Cinza quando não há previsto** (`#dfe3ea`, tooltip "Sem valor
+  previsto para comparar"), no lugar do slot invisível da 1ª versão: um
+  vazio se confundia com "não carregou". Cinza é estado próprio — "não
+  há o que comparar" — não uma cor de severidade chutada (ADR-005).
+- **A coluna é ordenável**: `campo:'farol'` é sintético (não existe em
+  `boletins_medicao`) e a ordenação é tratada à parte, pelo desvio
+  medido×previsto — dá pra trazer o pior desempenho primeiro. Linha sem
+  previsto (farol cinza) não tem desvio e vai pro fim.
+- **3 estados de linha, via classe CSS**:
+  - último BM faturado → fundo `rgba(31,157,87,0.13)` (0.2 no hover);
+  - faturados anteriores → `opacity: .5`, voltando a `1` no hover
+    (apagado é hierarquia visual, não pra impedir a leitura);
+  - não faturados → sem classe, como estavam.
+  As regras vêm **depois** das de zebra/hover de propósito: a
+  especificidade empata (`tr.classe` vs `tr:nth-child(even)`) e quem
+  decide é a ordem no arquivo.
+- **Qual é o "último BM faturado"**: maior `periodo_fim` entre as linhas
+  com `status_faturamento = 'Faturado'`, desempate pelo número do BM.
+  Não uso `data_faturamento` (falta em parte das linhas) nem só o número
+  do BM (há rótulo sem número — "BM 01 - Limpeza", "MSE x ROCKTEC").
+  Detalhe que o teste confirmou: em CP236 o destaque cai no **BM 33**, e
+  não no BM 34, que tem período posterior mas está "Dentro do prazo" —
+  ou seja, ainda não faturado. Correto.
+- `minWidth` da tabela de 1180 → 1230 por causa da coluna nova.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 13 cabeçalhos na
+ordem certa; 36 de 36 linhas com exatamente 1 ponto na coluna Farol (10
+verdes, 19 vermelhos, 7 cinzas — nenhum âmbar porque nenhuma linha caiu
+na faixa −5..0), com **0 divergência** contra a regra recalculada de
+forma independente pelo teste; Valor Medido sem tooltip e alinhado com o
+rodapé (611.2px nos dois); 1 linha destacada, 34 apagadas em `opacity
+.5` que volta a `1` no hover, 1 sem classe; rodapé com a célula de Farol
+vazia e os 4 totais intactos; ordenação pela coluna Farol funciona nos 2
+sentidos com as cinzas no fim; a tabela ainda cabe em 1920 sem rolagem
+horizontal (1854 = 1854). 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
