@@ -3348,6 +3348,59 @@ cabeçalhos, 36 linhas, 1 destacada + 34 apagadas, "Medido" da legenda
 vermelho e em negrito. 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — Avanço Previsto/Realizado Acumulado na tabela (2026-08-19)
+
+Pedido explícito: "incluir também o avanço previsto acumulado e o avanço
+realizado acumulado". Entraram no fim da tabela, junto das outras 2
+colunas de acumulado — **15 colunas** agora.
+
+**Descoberta que mudou a implementação — o nome engana.** Apesar de
+"avanço", `avanco_previsto_acumulado` e `avanco_realizado_acumulado`
+**não são percentuais**: guardam valor em REAIS. Conferi no dado antes
+de decidir o formato (CP236, CP002 e CP022, via fetch direto no
+PostgREST, já que o MCP do Supabase estava fora):
+
+- no 1º BM, `avanco_realizado_acumulado` == `valor_medido` da linha;
+- o máximo de `avanco_previsto_acumulado` == total da coluna Valor
+  Previsto (R$ 336.302.373,48);
+- o máximo de `avanco_realizado_acumulado` == total de Valor Medido
+  (R$ 177.460.890,18);
+- `saldo_previsto_acumulado` = contrato − `avanco_previsto_acumulado`.
+
+Ou seja: são o acumulado do previsto e do medido, em moeda — os mesmos
+números que o gráfico Previsto×Medido calcula por conta própria a partir
+dos valores por BM. Formatadas com `fmtReais`, alinhadas à direita.
+Vieram do PostgREST como `number` (não string), com o ruído de float
+esperado (`336302373.4799999`).
+
+Não entram na soma do rodapé (ficam em branco): já **são** acumulado — o
+último valor É o total — e ainda carregam o valor pra frente em linha sem
+atividade real (a armadilha catalogada em [[modelo-dados-supabase]]).
+Mesmo motivo das 2 colunas de Saldo Acum. `colSpan` final do rodapé foi
+de 6 → 8.
+
+Nota de dado achada de passagem: em **CP022** o acumulado NÃO é
+monotônico porque o mesmo `cp_codigo` mistura frentes distintas no
+`bm_label` ("2 - Oleoduto", "1 - Mesa") e o acumulado reinicia por
+frente. Só afeta quem for validar monotonicidade — a exibição não se
+importa.
+
+`minWidth` da tabela de 1230 → 1450. Com 15 colunas ela passa dos
+~2100px e **rola na horizontal mesmo em 1920** (2165 contra 1854 de
+container) — inevitável nesse tamanho; apertar mais as colunas já foi
+rejeitado antes, e o bloco é redimensionável.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 15 cabeçalhos na
+ordem certa, 36 linhas **todas** com 15 células, as 2 colunas novas em
+formato de moeda e alinhadas à direita, máximos batendo exatamente com
+os totais do rodapé (a prova de que é moeda acumulada), rodapé com as 2
+novas em branco e slots somando 15, ordenação funcionando nos 2 sentidos
+nas colunas novas, rolagem horizontal revelando a última coluna por
+completo. Sem regressão: 1 linha destacada + 34 apagadas, 36 faróis (10
+verdes / 19 vermelhos / 7 cinzas), curvas do gráfico intactas. 0 erros
+de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
