@@ -2997,6 +2997,39 @@ drag-reorder troca a ordem visual (testado arrastando Previsão sobre
 Histórico); reload da página preserva ordem/ocultos via `localStorage`.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — arrasto de tiles mais fluido, estilo widget (2026-08-19)
+
+Pedido explícito: "quero algo mais fluido, ao arrastar, como um
+widget". A 1ª versão dos live tiles usava HTML5 drag-and-drop nativo —
+só trocava a ordem no solto (`drop`), sem nenhum retorno visual durante
+o arrasto ("seco" demais pro efeito pedido).
+
+Reescrito com **Pointer Events + posicionamento absoluto**:
+- Container `position:relative` com altura explícita (soma das alturas
+  fixas por tipo de tile — `ALTURA_TILE = {historico:440, previsao:300,
+  grafico:340}` — mais `GAP_TILE=14` — dá pra calcular o "slot" de cada
+  bloco sem medir nada em tempo real).
+- Bloco arrastado: `transform:translateY` segue o cursor 1:1, **sem**
+  `transition` (senão fica com lag perceptível), ganha leve scale-up
+  (1.015) e sombra elevada — efeito de "peça levantada".
+- Outros blocos: `transition:transform 0.28s`, deslizam suavemente pro
+  novo slot assim que a prévia de ordem (`arrasto.ordemPreview`) muda —
+  recalculada a cada `pointermove` comparando o centro do bloco
+  arrastado com o meio de cada slot vizinho, ainda com o botão
+  pressionado (preview ao vivo, não só no soltar).
+- `setPointerCapture` no cabeçalho de cada tile garante que
+  `pointermove`/`pointerup` continuam chegando nele mesmo se o cursor
+  sair da área durante o arrasto.
+- Ordem definitiva (persistida em `localStorage`) só é gravada no
+  `pointerup`.
+
+Testado com Playwright (obra 91/CP236, arrasto contínuo via
+`mouse.move` interpolado): confirmado que o tile "Previsão" já sobe
+~454px **durante** o arrasto (antes do soltar) — reordenação ao vivo
+funcionando de fato, não só no drop. Ordem final persiste
+corretamente, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
