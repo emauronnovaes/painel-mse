@@ -4724,13 +4724,27 @@ function GraficoMedicoes({ pontos }){
   );
 }
 
-// Gráfico de 2 curvas — Previsto (linha tracejada, TODA a fila: histórico
-// + previsão) × Medido (linha cheia, só o que já foi de fato faturado) —
-// pedido explícito (2026-08-19): "um gráfico que plotará as duas curvas,
-// do previsto e do medido". Mesmo padrão hand-rolled em SVG do
-// `GraficoMedicoes` acima (sem lib de gráfico), responsivo via
-// ResizeObserver. `pontos`: [{label, previstoAcum, medidoAcum}], já
-// ordenado por período (ver `serieDuasCurvas` em `ModuloMedicoes`).
+// Gráfico Previsto × Medido — pedido explícito (2026-08-19): "um gráfico
+// que plotará as duas curvas, do previsto e do medido", depois "a curva
+// do real deve ir somente ao corte com dados, é importante incluir as
+// colunas também". Mesmo padrão hand-rolled em SVG do `GraficoMedicoes`
+// acima (sem lib de gráfico), responsivo via ResizeObserver.
+//
+// Desenha 4 coisas sobre o MESMO eixo Y:
+//  - colunas = valor do próprio período (`previstoDia`/`medidoDia`);
+//  - linhas  = valor acumulado (`previstoAcum`/`medidoAcum`).
+// Escala única de propósito: é a convenção que o `GraficoMedicoes` já
+// fixou ("MESMA escala/eixo Y da curva acumulada, não uma faixa à parte
+// com escala própria" — a versão com 2 escalas foi tentada e revertida).
+// A coluna fica pequena perto do acumulado, e é isso mesmo: sob o mesmo
+// eixo a proporção real aparece.
+//
+// `medidoAcum`/`medidoDia` vêm `null` depois do corte (último período com
+// medição lançada) — aí a linha e a coluna do medido simplesmente param,
+// em vez de esticar uma reta que pareceria medição travada.
+//
+// `pontos`: [{label, previstoAcum, previstoDia, medidoAcum, medidoDia,
+// ehCorte}], já ordenado por período (ver `serieDuasCurvas`).
 function GraficoPrevistoMedido({ pontos }){
   const wrapRef = useRef(null);
   const [tam, setTam] = useState({ width: 900, height: 280 });
@@ -4759,13 +4773,28 @@ function GraficoPrevistoMedido({ pontos }){
   const pad = { top: 28, right: 20, bottom: 32, left: 84 };
   const W = Math.max(width - pad.left - pad.right, 10);
   const H = Math.max(height - pad.top - pad.bottom, 10);
-  const maxV = Math.max(...pontos.map(p => Math.max(p.previstoAcum, p.medidoAcum))) * 1.15 || 1;
+  // `medidoAcum` pode ser null (depois do corte) — o `?? 0` evita que um
+  // null envenene o Math.max e derrube a escala inteira pra NaN.
+  const maxV = Math.max(...pontos.map(p => Math.max(p.previstoAcum ?? 0, p.medidoAcum ?? 0))) * 1.15 || 1;
   const xScale = i => pontos.length > 1 ? (i / (pontos.length - 1)) * W : 0;
   const yScale = v => H - (v / maxV) * H;
   const yTicks = Array.from({ length: 5 }, (_, i) => maxV * (i / 4));
-  const linhaDe = campo => pontos.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(p[campo]).toFixed(1)}`).join(' ');
+  // Pula ponto sem valor em vez de traçar até ele — é o que faz a linha do
+  // medido terminar no corte. (`M` no primeiro ponto desenhado, não no
+  // índice 0, senão uma série que começasse vazia sairia sem `M`.)
+  const linhaDe = campo => pontos.reduce((acc, p, i) => {
+    if (p[campo] == null) return acc;
+    acc.push(`${acc.length === 0 ? 'M' : 'L'} ${xScale(i).toFixed(1)} ${yScale(p[campo]).toFixed(1)}`);
+    return acc;
+  }, []).join(' ');
   const linhaPrevisto = linhaDe('previstoAcum');
   const linhaMedido = linhaDe('medidoAcum');
+  // Colunas do período: 2 por ponto (previsto e medido), lado a lado e
+  // centradas no ponto do eixo X. Largura acompanha o espaço disponível
+  // por período — com o gráfico estreito e muitos períodos elas viram
+  // tracinhos finos, mas nunca somem nem se sobrepõem.
+  const passoX = W / Math.max(pontos.length, 1);
+  const barW = Math.max(2, Math.min(11, passoX * 0.34));
 
   // Decimação dos rótulos do eixo X. Com o grid de widgets o gráfico pode
   // ficar bem estreito (ex.: 5 de 12 colunas), então nada de número
@@ -4793,18 +4822,28 @@ function GraficoPrevistoMedido({ pontos }){
 
   const p = hover != null ? pontos[hover] : null;
   const tipLeft = hover != null ? Math.min(Math.max(xScale(hover), 70), W - 70) : 0;
-  const topoPonto = p ? yScale(Math.max(p.previstoAcum, p.medidoAcum)) : 0;
+  const topoPonto = p ? yScale(Math.max(p.previstoAcum ?? 0, p.medidoAcum ?? 0)) : 0;
   const tipAcimaDoPonto = p ? topoPonto < H * 0.35 : false;
 
   return (
     <div ref={wrapRef} style={{ position:'relative', width:'100%', height:'100%' }}>
-      <div style={{ position:'absolute', top:2, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1 }}>
+      {/* Legenda com as 2 séries; o par linha+coluna de cada cor aparece
+          junto no marcador, e a nota explica quem é quem sem precisar de
+          4 entradas. */}
+      <div style={{ position:'absolute', top:2, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1, flexWrap:'wrap', justifyContent:'flex-end' }}>
         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
-          <span style={{ width:14, height:0, borderTop:`2px dashed ${T.amber}`, display:'inline-block' }} />Previsto
+          <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
+            <span style={{ width:12, height:0, borderTop:`2px dashed ${T.amber}`, display:'inline-block' }} />
+            <span style={{ width:5, height:9, background:T.amber, opacity:0.35, display:'inline-block', borderRadius:1 }} />
+          </span>Previsto
         </span>
         <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
-          <span style={{ width:14, height:2, background:T.blue, display:'inline-block', borderRadius:1 }} />Medido
+          <span style={{ display:'inline-flex', alignItems:'center', gap:3 }}>
+            <span style={{ width:12, height:2, background:T.blue, display:'inline-block', borderRadius:1 }} />
+            <span style={{ width:5, height:9, background:T.blue, opacity:0.35, display:'inline-block', borderRadius:1 }} />
+          </span>Medido
         </span>
+        <span style={{ fontSize:10, color:T.mut2 }}>linha = acumulado · coluna = do período</span>
       </div>
       <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
         onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
@@ -4815,17 +4854,40 @@ function GraficoPrevistoMedido({ pontos }){
               <text x={-10} y={yScale(v)} textAnchor="end" dominantBaseline="middle" fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={T.mut2}>{fmtReaisCompacto(v)}</text>
             </g>
           ))}
+          {/* Colunas antes das linhas: as linhas ficam por cima. Medido só
+              existe até o corte, então a coluna dele também para lá. */}
+          {pontos.map((pt, i) => (
+            <g key={`col${i}`}>
+              {pt.previstoDia > 0 && (
+                <rect x={xScale(i) - barW - 1} y={yScale(pt.previstoDia)} width={barW} height={Math.max(H - yScale(pt.previstoDia), 0)}
+                  fill={T.amber} opacity={hover === i ? 0.6 : 0.3} rx={1.5} />
+              )}
+              {pt.medidoDia != null && pt.medidoDia > 0 && (
+                <rect x={xScale(i) + 1} y={yScale(pt.medidoDia)} width={barW} height={Math.max(H - yScale(pt.medidoDia), 0)}
+                  fill={T.blue} opacity={hover === i ? 0.6 : 0.3} rx={1.5} />
+              )}
+            </g>
+          ))}
           <path d={linhaPrevisto} fill="none" stroke={T.amber} strokeWidth={2} strokeDasharray="5,4" />
           <path d={linhaMedido} fill="none" stroke={T.blue} strokeWidth={2.5} />
           {hover != null && (
             <line x1={xScale(hover)} x2={xScale(hover)} y1={0} y2={H} stroke={T.mut2} strokeWidth={1} strokeDasharray="3,3" opacity={0.6} />
           )}
-          {pontos.map((p, i) => (
+          {pontos.map((pt, i) => (
             <g key={i}>
-              <circle cx={xScale(i)} cy={yScale(p.previstoAcum)} r={hover === i ? 5 : 3} fill={T.amber} stroke="#fff" strokeWidth={1.5} />
-              <circle cx={xScale(i)} cy={yScale(p.medidoAcum)} r={hover === i ? 5 : 3} fill={T.blue} stroke="#fff" strokeWidth={1.5} />
+              {pt.previstoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.previstoAcum)} r={hover === i ? 5 : 3} fill={T.amber} stroke="#fff" strokeWidth={1.5} />
+              )}
+              {/* Ponto do medido só até o corte; o último ganha anel pra
+                  deixar claro que a série acaba ali, não que sumiu. */}
+              {pt.medidoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={hover === i ? 5 : (pt.ehCorte ? 4.5 : 3)} fill={T.blue} stroke="#fff" strokeWidth={1.5} />
+              )}
+              {pt.ehCorte && pt.medidoAcum != null && (
+                <circle cx={xScale(i)} cy={yScale(pt.medidoAcum)} r={7.5} fill="none" stroke={T.blue} strokeWidth={1} opacity={0.45} />
+              )}
               {mostrarLabel(i) && (
-                <text x={xScale(i)} y={H + 20} textAnchor={i === pontos.length - 1 ? 'end' : 'middle'} fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}>{p.label}</text>
+                <text x={xScale(i)} y={H + 20} textAnchor={i === pontos.length - 1 ? 'end' : 'middle'} fontSize={10} fontFamily="'IBM Plex Mono', monospace" fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}>{pt.label}</text>
               )}
             </g>
           ))}
@@ -4835,14 +4897,22 @@ function GraficoPrevistoMedido({ pontos }){
         <div className="mono" style={{
           position:'absolute',
           left: `${((tipLeft + pad.left) / width) * 100}%`,
-          top: tipAcimaDoPonto ? (pad.top + topoPonto + 14) : Math.max(pad.top + topoPonto - 74, 4),
+          top: tipAcimaDoPonto ? (pad.top + topoPonto + 14) : Math.max(pad.top + topoPonto - 104, 4),
           transform:'translateX(-50%)',
           background: T.ink, color:'#fff', borderRadius:8, padding:'6px 10px',
           fontSize:11, lineHeight:1.5, pointerEvents:'none', boxShadow:'0 4px 14px rgba(0,0,0,0.18)', whiteSpace:'nowrap', zIndex:5,
         }}>
           <div style={{ fontWeight:700, marginBottom:2 }}>{p.label}</div>
-          <div>Previsto: {fmtReais(p.previstoAcum)}</div>
-          <div>Medido: {fmtReais(p.medidoAcum)}</div>
+          <div>Previsto acumulado: {fmtReais(p.previstoAcum)}</div>
+          <div style={{ opacity:0.75 }}>Previsto no período: {fmtReais(p.previstoDia || 0)}</div>
+          {p.medidoAcum != null ? (
+            <React.Fragment>
+              <div>Medido acumulado: {fmtReais(p.medidoAcum)}</div>
+              <div style={{ opacity:0.75 }}>Medido no período: {fmtReais(p.medidoDia || 0)}</div>
+            </React.Fragment>
+          ) : (
+            <div style={{ opacity:0.75 }}>Medido: sem medição lançada</div>
+          )}
         </div>
       )}
     </div>
@@ -5030,6 +5100,33 @@ function BadgeStatusMedicao({ texto }){
   return <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor, whiteSpace:'nowrap' }}>{texto}</span>;
 }
 
+// Farol Medido × Previsto — pedido explícito (2026-08-19): "um farol ao
+// lado do valor medido, que ficará verde quando o medido for maior que o
+// previsto, amarelo quando for pouca coisa menor, vermelho quando bem
+// abaixo". "Pouca coisa" e "bem abaixo" saem do limiar que o painel já
+// usa pra severidade de desvio (`corDesvio`: >= 0 verde, até -5 p.p.
+// amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
+// Medido×Físico, em vez de inventar um número só pra cá.
+//
+// Sem previsto (nulo ou zero) não há com o que comparar: devolve o slot
+// vazio, nunca um farol chutado (ADR-005). O slot tem largura fixa e é
+// renderizado mesmo vazio pra não desalinhar a coluna de números.
+const FAROL_LARGURA = 9;
+function FarolMedidoPrevisto({ previsto, medido }){
+  const p = previsto != null ? Number(previsto) : null;
+  const m = medido != null ? Number(medido) : null;
+  const vazio = <span style={{ display:'inline-block', width:FAROL_LARGURA, flexShrink:0 }} />;
+  if (p == null || m == null || !p) return vazio;
+  const desvioPP = (m / p - 1) * 100;
+  const tom = corDesvioTom(desvioPP);
+  const sinal = desvioPP > 0 ? '+' : '';
+  return (
+    <span title={`Medido ${fmtReais(m)} × Previsto ${fmtReais(p)} (${sinal}${desvioPP.toFixed(1)}%)`}
+      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%',
+        background:tom.cor, border:`1px solid ${tom.borda}`, flexShrink:0, cursor:'help' }} />
+  );
+}
+
 // TABELA ÚNICA de Medições — pedido explícito (2026-08-19): "ajuste tudo
 // em uma única tabela, compile todas as informações de uma só vez". Antes
 // eram duas (Histórico = boletim faturado; Previsão = boletim pendente),
@@ -5179,30 +5276,50 @@ function ModuloMedicoes({ obraId, obraNome }){
 
   // Curva Previsto × Medido — pedido explícito (2026-08-19): "um gráfico
   // que plotará as duas curvas, do previsto e do medido". Agrupa TODO
-  // boletim (histórico + previsão) por `periodo_fim`; Previsto acumula
-  // `valor_previsto` de ambos (é a trajetória contratual completa,
-  // passado+futuro já lançado), Medido acumula `valor_medido` só do
-  // histórico (é o que já foi de fato medido até agora — nunca ultrapassa
-  // o presente). As 2 curvas compartilham o mesmo eixo X (união das datas).
+  // boletim por `periodo_fim`. Previsto acumula `valor_previsto` de todos
+  // (é a trajetória contratual completa, passado + futuro já lançado).
+  //
+  // Medido para no CORTE (pedido explícito, 2026-08-19: "a curva do real
+  // deve ir somente ao corte com dados") — mesma ideia do realizado da
+  // Curva S. Corte = último período com `valor_medido` lançado; depois
+  // dele `medidoAcum`/`medidoDia` vêm `null` e o gráfico simplesmente não
+  // desenha, em vez de esticar uma reta horizontal que pareceria "medição
+  // parada" quando o certo é "ainda não medido".
+  //
+  // O que conta como medido é `valor_medido != null` em QUALQUER boletim,
+  // não só nos já faturados: um boletim medido e ainda não faturado é
+  // dado real e tem que entrar no corte.
+  //
+  // `previstoDia`/`medidoDia` (valor do próprio período, não acumulado)
+  // alimentam as colunas do gráfico — também pedido explícito.
   const serieDuasCurvas = useMemo(() => {
-    if (!historico || !previsao) return null;
+    if (!boletinsRaw) return null;
     const porPeriodo = {};
-    const addPonto = (r, ehHistorico) => {
+    boletinsRaw.forEach(r => {
       if (!r.periodo_fim) return;
-      const g = (porPeriodo[r.periodo_fim] = porPeriodo[r.periodo_fim] || { previstoDia:0, medidoDia:0 });
+      const g = (porPeriodo[r.periodo_fim] = porPeriodo[r.periodo_fim] || { previstoDia:0, medidoDia:0, temMedido:false });
       if (r.valor_previsto != null) g.previstoDia += Number(r.valor_previsto) || 0;
-      if (ehHistorico && r.valor_medido != null) g.medidoDia += Number(r.valor_medido) || 0;
-    };
-    historico.forEach(r => addPonto(r, true));
-    previsao.forEach(r => addPonto(r, false));
+      if (r.valor_medido != null) { g.medidoDia += Number(r.valor_medido) || 0; g.temMedido = true; }
+    });
+    const datas = Object.keys(porPeriodo).sort();
+    let idxCorte = -1;
+    datas.forEach((d, i) => { if (porPeriodo[d].temMedido) idxCorte = i; });
     let accPrevisto = 0, accMedido = 0;
-    return Object.keys(porPeriodo).sort().map(data => {
+    return datas.map((data, i) => {
       const g = porPeriodo[data];
       accPrevisto += g.previstoDia;
-      accMedido += g.medidoDia;
-      return { label: fmtDataLonga(data), previstoAcum: accPrevisto, medidoAcum: accMedido };
+      const dentroDoCorte = i <= idxCorte;
+      if (dentroDoCorte) accMedido += g.medidoDia;
+      return {
+        label: fmtDataLonga(data),
+        previstoAcum: accPrevisto,
+        previstoDia: g.previstoDia,
+        medidoAcum: dentroDoCorte ? accMedido : null,
+        medidoDia: dentroDoCorte ? g.medidoDia : null,
+        ehCorte: i === idxCorte,
+      };
     });
-  }, [historico, previsao]);
+  }, [boletinsRaw]);
 
   // Grid de widgets (pedido explícito, 2026-08-19): posição livre (X e
   // Y), tamanho e visibilidade de Histórico/Previsão/Gráfico ficam salvos
@@ -5524,7 +5641,15 @@ function ModuloMedicoes({ obraId, obraNome }){
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, fontWeight:600, color:T.ink }}>{bmCurto(r.bm_label) || '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:11.5, color:T.body }}>{fmtPeriodo(r)}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_previsto != null ? fmtReais(r.valor_previsto) : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</td>
+                      {/* Farol Medido × Previsto do próprio boletim, à
+                          direita do número. O slot é sempre renderizado
+                          (mesmo sem farol) pra não desalinhar a coluna. */}
+                      <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>
+                        <span style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:7 }}>
+                          <span style={{ fontVariantNumeric:'tabular-nums' }}>{r.valor_medido != null ? fmtReais(r.valor_medido) : '—'}</span>
+                          <FarolMedidoPrevisto previsto={r.valor_previsto} medido={r.valor_medido} />
+                        </span>
+                      </td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, color:T.mut }}>{r.desconto_fd ? fmtReais(r.desconto_fd) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{r.valor_faturado != null ? fmtReais(r.valor_faturado) : '—'}</td>
                       <td className="mono" style={{ padding:'9px 10px', fontSize:12, color:T.body }}>{r.data_faturamento ? fmtDataLonga(r.data_faturamento) : '—'}</td>
@@ -5550,7 +5675,28 @@ function ModuloMedicoes({ obraId, obraNome }){
                   <tr>
                     <td colSpan={2} className="mono" style={{ padding:'10px 10px', fontSize:10, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.08em', borderTop:'2px solid var(--line)' }}>Total</td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_previsto') || 0)}</td>
-                    <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_medido') || 0)}</td>
+                    {/* SEM farol no total, de propósito. Previsto e Medido
+                        estão preenchidos em conjuntos DIFERENTES de
+                        boletins na planilha (previsto só nos BMs antigos,
+                        medido em quase todos), então qualquer agregado
+                        compara laranja com maçã: pelo total cheio dava
+                        -47%, restringindo aos que têm os 2 valores dava
+                        -67% — os dois números dizem mais sobre o
+                        preenchimento da planilha que sobre a obra. O farol
+                        por linha, esse sim, compara o previsto e o medido
+                        do MESMO boletim. Revisar quando o previsto estiver
+                        completo (o usuário avisou em 2026-08-19 que a
+                        planilha ainda está sendo preenchida). */}
+                    {/* Mesmo flex + slot vazio das linhas do corpo: sem
+                        isso o total encostava 16px mais à direita (a
+                        largura do farol + o gap) e caía embaixo dos pontos
+                        em vez de embaixo dos números. */}
+                    <td className="mono" style={{ padding:'10px 10px', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)' }}>
+                      <span style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:7 }}>
+                        <span style={{ fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_medido') || 0)}</span>
+                        <span style={{ display:'inline-block', width:FAROL_LARGURA, flexShrink:0 }} />
+                      </span>
+                    </td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'desconto_fd') || 0)}</td>
                     <td className="mono" style={{ padding:'10px 10px', textAlign:'right', fontSize:12.5, fontWeight:700, color:T.ink, borderTop:'2px solid var(--line)', fontVariantNumeric:'tabular-nums' }}>{fmtReais(soma(boletinsRaw, 'valor_faturado') || 0)}</td>
                     <td colSpan={6} style={{ borderTop:'2px solid var(--line)' }}></td>
