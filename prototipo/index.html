@@ -4743,7 +4743,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       </div>
 
       <div style={{ display:'flex', gap:14, flex:1, minHeight:420 }}>
-        <div className="card" style={{ flex:'1 1 55%', minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+        <div className="card" style={{ flex:1, minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
           <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
             Itens Críticos — Curva A <span style={{ color:T.mut2, fontWeight:500 }}>({curvaA.length})</span>
           </div>
@@ -4793,121 +4793,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
             </table>
           </div>
         </div>
-
-        <div className="card" style={{ flex:'1 1 45%', minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
-          <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Curva ABC — Itens Críticos</div>
-          <div style={{ flex:1, minHeight:0 }}>
-            <GraficoCurvaA itens={curvaA} />
-          </div>
-        </div>
       </div>
-    </div>
-  );
-}
-
-// Gráfico de Pareto (barras = valor individual, linha = % acumulado, com
-// marcador nos 80%) — mesmo padrão hand-rolled em SVG do resto do
-// arquivo (sem lib de gráfico). 2 escalas independentes: barras contra o
-// maior valor individual, linha contra 0-100%.
-function GraficoCurvaA({ itens }){
-  const wrapRef = useRef(null);
-  const [tam, setTam] = useState({ width: 500, height: 320 });
-  const [hover, setHover] = useState(null);
-
-  useEffect(() => {
-    if (!wrapRef.current) return;
-    const el = wrapRef.current;
-    const obs = new ResizeObserver(entries => {
-      const { width: w, height: h } = entries[0].contentRect;
-      if (w && h) setTam({ width: w, height: h });
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
-
-  if (!itens || itens.length === 0) {
-    return (
-      <div ref={wrapRef} style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-        <span className="mono" style={{ fontSize:12, color:T.mut }}>Sem itens críticos pra plotar</span>
-      </div>
-    );
-  }
-
-  const { width, height } = tam;
-  const pad = { top: 14, right: 46, bottom: 60, left: 70 };
-  const W = Math.max(width - pad.left - pad.right, 10);
-  const H = Math.max(height - pad.top - pad.bottom, 10);
-  const maxValor = Math.max(...itens.map(i => i.valor)) * 1.1 || 1;
-  const passoX = W / itens.length;
-  const barW = Math.max(6, Math.min(46, passoX * 0.6));
-  const xCentro = i => passoX * i + passoX / 2;
-  const yValor = v => H - (v / maxValor) * H;
-  const yPct = p => H - (p / 100) * H;
-  const linhaAcumulado = itens.map((it, i) => `${i === 0 ? 'M' : 'L'} ${xCentro(i).toFixed(1)} ${yPct(it.pctAcumulado).toFixed(1)}`).join(' ');
-
-  const handleMove = e => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const xLocal = ((e.clientX - rect.left) / rect.width) * width - pad.left;
-    let idx = Math.floor(xLocal / passoX);
-    idx = Math.max(0, Math.min(itens.length - 1, idx));
-    setHover(idx);
-  };
-
-  const p = hover != null ? itens[hover] : null;
-
-  return (
-    <div ref={wrapRef} style={{ position:'relative', width:'100%', height:'100%' }}>
-      <div style={{ position:'absolute', top:-8, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1 }}>
-        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
-          <span style={{ width:10, height:10, background:T.blue, opacity:0.5, display:'inline-block', borderRadius:2 }} />Valor do item
-        </span>
-        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.amber, fontWeight:600 }}>
-          <span style={{ width:12, height:2, background:T.amber, display:'inline-block', borderRadius:1 }} />% acumulado
-        </span>
-      </div>
-      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
-        onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
-        <g transform={`translate(${pad.left},${pad.top})`}>
-          {/* Linha de referência dos 80% — é literalmente a definição da Curva A */}
-          <line x1={0} x2={W} y1={yPct(80)} y2={yPct(80)} stroke={T.amber} strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />
-          <text x={W + 4} y={yPct(80)} dominantBaseline="middle" fontSize={9.5} fontFamily="'IBM Plex Mono', monospace" fill={T.amber}>80%</text>
-          {[0,25,50,75,100].map(p => (
-            <text key={p} x={-10} y={yPct(p)} textAnchor="end" dominantBaseline="middle" fontSize={9.5} fontFamily="'IBM Plex Mono', monospace" fill={T.mut2}>{p}%</text>
-          ))}
-          {itens.map((it, i) => (
-            <rect key={`b${i}`} x={xCentro(i) - barW/2} y={yValor(it.valor)} width={barW} height={Math.max(H - yValor(it.valor), 0)}
-              fill={T.blue} opacity={hover === i ? 0.65 : 0.4} rx={2} />
-          ))}
-          <path d={linhaAcumulado} fill="none" stroke={T.amber} strokeWidth={2} />
-          {itens.map((it, i) => (
-            <circle key={`c${i}`} cx={xCentro(i)} cy={yPct(it.pctAcumulado)} r={hover === i ? 5 : 3} fill={T.amber} stroke="#fff" strokeWidth={1.5} />
-          ))}
-          {hover != null && (
-            <line x1={xCentro(hover)} x2={xCentro(hover)} y1={0} y2={H} stroke={T.mut2} strokeWidth={1} strokeDasharray="3,3" opacity={0.5} />
-          )}
-          {itens.map((it, i) => (
-            <text key={`l${i}`} x={xCentro(i)} y={H + 16} textAnchor="end" fontSize={9} fontFamily="'IBM Plex Mono', monospace"
-              fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}
-              transform={`rotate(-40 ${xCentro(i)} ${H + 16})`}>
-              {(it.descricao || '').length > 18 ? it.descricao.slice(0, 17) + '…' : it.descricao}
-            </text>
-          ))}
-        </g>
-      </svg>
-      {p && (
-        <div className="mono" style={{
-          position:'absolute',
-          left: `${((xCentro(hover) + pad.left) / width) * 100}%`,
-          top: 8,
-          transform:'translateX(-50%)',
-          background: T.ink, color:'#fff', borderRadius:8, padding:'6px 10px',
-          fontSize:11, lineHeight:1.5, pointerEvents:'none', boxShadow:'0 4px 14px rgba(0,0,0,0.18)', whiteSpace:'nowrap', zIndex:5,
-        }}>
-          <div style={{ fontWeight:700, marginBottom:2 }}>{p.descricao}</div>
-          <div>Valor: {fmtReais(p.valor)} ({p.pctIndividual.toFixed(1)}%)</div>
-          <div style={{ opacity:0.75 }}>Acumulado: {p.pctAcumulado.toFixed(1)}%</div>
-        </div>
-      )}
     </div>
   );
 }
