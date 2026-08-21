@@ -3619,6 +3619,19 @@ funciona nos 2 casos (memória e fetch sob demanda), cache confirmado
 pai, 0 erros de console. Deploy: `firebase deploy --only hosting
 --project planejamento-mse`.
 
+**Correção no mesmo dia**: "Preciso que o valor esteja alinhado na
+coluna da macro, o saldo orçamentário também, a % não é necessária" —
+a 1ª versão usava uma mini-tabela própria dentro de 1 `<td colSpan=7>`,
+que não alinhava com as colunas do pai. `LinhasDetalheRmi` passou a
+renderizar `<tr>` direto nas mesmas 7 colunas da tabela pai (Valor e
+Saldo Orçamentário caem exatamente sob os cabeçalhos correspondentes;
+RMI/%/Desvio ficam vazios no detalhe); coluna de % removida. Validado
+via `getBoundingClientRect` (0px de diferença entre cabeçalho e linhas
+de detalhe). **Lição**: ao empilhar uma tabela de detalhe dentro de
+outra, alinhamento de coluna exige usar a MESMA grade de `<td>` da
+tabela pai — uma tabela aninhada nunca alinha por conta própria, por
+mais que as larguras pareçam parecidas.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
