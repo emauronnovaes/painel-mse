@@ -4892,13 +4892,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                           </span>
                         </td>
                       </tr>
-                      {aberto && (
-                        <tr style={{ borderBottom:'1px solid var(--line)' }}>
-                          <td colSpan={7} style={{ padding:0, background:'#f7f8fa' }}>
-                            <LinhasDetalheRmi filhos={filhos} valorPai={it.valor} />
-                          </td>
-                        </tr>
-                      )}
+                      {aberto && <LinhasDetalheRmi filhos={filhos} />}
                     </React.Fragment>
                   );
                 })}
@@ -4920,36 +4914,47 @@ function ModuloSuprimentos({ obraId, obraNome }){
   );
 }
 
-// Mini-tabela de detalhe (1 nível abaixo do item macro) exibida ao
-// expandir uma linha da Curva A. Não reaplica o filtro de canteiro nem
-// a lógica de Curva A — é só "o que compõe este item macro por baixo",
-// puro detalhe, sem julgamento de crítico/não-crítico no nível-folha.
-function LinhasDetalheRmi({ filhos, valorPai }){
+// Linhas de detalhe (1 nível abaixo do item macro) exibidas ao expandir
+// uma linha da Curva A. Renderiza `<tr>` DIRETO nas mesmas 7 colunas da
+// tabela pai (não numa tabela aninhada) pra Valor e Saldo Orçamentário
+// caírem exatamente nas colunas "Valor"/"Saldo Orçamentário" do item
+// macro — pedido explícito de alinhamento. Sem coluna de % (não
+// necessária aqui) e sem RMI/Desvio repetidos por linha. Não reaplica
+// filtro de canteiro nem lógica de Curva A — é só "o que compõe este
+// item macro por baixo", puro detalhe.
+function LinhasDetalheRmi({ filhos }){
   if (!filhos || filhos.carregando) {
-    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Carregando detalhe…</div>;
+    return (
+      <tr style={{ background:'#f7f8fa' }}>
+        <td colSpan={7} className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Carregando detalhe…</td>
+      </tr>
+    );
   }
   if (filhos.erro) {
-    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.red }}>Erro ao carregar detalhe deste item</div>;
+    return (
+      <tr style={{ background:'#f7f8fa' }}>
+        <td colSpan={7} className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.red }}>Erro ao carregar detalhe deste item</td>
+      </tr>
+    );
   }
   if (!filhos.itens || filhos.itens.length === 0) {
-    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Sem detalhamento — este é o último nível disponível na RMI</div>;
+    return (
+      <tr style={{ background:'#f7f8fa' }}>
+        <td colSpan={7} className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Sem detalhamento — este é o último nível disponível na RMI</td>
+      </tr>
+    );
   }
-  return (
-    <table style={{ width:'100%', borderCollapse:'collapse' }}>
-      <tbody>
-        {filhos.itens.map(f => (
-          <tr key={f.id} style={{ borderTop:'1px solid var(--line)' }}>
-            <td style={{ padding:'7px 14px 7px 34px', fontSize:12, color:T.body, maxWidth:280, whiteSpace:'normal', lineHeight:1.3 }}>{f.descricao || '—'}</td>
-            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', width:150 }}>{fmtReais(f.valor)}</td>
-            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.mut, fontVariantNumeric:'tabular-nums', width:100 }}>
-              {valorPai ? `${(f.valor / valorPai * 100).toFixed(1)}%` : '—'}
-            </td>
-            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', width:150 }}>{f.saldo_orcamentario != null ? fmtReais(f.saldo_orcamentario) : '—'}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+  return filhos.itens.map(f => (
+    <tr key={f.id} style={{ background:'#f7f8fa', borderTop:'1px solid var(--line)' }}>
+      <td style={{ padding:'7px 14px 7px 34px', fontSize:12, color:T.body, maxWidth:280, whiteSpace:'normal', lineHeight:1.3 }}>{f.descricao || '—'}</td>
+      <td></td>
+      <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtReais(f.valor)}</td>
+      <td></td>
+      <td></td>
+      <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{f.saldo_orcamentario != null ? fmtReais(f.saldo_orcamentario) : '—'}</td>
+      <td></td>
+    </tr>
+  ));
 }
 
 // ── Setor 8 — Medições, direto de `contratos_medicao` + `boletins_medicao`
