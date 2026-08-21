@@ -266,6 +266,41 @@ Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
 
+### Suprimentos — regra de "crítico" fechada: Curva A por item macro (2026-08-21)
+
+Decisão de produto que faltava desde 2026-08-05 (ver seção anterior):
+"os críticos serão, por hora, os itens Curva A, que correspondem, em sua
+soma, a 80% do valor do projeto" — implementado só em cima de
+`itens_rmi` (as outras 2 fontes de Suprimentos, `pedidos_suprimentos` e
+`itens_mapa_compras`, seguem sem tela própria).
+
+- **Grão = `raw.nivel === 1`** ("item macro"), não o item-folha. Cada
+  item de `itens_rmi` carrega a árvore inteira de RMI dentro do `raw`
+  (`codigo_seq` tipo "1.1.1.16.1.2", `nivel` = profundidade); nível 1 é
+  o ponto validado onde o subtotal já é confiável — bate exato com a
+  soma de tudo abaixo em 153 de 161 casos (obra 91). **Nível 0 tem bug
+  de origem**: subtotal zerado na RMI "GERAL" apesar de ~95M de valor
+  real embaixo — nunca usar nível 0 pra rollup.
+- **Curva A**: ordena os macro-itens por `subtotal_custo_meta_orcamento`
+  decrescente, acumula, inclui todo item até o acumulado ANTES dele
+  cruzar 80% do total.
+- **Itens de canteiro/apoio excluídos do cálculo inteiro** (não entram
+  nem no denominador) — pedido em seguida: "itens de canteiro como
+  consumíveis, alojamento e afins não precisam ser considerados".
+  Classificação por palavra-chave (não taxonomia fixa — 2.975
+  descrições distintas de nível 1 nas 6 obras). Ver detalhe completo e
+  lista de palavras-chave em [[08 - Blueprint do Painel de Obra]],
+  seção "Setor 4 — Suprimentos sai do placeholder".
+- **`prazo_status` não virou critério**: checado no dado real antes de
+  decidir — 100% dos itens da obra 91 vieram `sem_data`, API ainda não
+  popula essa dimensão. `desvio_saldo_orcamentario` (já populado) virou
+  badge complementar na tabela, não critério de corte.
+- Consulta usa filtro de expressão jsonb direto no PostgREST:
+  `raw->>nivel=eq.1` (índice de expressão já existia pra
+  `prazo_status`/`desvio_saldo_orcamentario`, não pra `nivel` — sem
+  índice dedicado ainda, aceitável pro volume atual de ~150-900
+  itens/obra depois do filtro por `id_obra`).
+
 ### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
 
 Tabela `itens_rmi` desenhada (SQL em `painel-mse\n8n\rmi-suprimentos.README.md`)

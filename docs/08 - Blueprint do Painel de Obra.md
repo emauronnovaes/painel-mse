@@ -11,10 +11,10 @@ técnica (ADR-006, ainda pendente em [[06 - Decisões de Arquitetura]]).
 > 2026-08-10) abrem com **dado real** direto do Supabase (mesmas duas chaves
 > anon do dashboard atual) — Desvios lê `EAP` direto, agrupado por Local ×
 > Disciplina; Restrições lê `restricoes_obra`; Medições lê `nfs` +
-> `proximos_faturamentos` (ver seções próprias abaixo);
-> Suprimentos e OC/CO seguem placeholder por não terem fonte (Suprimentos
-> tem tabela, falta fechar a regra de "crítico"). Quando a
-> base técnica for decidida, este arquivo é descartável — mas a lógica de
+> `proximos_faturamentos`; OC/CO (desde 2026-08-11) lê
+> `orcamentos_complementares_obra`; Suprimentos (desde 2026-08-21) lê
+> `itens_rmi` e mostra os itens críticos por Curva A (ver seções próprias
+> abaixo). Quando a base técnica for decidida, este arquivo é descartável — mas a lógica de
 > leitura (mapas de nome/id, detecção de dado congelado) vale a pena carregar
 > para a versão real.
 
@@ -3459,6 +3459,75 @@ borda extrapolada); ponto do meio continua centralizado (diferença
 resizable-handle-s`) ainda mantém o tooltip dentro dos limites
 verticais; conteúdo legível em todos os casos. 0 erros de console.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+## Setor 4 — Suprimentos sai do placeholder, Curva A dos itens macro (2026-08-21)
+
+"a partir da table itens RMI iremos basear a tela de suprimentos, quase
+que como um mapa de suprimentos automático... a ideia é fazer um
+acompanhamento gerencial dos itens críticos, os críticos serão, por
+hora, os itens Curva A, que correspondem, em sua soma, a 80% do valor do
+projeto" — em cima de `itens_rmi` (fonte `rmi_api`, ver
+[[07 - Modelo de Dados]] e `n8n/rmi-suprimentos.README.md`).
+
+**"Item macro" = `raw.nivel === 1`, não o item-folha.** Cada obra tem
+milhares de itens numa árvore de até 5 níveis (`codigo_seq` tipo
+"1.1.1.16.1.2"); nível 1 (ex. "Tubulação", "Estrutura Metálica") é a
+granularidade certa pra visão gerencial — validado no dado real (obra
+91): o subtotal do nível 1 bate exato com a soma de tudo abaixo dele em
+153 de 161 casos. **Nível 0 é NÃO confiável** — na RMI "GERAL" o
+subtotal do nível 0 vem zerado apesar de ~95M de valor real embaixo (bug
+da própria origem, não do painel); por isso o cálculo nunca usa nível 0.
+
+**Curva A** = ordena os itens macro por `subtotal_custo_meta_orcamento`
+decrescente, acumula, e marca como crítico todo item cujo acumulado
+ANTES de somá-lo ainda não tinha cruzado 80% do total (convenção padrão
+de curva ABC — o item que cruza o corte ainda entra).
+
+**Itens de canteiro/apoio ficam de fora do cálculo inteiro** — correção
+de escopo pedida em seguida: "vamos nos ater aos itens de obra, itens de
+canteiro como consumíveis, alojamento e afins não precisam ser
+considerados". Como são 2.975 descrições distintas nas 6 obras (sem
+taxonomia fixa), a separação é por PALAVRA-CHAVE (`ehItemCanteiroRmi`),
+não lista fechada de nomes:
+
+- Exclui (canteiro): CANTEIRO DE OBRAS, ALOJAMENTO, FILIAL, CONSUMÍVEIS,
+  UNIFORME, FRETE, COMBUSTÍVEL/DIESEL, MOBILIZAÇÃO, FERRAMENTA, SEGURO,
+  ÔNIBUS, ASO, EPI(S), QUALIFICAÇÃO DE SOLDADORES, TREINAMENTO, e
+  equipamento alugado (ESCAVADEIRA, MOTONIVELADORA, ROLO COMPACTADOR,
+  CAMINHÃO BASCULANTE, PLATAFORMA DE LANÇA ARTICULADA, RETROESCAVADEIRA,
+  GUINDASTE, MUNCK) — decidido via pergunta direta ao usuário.
+- Fica como item de obra (NÃO exclui), por decisão explícita: Serviços
+  Terceirizados, Equipamentos de Medição e Apoio.
+- **Categoria nova/desconhecida (sem match de palavra-chave) entra como
+  item de obra por padrão** — a lista é só de EXCLUSÃO, nunca inclusão
+  fechada. Racional do usuário: melhor arriscar incluir um item de
+  canteiro raro do que esconder um item de obra real por engano de
+  classificação (mesmo espírito de `corStatusRestricao`/`corStatusOc`,
+  nunca esconder categoria desconhecida).
+
+**`prazo_status` descartado como critério** — investigado antes de
+decidir: 100% dos itens de obra 91 vieram `sem_data` (API ainda não
+popula essa dimensão pra nenhuma obra carregada). O placeholder antigo
+falava em "prazo × impacto"; ficou só valor (Curva A) como critério de
+"crítico" por hora. `desvio_saldo_orcamentario` (positivo/negativo/
+zerado) já vem populado e aparece como badge complementar na tabela, sem
+custo extra de ingestão.
+
+**UI**: 4 balões de resumo (Itens Críticos "N de M", Valor coberto pela
+Curva A, Valor total de obra considerado, Itens de canteiro excluídos +
+seu valor) + tabela dos itens Curva A (Descrição, RMI de origem, Valor,
+% individual, % acumulado, Saldo Orçamentário, badge de Desvio) com
+rodapé somando o restante (Curva B/C) + gráfico de Curva ABC (`Grafico
+CurvaA`, SVG hand-rolled no mesmo padrão do resto do arquivo: barras de
+valor individual, linha de % acumulado, linha de referência nos 80%,
+tooltip por hover).
+
+Testado via Playwright (obra 91): 5 itens críticos de 143 macro-itens
+somam 83.7% do valor de obra (R$ 84,4M de R$ 100,8M); nenhum item de
+canteiro (Alojamento, Consumíveis, Construção do Canteiro) vazou na
+tabela; 18 itens de canteiro excluídos (R$ 32,7M) contabilizados à
+parte; 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
 
 ## Próximos passos possíveis
 
