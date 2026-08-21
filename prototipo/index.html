@@ -4757,19 +4757,44 @@ function coletarMateriaisDaDisciplina(disciplinaItem, areaHerdada, filhosPorPaiG
   caminhar(disciplinaItem, areaHerdada, 0);
   return materiais;
 }
-// Soma materiais com a mesma descrição normalizada DENTRO do mesmo par
-// área+disciplina (ver comentário grande acima) — nunca entre grupos
-// diferentes, pra não perder a orientação que é o objetivo da tela.
+// Extrai a "família" de um material a partir da descrição — pedido
+// "ainda podemos comprimir mais os itens, em coisas similares" depois
+// de ver que a mesma peça aparece 1x por variante (ex. "Isolamento de
+// Flanges - 10" - Espuma Elastometrica; Aluminio" e mais ~20 variações
+// só de diâmetro/material, todas na RMI de Tubulação/obra 91). O corte
+// é no primeiro " - " (com espaços dos 2 lados) — é o separador real
+// observado entre nome-base e especificação (diâmetro/capacidade/
+// material) nesse padrão de descrição. Corte deliberadamente simples
+// (não tenta reconhecer DN/Ø/Btu/h/mm² um por um): captura o padrão
+// real validado sem risco de cortar hífen SEM espaço que é parte do
+// próprio nome/código (ex. "380-220V", "CS 600X250", "W310X38.7" nunca
+// batem — ficam intactos, sem família, o que é o comportamento seguro
+// quando não dá pra separar nome-base de especificação com confiança).
+function familiaMaterialRmi(descricao){
+  if (!descricao) return descricao;
+  const idx = descricao.indexOf(' - ');
+  return idx === -1 ? descricao.trim() : descricao.slice(0, idx).trim();
+}
+// Soma materiais da mesma família (ver `familiaMaterialRmi`) DENTRO do
+// mesmo par área+disciplina (nunca entre grupos diferentes, pra não
+// perder a orientação que é o objetivo da tela). A descrição exibida só
+// vira o nome genérico da família quando REALMENTE há mais de 1 item
+// original consolidado ali — item único mantém a descrição completa,
+// pra não perder especificação (diâmetro, material) à toa quando não
+// havia nada pra comprimir.
 function consolidarMateriaisSemelhantes(materiais){
   const porChave = new Map();
   materiais.forEach(m => {
-    const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(m.descricao)}`;
+    const familia = familiaMaterialRmi(m.descricao);
+    const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(familia)}`;
     const existente = porChave.get(chave);
-    if (!existente) { porChave.set(chave, { ...m }); return; }
+    if (!existente) { porChave.set(chave, { ...m, _familia: familia, _qtd: 1 }); return; }
     existente.valor += m.valor;
     if (m.saldo_orcamentario != null) existente.saldo_orcamentario = (existente.saldo_orcamentario || 0) + m.saldo_orcamentario;
+    existente._qtd += 1;
+    existente.descricao = existente._familia;
   });
-  return Array.from(porChave.values());
+  return Array.from(porChave.values()).map(({ _familia, _qtd, ...m }) => ({ ...m, qtdConsolidada: _qtd }));
 }
 // Monta a árvore Área → Disciplina → Material a partir da lista plana
 // (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
@@ -4984,7 +5009,10 @@ function ModuloSuprimentos({ obraId, obraNome }){
                           const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
                           return (
                             <tr key={it.id} className="hoverable" style={{ borderBottom:'1px solid var(--line)' }}>
-                              <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:320, whiteSpace:'normal', lineHeight:1.35 }}>{it.descricao || '—'}</td>
+                              <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:320, whiteSpace:'normal', lineHeight:1.35 }}>
+                                {it.descricao || '—'}
+                                {it.qtdConsolidada > 1 && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.mut }}>({it.qtdConsolidada} itens)</span>}
+                              </td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.pctIndividual.toFixed(1)}%</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut, fontVariantNumeric:'tabular-nums' }}>{it.pctAcumulado.toFixed(1)}%</td>
