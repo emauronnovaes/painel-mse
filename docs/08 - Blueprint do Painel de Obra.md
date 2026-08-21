@@ -3762,6 +3762,38 @@ de 3 níveis corretamente (6 colunas, indentação, valores nas linhas
 certas), 0 erros de console. Deploy: `firebase deploy --only hosting
 --project planejamento-mse`.
 
+### Consolida materiais por família — mesma peça, tamanhos diferentes (2026-08-21, mesmo dia)
+
+"É nesse sentido, mas ainda podemos comprimir mais os itens, em coisas
+similares" — a consolidação anterior só juntava descrição EXATA
+idêntica; a mesma peça em tamanhos diferentes (ex. "Isolamento de
+Flanges - 10\" - Espuma..." e mais ~20 variações de diâmetro/material,
+todas na RMI de Tubulação/obra 91) continuava em linhas separadas.
+
+`familiaMaterialRmi` corta a descrição no primeiro `" - "` (espaço-
+traço-espaço) — é o separador real observado entre nome-base e
+especificação nesse padrão de descrição. Deliberadamente simples: não
+tenta reconhecer DN/Ø/Btu/h/mm² um por um. Hífen SEM espaço ao redor
+(`380-220V`, `CS 600X250`, `W310X38.7`) nunca bate — fica intacto, o
+comportamento seguro quando não dá pra separar nome-base de
+especificação com confiança. Antes de implementar, mostrei o padrão
+achado e perguntei (AskUserQuestion) se comprimir mantendo detalhe num
+popup ou sem guardar detalhe — escolhido sem guardar detalhe.
+
+Consolidação passou a agrupar por família (não mais descrição exata)
+dentro do mesmo par área+disciplina — mas a descrição exibida só vira o
+nome genérico quando REALMENTE há mais de 1 item consolidado ali; item
+único mantém a descrição completa (evita perder especificação à toa
+quando não havia nada pra comprimir). Indicador `(N itens)` cinza ao
+lado do nome quando a linha é fruto de consolidação.
+
+Testado: simulação em Node confirmou compressão real sem nenhuma junção
+aparentemente errada; Playwright confirmou na tela — obra 91 com 8
+famílias consolidadas ("Isolamento de Flanges" = 22 itens, "Cabo
+0,6/1kV..." = 15 itens); CNPEM Faseado com 21 famílias ("Tubulação Aço
+carbono" = 14 itens, "Fancoil Trox ICV" = 7 itens). 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
