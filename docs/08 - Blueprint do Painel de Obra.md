@@ -3590,6 +3590,35 @@ granular tipo "Combustível para Guindaste" sobrando. Playwright
 confirmou os mesmos números nas 2 obras depois, 0 erros de console.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
 
+### Linha da Curva A expande e mostra 1 nível de detalhe (2026-08-21, mesmo dia)
+
+"Preciso conseguir abrir mais um nível e ver o que está contemplado na
+curva A". Cada linha da tabela virou clicável (mesmo padrão visual de
+`LinhaLocalDesvio` em Desvios — chevron `▸`/`▾` mono antes do texto,
+`React.Fragment` com uma 2ª `<tr>` condicional pro detalhe).
+
+Como o "item macro" pode ter vindo do nível 0 OU do nível 1 (depende do
+ramo, ver seção acima), o detalhe também é resolvido caso a caso:
+- Item de nível 0 → filhos são nível 1, **já estão em memória**
+  (`itensPorNivel.n1`, a obra inteira já foi buscada) — filtra local,
+  sem requisição nova.
+- Item de nível 1 → filhos são nível 2, nunca buscados antes — 1 fetch
+  sob demanda só daquele `id_rmi`+nível, disparado ao expandir (não
+  pré-carrega a árvore inteira da obra de antemão, que seria caro pra
+  RMIs com milhares de folhas).
+- Resultado cacheado por item (`filhosPorItem`) — fechar e reabrir não
+  refaz o fetch.
+
+`LinhasDetalheRmi` é só apresentação (Descrição, Valor, % do item pai,
+Saldo Orçamentário) — não reaplica filtro de canteiro nem lógica de
+Curva A no nível-folha, é puro "o que compõe isso por baixo".
+
+Testado via Playwright (obra 91 e CNPEM Faseado): expandir/colapsar
+funciona nos 2 casos (memória e fetch sob demanda), cache confirmado
+(reabrir não refaz requisição, mesmos dados), valores sempre ≤ item
+pai, 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
