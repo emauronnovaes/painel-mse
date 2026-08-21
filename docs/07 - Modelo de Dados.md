@@ -346,11 +346,11 @@ colunas de contexto.
   unidade do pai).
 - **"Custos com Efetivo MSE" some sozinho** — por baixo só tem
   treinamento/passagens/plano de saúde, tudo `vb`, sem regra especial.
-- **Área**: só existe como coluna quando fica ABAIXO da disciplina na
-  árvore (CNPEM). Na obra 91 a "área" (UB/SP) fica ACIMA — é o próprio
-  nível que a resolução de disciplina descarta como balde — e nesse
-  caso vira sufixo no nome da disciplina (`Estrutura Metálica — SP`)
-  em vez de coluna própria (decisão confirmada com o usuário).
+- **Área**: pode vir de ABAIXO da disciplina na árvore (CNPEM) ou de
+  CIMA (obra 91 — UB/SP é o nível que a resolução de disciplina
+  descarta como balde). ~~Nesse 2º caso virava sufixo no nome da
+  disciplina~~ — **corrigido horas depois** (ver "Tabela vira árvore"
+  abaixo): virou campo próprio em todo material, igual nos 2 casos.
 - Fetch mudou de "nível 0 + nível 1" pra obra inteira (1 requisição) —
   precisa caminhar até a folha, que pode estar em qualquer profundidade.
 
@@ -358,6 +358,25 @@ Detalhe completo, o bug do "SAE002" pego na validação (sufixo só se
 aplica quando a descida foi por padrão de nome, não pelo fallback de
 subtotal zerado) e os números de validação em
 [[08 - Blueprint do Painel de Obra]], seção "Crítico vira MATERIAL".
+
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"precisa estar organizado em nívels, Área -> Disciplina -> Material...
+a necessidade de compilar materiais similares em uma coisa só" — área
+deixa de ser sufixo no nome da disciplina (só fazia sentido numa tabela
+plana) e vira campo próprio em todo material, virando nó real na árvore
+de exibição, não importa se fica acima ou abaixo da disciplina no RMI
+original. `consolidarMateriaisSemelhantes` soma valor+saldo de materiais
+com a mesma descrição normalizada dentro do MESMO par área+disciplina.
+
+2 bugs pegos na validação em Node antes do teste de UI: (1) área
+herdada de cima sendo sobrescrita pelo 1º sub-agrupamento abaixo da
+disciplina; (2) quando o material é filho direto da disciplina (sem
+camada de área), a área virava igual ao nome do próprio material.
+Resultado real: obra 91 = 3 áreas (UB, SP, sem área); CNPEM Faseado = 6
+áreas (Central de Água Gelada, Instalações Nível 614/619/623, Caixa de
+Acesso, sem área). Detalhe completo em
+[[08 - Blueprint do Painel de Obra]], seção "Tabela vira árvore".
 
 ### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
 

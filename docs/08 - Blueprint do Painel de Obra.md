@@ -3705,6 +3705,63 @@ CNPEM Faseado = 158 de 1451, 0 disciplinas com "EFETIVO" remanescentes.
 0 erros de console nas 2 obras. Deploy: `firebase deploy --only
 hosting --project planejamento-mse`.
 
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"a ideia é essa, mas precisa estar organizado em nívels, Área ->
+Disciplina -> Material, outro ponto é, a necessidade de compilar
+materiais similares em uma coisa só" — 2 pedidos no mesmo comentário.
+
+**Área vira campo próprio, não mais sufixo no nome.** A entrega anterior
+tinha resolvido a assimetria (área acima da disciplina na obra 91 vs.
+abaixo no CNPEM) dobrando o nome (`Estrutura Metálica — SP`) porque a
+tabela era plana — não tinha onde mais colocar a área. Com hierarquia
+de verdade pedida agora, isso deixou de fazer sentido: UB/SP e
+"Instalações Nível 614" viraram NÓS de área reais, ambos exibidos da
+mesma forma (Área → Disciplina → Material), não importa se na árvore
+original do RMI a área fica acima ou abaixo da disciplina.
+
+**Consolidação** (`consolidarMateriaisSemelhantes`): soma valor (+
+saldo orçamentário) de materiais com a MESMA descrição normalizada
+dentro do MESMO par área+disciplina — nunca entre grupos diferentes
+(perderia a orientação que é o objetivo da tela) nem tenta casar
+descrições parecidas-mas-diferentes (tubulação DN 14"/DN 12" continuam
+linhas separadas, são especificações diferentes).
+
+**2 bugs reais pegos na validação em Node, antes do teste de
+navegador** (mesmo padrão de processo da entrega anterior, valeu ainda
+mais aqui):
+1. A área herdada de cima (obra 91) estava sendo sobrescrita pelo
+   primeiro sub-agrupamento encontrado 1 nível abaixo da disciplina —
+   resultado: "áreas" sem sentido tipo "Aço Carbono", "Vigas - Perfís
+   laminados...". Só captura área de baixo quando NÃO existe área
+   herdada de cima.
+2. Quando o material é filho DIRETO da disciplina, sem camada de área
+   nenhuma (ex. "Equipamentos"/obra 91 — cada linha já É um equipamento
+   específico), a área virava igual ao nome do próprio material. Só
+   promove o nome do nível-abaixo a "área" quando esse nível NÃO é ele
+   mesmo o material.
+
+Resultado real: obra 91 colapsa pra 3 áreas (UB, SP, "sem área" —
+Equipamentos e Serviços Terceirizados, que não têm quebra por zona);
+CNPEM Faseado pra 6 áreas (Central de Água Gelada, Instalações Nível
+614/619/623, Caixa de Acesso, "sem área"). Tabela caiu de 8 pra 6
+colunas — Área/Disciplina/Material vira 1 coluna hierárquica com
+indentação (linha de área só com valor total, disciplina idem, material
+com % Individual/Acumulado/Saldo/Desvio completos).
+
+**Ponto cosmético aceito, não corrigido**: RMIs pequenas de aditivo
+(SAE001-005 no CNPEM) não têm disciplina real — o nome da disciplina
+acaba sendo igual ao do único material dentro dela, então a árvore
+mostra o mesmo texto 2x seguidas (header de disciplina + linha de
+material). Não é perda de dado (a linha de material continua com
+%/saldo/desvio completos), só redundância visual num punhado de itens
+de baixo valor. Não mexi nisso por ora.
+
+Testado via Playwright: obra 91 e CNPEM Faseado renderizando a árvore
+de 3 níveis corretamente (6 colunas, indentação, valores nas linhas
+certas), 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
