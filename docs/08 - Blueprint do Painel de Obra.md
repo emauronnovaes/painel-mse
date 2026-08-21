@@ -3529,6 +3529,67 @@ tabela; 18 itens de canteiro excluídos (R$ 32,7M) contabilizados à
 parte; 0 erros de console. Deploy: `firebase deploy --only hosting
 --project planejamento-mse`.
 
+### Gráfico sai por hora, foco na tabela (2026-08-21, mesmo dia)
+
+"Vamos focar na tabela, por hora" → confirmado "Deixar só a tabela".
+`GraficoCurvaA` removido (função inteira, não usada em nenhum outro
+lugar) e a tabela passou a ocupar a largura inteira do card. Sem
+gráfico nenhum na tela por ora — pode voltar depois se fizer sentido.
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou, olhando o CNPEM Faseado: "Ainda tem algumas linhas
+que não nos interessam... vamos exibir as linhas relacionadas aos
+níveis, que são a estrutura básica da EAP". Investiguei os 2 casos reais
+antes de mexer em código (ADR-005) — achado que muda a premissa da
+seção acima:
+
+- **Obra 91**: nível 0 é "balde" de origem de material (`MATERIAIS -
+  UB`, `MATERIAIS - SP`, `CHANGE ORDER N` — quase todos com subtotal
+  zerado). A disciplina real ("Estrutura Metálica", "Tubulação") só
+  aparece no nível 1 — por isso nível 1 fixo funcionava aqui.
+- **CNPEM Faseado**: é o INVERSO — nível 0 já É a disciplina real (HVAC
+  R$11,7M, CIVIL R$4,7M, ELÉTRICA E SISTEMAS R$6M, COMBUSTÍVEL, EPI,
+  CANTEIRO...). Nível 1 aqui é item de linha bem granular ("Combustível
+  para Guindaste de 35 ton") — 814 linhas, nível 1 fixo quebrava aqui.
+- **RMI 43/GERAL (obra 91)**: tem um ramo cujo nível 0 nem existe como
+  linha na origem (órfão) — só os filhos de nível 1 carregam o valor
+  real (~R$46M nesse ramo). Já era o motivo de nível 0 ter sido
+  descartado como "não confiável" na 1ª versão desta tela.
+
+**Não dá pra fixar 1 nível pro produto inteiro** — muda de RMI pra RMI,
+dependendo de como cada RMI foi montada na origem. Perguntei ao usuário
+como resolver isso (AskUserQuestion) em vez de supor: escolheu detecção
+automática por padrão de nome, em vez de confirmação manual RMI a RMI.
+
+`resolverItensMacroRmi` decide, por RAMO (`id_rmi` + `codigo_seq`), se
+usa o nível 0 ou desce pro nível 1 do ramo:
+1. **Padrão de nome** — nível 0 com nome batendo `/^(MATERIAIS\s*-|
+   CHANGE ORDER\b|OC\s*-|CO\s+\d)/` (normalizado, maiúsculo sem acento)
+   é tratado como "balde" administrativo → sempre desce.
+2. **Subtotal zerado com filho de valor real** — nível 0 = 0 mas a soma
+   dos filhos de nível 1 daquele ramo é > 0 → desce (pega o bug de
+   rollup da origem, não só o nome).
+3. **Ramo órfão** — existem itens de nível 1 com aquele código-pai mas
+   nenhuma linha de nível 0 correspondente → desce (não tem outra opção).
+4. Nenhuma das 3 condições → usa o nível 0 direto (já é a disciplina).
+
+Só resolve 1 nível de profundidade (nível 0 → nível 1); se aparecer uma
+3ª obra com "balde" aninhado mais fundo, revisitar.
+
+**Custo**: fetch mudou de 1 pra 2 requisições por obra (nível 0 + nível
+1) — a resolução por ramo precisa comparar os dois antes de decidir.
+
+**Validado sem regressão**: simulei a lógica nova em Node contra o dado
+real das 2 obras antes de tocar na UI. Obra 91 bateu EXATO com o
+resultado já testado antes (5 itens, R$ 84.419.464,60 de R$
+100.813.420,36 — mesmos valores, dígito a dígito). CNPEM Faseado: 4
+itens críticos de 315 macro-itens (HVAC, Elétrica e Sistemas, Civil,
+Custos com Efetivo MSE), 81,5% do valor considerado, nenhuma linha
+granular tipo "Combustível para Guindaste" sobrando. Playwright
+confirmou os mesmos números nas 2 obras depois, 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,

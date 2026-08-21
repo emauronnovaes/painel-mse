@@ -274,13 +274,12 @@ soma, a 80% do valor do projeto" — implementado só em cima de
 `itens_rmi` (as outras 2 fontes de Suprimentos, `pedidos_suprimentos` e
 `itens_mapa_compras`, seguem sem tela própria).
 
-- **Grão = `raw.nivel === 1`** ("item macro"), não o item-folha. Cada
-  item de `itens_rmi` carrega a árvore inteira de RMI dentro do `raw`
-  (`codigo_seq` tipo "1.1.1.16.1.2", `nivel` = profundidade); nível 1 é
-  o ponto validado onde o subtotal já é confiável — bate exato com a
-  soma de tudo abaixo em 153 de 161 casos (obra 91). **Nível 0 tem bug
-  de origem**: subtotal zerado na RMI "GERAL" apesar de ~95M de valor
-  real embaixo — nunca usar nível 0 pra rollup.
+- **Grão = "item macro"** — não o item-folha. Cada item de `itens_rmi`
+  carrega a árvore inteira de RMI dentro do `raw` (`codigo_seq` tipo
+  "1.1.1.16.1.2", `nivel` = profundidade). ~~Fixado em `raw.nivel ===
+  1` inicialmente~~ — **corrigido no mesmo dia** (ver "'Item macro'
+  deixa de ser nível fixo" abaixo): o nível certo muda de RMI pra RMI,
+  não é constante pro produto inteiro.
 - **Curva A**: ordena os macro-itens por `subtotal_custo_meta_orcamento`
   decrescente, acumula, inclui todo item até o acumulado ANTES dele
   cruzar 80% do total.
@@ -300,6 +299,33 @@ soma, a 80% do valor do projeto" — implementado só em cima de
   `prazo_status`/`desvio_saldo_orcamentario`, não pra `nivel` — sem
   índice dedicado ainda, aceitável pro volume atual de ~150-900
   itens/obra depois do filtro por `id_obra`).
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou linhas indesejadas no CNPEM Faseado — investigado antes
+de mexer (ADR-005) e o achado invalida a premissa da seção acima:
+`nivel === 1` fixo NÃO é universal. Comparando obra 91 × CNPEM Faseado
+(106) com consulta direta no PostgREST:
+
+- Obra 91: nível 0 é "balde" de origem de material (`MATERIAIS - UB/SP`,
+  `CHANGE ORDER N`, quase todos zerados) — a disciplina real só aparece
+  no nível 1. Por isso nível 1 fixo funcionava aqui.
+- CNPEM Faseado: é o INVERSO — nível 0 já É a disciplina real (HVAC,
+  CIVIL, ELÉTRICA E SISTEMAS, COMBUSTÍVEL...). Nível 1 é item de linha
+  granular (814 linhas na obra) — nível 1 fixo quebrava aqui.
+- RMI 43/GERAL (obra 91): tem ramo cujo nível 0 nem existe como linha
+  na origem (órfão) — só nível 1 carrega o valor real desse ramo.
+
+Consulta passou a buscar nível 0 E nível 1 da obra (2 requisições em
+vez de 1) e resolver por RAMO (`id_rmi`+`codigo_seq`) qual usar:
+desce pro nível 1 se o nome do nível 0 bater padrão de "balde"
+administrativo (`MATERIAIS -`, `CHANGE ORDER`, `OC -`, `CO <número>`),
+se o subtotal do nível 0 vier zerado com filho de valor real, ou se o
+ramo for órfão; senão usa o nível 0 direto. Detalhe completo e código em
+[[08 - Blueprint do Painel de Obra]], seção "'Item macro' deixa de ser
+nível fixo". Validado sem regressão (obra 91 bateu exato com o resultado
+anterior) + CNPEM Faseado com resultado sensato (4 itens críticos:
+HVAC, Elétrica e Sistemas, Civil, Custos com Efetivo MSE).
 
 ### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
 
