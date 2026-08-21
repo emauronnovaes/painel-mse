@@ -3632,6 +3632,79 @@ outra, alinhamento de coluna exige usar a MESMA grade de `<td>` da
 tabela pai — uma tabela aninhada nunca alinha por conta própria, por
 mais que as larguras pareçam parecidas.
 
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+"no CNPEM o item de custo com efetivo não precisa aparecer também.
+Observe no nível de material, é isso que precisamos exibir, os
+materiais críticos, orientados por área e disciplina." — correção de
+escopo maior que as anteriores: o crítico deixa de ser a DISCIPLINA
+inteira (Estrutura Metálica, HVAC — o que a tela mostrava desde a 1ª
+versão) e passa a ser o MATERIAL (item-folha de verdade), com
+disciplina/área como colunas de contexto.
+
+**Material não é nível fixo** (nem sequer dentro do mesmo ramo — RMI
+41/obra 91 tem material genuíno tanto em nível 3 quanto 4). Identificado
+por 2 sinais, não posição na árvore:
+1. `unidade` populada e diferente de `SERV` (mão de obra) e `VB`/`VERBA`
+   (verba/lump-sum, geralmente RH — é assim que "Custos com Efetivo
+   MSE" se resolveu sozinho: por baixo só tem treinamento, passagens e
+   plano de saúde, todos `vb`, nenhum material de verdade).
+2. Descrição não bate uma lista curta de itens que escapam do filtro de
+   unidade mas não são material (TESTES E MEDIÇÕES, OMISSOS,
+   Comissionamento — vêm com unidade "UN", igual material de verdade).
+
+**Evita contar 2x**: um nó com valor real (ex. "Estrutura média",
+2,46M) pode ter um filho-complemento zerado com a MESMA unidade (visto
+na obra 91: "SPINE COMPLEMENT" kg, valor 0, filho de "Estrutura média").
+Só desce pro filho se ele também tiver valor > 0; senão o próprio nó já
+é o material.
+
+**Área**: investigação (comparando as 2 obras de novo) achou que a
+"área" (zona física) só existe como conceito claro quando fica ABAIXO
+da disciplina na árvore — CNPEM: disciplina "HVAC" → área "Instalações
+Nível 614" → (sistema/circuito, ignorado) → material. Na obra 91 é o
+INVERSO: a "área" (UB/SP) é exatamente o nível que a resolução de
+disciplina descarta como "balde" (`MATERIAIS - UB`/`MATERIAIS - SP`) —
+fica ACIMA, não abaixo. Perguntei ao usuário como tratar essa
+assimetria (AskUserQuestion) em vez de tentar unificar os 2 casos num
+conceito só de "linha de área": escolhido dobrar o nome da disciplina
+quando a área fica acima (`Estrutura Metálica — SP`), e área vira
+coluna própria só quando fica abaixo.
+
+**Bug pego na validação, corrigido antes de subir**: o sufixo só pode
+ser aplicado quando a descida da disciplina foi por PADRÃO DE NOME
+reconhecível (`MATERIAIS - X`) — no fallback de "subtotal zerado com
+filho de valor real" (pensado pro bug de rollup da RMI 43/GERAL), o pai
+às vezes é só uma referência de aditivo/escopo (RMI pequena tipo "SAE002
+- Rede de coleta de condensados", vista no CNPEM), sem nenhuma
+informação de disciplina/área. Dobrar o nome nesse caso produzia rótulo
+sem sentido ("Central de vácuo Bonito... — SAE002 - Rede de coleta de
+condensados"). Corrigido restringindo o dobramento só ao caso de padrão
+de nome.
+
+Fetch mudou de "nível 0 + nível 1" pra "obra inteira, 1 requisição só" —
+resolver disciplina/área/material precisa caminhar a árvore até a
+folha, que pode estar em qualquer profundidade (volume por obra já
+confirmado pequeno o bastante, ~500 a ~8.000 linhas). A funcionalidade
+de "expandir 1 nível" (do pedido anterior, mesmo dia) ficou obsoleta —
+a linha já É o material agora, não há mais nível pra abrir — e foi
+removida (`LinhasDetalheRmi` deletada).
+
+**Padrão de processo que valeu a pena repetir**: antes de tocar na UI,
+simulei a lógica inteira (bem mais complexa que a resolução de
+disciplina do pedido anterior — combina 3 regras: material,
+disciplina, área) em um script Node isolado contra o dado real das 2
+obras. Foi assim que o bug do "SAE002" apareceu e foi corrigido ANTES
+do teste de navegador — iterar em Node é bem mais rápido que
+recarregar a tela a cada ajuste numa lógica com várias condições
+combinadas.
+
+Testado via Playwright depois da simulação bater: obra 91 = 86 de 746
+materiais críticos (mesmos valores da simulação, dígito a dígito);
+CNPEM Faseado = 158 de 1451, 0 disciplinas com "EFETIVO" remanescentes.
+0 erros de console nas 2 obras. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,

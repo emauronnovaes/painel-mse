@@ -274,12 +274,13 @@ soma, a 80% do valor do projeto" — implementado só em cima de
 `itens_rmi` (as outras 2 fontes de Suprimentos, `pedidos_suprimentos` e
 `itens_mapa_compras`, seguem sem tela própria).
 
-- **Grão = "item macro"** — não o item-folha. Cada item de `itens_rmi`
-  carrega a árvore inteira de RMI dentro do `raw` (`codigo_seq` tipo
-  "1.1.1.16.1.2", `nivel` = profundidade). ~~Fixado em `raw.nivel ===
-  1` inicialmente~~ — **corrigido no mesmo dia** (ver "'Item macro'
-  deixa de ser nível fixo" abaixo): o nível certo muda de RMI pra RMI,
-  não é constante pro produto inteiro.
+- **Grão = "item macro"** (disciplina) — não o item-folha, ~~fixado em
+  `raw.nivel === 1` inicialmente~~. **Corrigido 2x no mesmo dia**: 1º
+  pra resolução por RMI (nível 0 ou 1, varia por ramo — ver seção
+  abaixo); depois o próprio conceito de "crítico" desceu de disciplina
+  pra MATERIAL (ver "Crítico vira MATERIAL" mais abaixo) — o "item
+  macro"/disciplina virou só coluna de contexto, não mais o grão da
+  Curva A.
 - **Curva A**: ordena os macro-itens por `subtotal_custo_meta_orcamento`
   decrescente, acumula, inclui todo item até o acumulado ANTES dele
   cruzar 80% do total.
@@ -326,6 +327,37 @@ ramo for órfão; senão usa o nível 0 direto. Detalhe completo e código em
 nível fixo". Validado sem regressão (obra 91 bateu exato com o resultado
 anterior) + CNPEM Faseado com resultado sensato (4 itens críticos:
 HVAC, Elétrica e Sistemas, Civil, Custos com Efetivo MSE).
+
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+Correção de escopo maior, no mesmo dia: "no CNPEM o item de custo com
+efetivo não precisa aparecer também... observe no nível de material, é
+isso que precisamos exibir, os materiais críticos, orientados por área
+e disciplina" — o grão da Curva A desce de disciplina (resultado da
+seção anterior) pro MATERIAL real (item-folha); disciplina/área viram
+colunas de contexto.
+
+- **Material não é nível fixo** — varia até dentro do mesmo ramo (RMI
+  41/obra 91 tem material genuíno em nível 3 E 4). Identificado por
+  `unidade` populada e ≠ `SERV`/`VB`/`VERBA`, mais uma lista curta de
+  exceção por nome (TESTES, OMISSOS, COMISSIONAMENTO — vêm com unidade
+  "UN" igual material de verdade, mas não são). Evita contar 2x: só
+  desce pro filho se ele também tiver valor > 0 (não só a mesma
+  unidade do pai).
+- **"Custos com Efetivo MSE" some sozinho** — por baixo só tem
+  treinamento/passagens/plano de saúde, tudo `vb`, sem regra especial.
+- **Área**: só existe como coluna quando fica ABAIXO da disciplina na
+  árvore (CNPEM). Na obra 91 a "área" (UB/SP) fica ACIMA — é o próprio
+  nível que a resolução de disciplina descarta como balde — e nesse
+  caso vira sufixo no nome da disciplina (`Estrutura Metálica — SP`)
+  em vez de coluna própria (decisão confirmada com o usuário).
+- Fetch mudou de "nível 0 + nível 1" pra obra inteira (1 requisição) —
+  precisa caminhar até a folha, que pode estar em qualquer profundidade.
+
+Detalhe completo, o bug do "SAE002" pego na validação (sufixo só se
+aplica quando a descida foi por padrão de nome, não pelo fallback de
+subtotal zerado) e os números de validação em
+[[08 - Blueprint do Painel de Obra]], seção "Crítico vira MATERIAL".
 
 ### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
 
