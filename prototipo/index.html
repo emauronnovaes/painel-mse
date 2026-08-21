@@ -376,8 +376,13 @@ const SETORES = [
   { num: 1, slug: 'curva-s',               label: 'Curva S',                     estado: 'pronto' },
   { num: 2, slug: 'encarregados',           label: 'Encarregados',                estado: 'pronto' },
   { num: 3, slug: 'histograma',             label: 'Histograma',                  estado: 'pronto' },
-  { num: 4, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'placeholder',
-    desc: 'Cruzamento de prazo × impacto para apontar os itens de suprimentos que mais ameaçam a frente de trabalho. Falta fechar a regra de "crítico" antes de sair do placeholder.' },
+  // Saiu do placeholder em 2026-08-21 — "crítico" virou Curva A (itens
+  // macro cujo valor acumulado, em ordem decrescente, soma 80% do valor
+  // da obra), não mais o cruzamento de prazo×impacto do rascunho original
+  // (a API rmi_api até tem campo de prazo, mas veio vazio pra todas as
+  // obras carregadas até agora — sem dado, não dava pra usar). Ver
+  // ModuloSuprimentos.
+  { num: 4, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'pronto' },
   { num: 5, slug: 'oc-co',                  label: 'OC / CO',                     estado: 'pronto' },
   { num: 6, slug: 'desvios',                label: 'Desvios',                     estado: 'pronto' },
   { num: 7, slug: 'restricoes',             label: 'Restrições',                  estado: 'pronto' },
@@ -4598,6 +4603,315 @@ function ModuloOcCo({ obraId, obraNome }){
   );
 }
 
+// ── Setor 4 — Suprimentos, direto de `itens_rmi` (fonte: `rmi_api` do
+// PortalMSE, ver [[07 - Modelo de Dados]] e `n8n/rmi-suprimentos.README.md`)
+// — pedido explícito (2026-08-21): "a partir da table itens RMI iremos
+// basear a tela de suprimentos... a ideia é fazer um acompanhamento
+// gerencial dos itens críticos, os críticos serão, por hora, os itens
+// Curva A, que correspondem, em sua soma, a 80% do valor do projeto".
+//
+// "Item macro" = nível 1 do item (`raw.nivel === 1`, ex.: "Tubulação",
+// "Estrutura Metálica") — não o item-folha (existem milhares por obra,
+// numa árvore de até 5 níveis via `codigo_seq` tipo "1.1.1.16.1.2").
+// Confirmado no dado real (2026-08-21, obra 91): o subtotal do nível 1
+// bate exato com a soma de tudo abaixo dele em 153 de 161 casos — é o
+// nível certo pra "item macro" (poucas dezenas por obra, valor já
+// consolidado, em vez de milhares de peças individuais). `raw->>nivel=
+// eq.1` filtra isso direto no Supabase, sem baixar as linhas-folha.
+//
+// Curva A = ordena os itens macro por valor decrescente, acumula, e
+// marca como crítico todo item até o ponto em que o acumulado (antes de
+// somar aquele item) ainda não tinha cruzado 80% do total — ou seja, o
+// item que cruza os 80% ainda entra na Curva A (convenção padrão de
+// análise ABC).
+const PALAVRAS_CANTEIRO_RMI = [
+  'CANTEIRO DE OBRAS', 'ALOJAMENTO', 'FILIAL', 'CONSUMI', 'UNIFORME',
+  'FRETE', 'COMBUSTIVEL', 'DIESEL', 'MOBILIZA', 'FERRAMENTA', 'SEGURO',
+  'ONIBUS', 'ESCAVADEIRA', 'MOTONIVELADORA', 'ROLO COMPACTADOR',
+  'CAMINHAO BASCULANTE', 'PLATAFORMA DE LANCA ARTICULADA',
+  'RETROESCAVADEIRA', 'GUINDASTE', 'MUNCK',
+];
+// ASO/EPI(S) curtas demais pra checar por "contém" sem risco de bater
+// dentro de outra palavra (ex. "EPI" solto colidiria); por isso via
+// `\b` (fronteira de palavra) em vez de `.includes()`.
+const REGEX_CANTEIRO_RMI = /\b(ASO|EPIS?|QUALIFICACAO DE SOLDADORES|TREINAMENTO)\b/;
+// Itens de canteiro/indireto (alojamento, EPI, combustível, equipamento
+// alugado etc.) NÃO entram na Curva A — pedido explícito, são custo de
+// logística/apoio, não de execução da obra. "Serviços Terceirizados" e
+// "Equipamentos de Medição e Apoio" ficam de FORA desta lista de
+// propósito (decisão explícita: contam como item de obra).
+//
+// Como a descrição é texto livre (2.975 descrições distintas nas 6
+// obras já carregadas, sem taxonomia fixa — RMI nova pode trazer
+// qualquer nome), a exclusão é por PALAVRA-CHAVE, não lista fechada de
+// nomes. Categoria nova que não bater nenhuma palavra-chave entra como
+// item de obra por padrão (decisão explícita do usuário: melhor
+// arriscar incluir um item de canteiro raro do que esconder um item de
+// obra real por engano de classificação).
+function ehItemCanteiroRmi(descricao){
+  // `normalizarNomeParaMatch` já existe pro módulo de Encarregados
+  // (trim+maiúsculas+sem acento) — mesma normalização serve aqui, texto
+  // é texto.
+  const d = normalizarNomeParaMatch(descricao);
+  if (!d) return false;
+  if (PALAVRAS_CANTEIRO_RMI.some(p => d.includes(p))) return true;
+  return REGEX_CANTEIRO_RMI.test(d);
+}
+
+function ModuloSuprimentos({ obraId, obraNome }){
+  const [itensRaw, setItensRaw] = useState(null); // null = carregando
+  const [erro, setErro] = useState(false);
+
+  useEffect(() => {
+    setItensRaw(null); setErro(false);
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    // `raw->>nivel=eq.1` filtra o "item macro" direto no Supabase (ver
+    // comentário acima) — evita baixar as milhares de linhas-folha só
+    // pra descartar depois. Sintaxe de filtro em campo jsonb do
+    // PostgREST: `coluna->>chave=eq.valor`.
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&raw-%3E%3Enivel=eq.1&select=id,raw`, headers)
+      .then(rows => { if (rows === null) { setErro(true); setItensRaw([]); } else setItensRaw(rows); })
+      .catch(() => { setErro(true); setItensRaw([]); });
+  }, [obraId]);
+
+  // Separa itens de obra × canteiro, ordena os de obra por valor
+  // decrescente, acumula e marca Curva A. `todosOrdenados` alimenta o
+  // gráfico (curva inteira); `curvaA` é o subconjunto que vira tabela.
+  const { curvaA, todosOrdenados, restante, canteiro, totalObra } = useMemo(() => {
+    if (!itensRaw) return { curvaA: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, totalObra: 0 };
+    const validos = [];
+    let qtdCanteiro = 0, valorCanteiro = 0;
+    itensRaw.forEach(r => {
+      const it = r.raw || {};
+      const valor = Number(it.subtotal_custo_meta_orcamento) || 0;
+      if (ehItemCanteiroRmi(it.descricao)) { qtdCanteiro++; valorCanteiro += valor; return; }
+      validos.push({ id: r.id, ...it, valor });
+    });
+    validos.sort((a, b) => b.valor - a.valor);
+    const totalObra = validos.reduce((s, v) => s + v.valor, 0);
+    let acumulado = 0;
+    const todosOrdenados = validos.map(v => {
+      const antes = acumulado;
+      acumulado += v.valor;
+      return {
+        ...v,
+        pctIndividual: totalObra ? (v.valor / totalObra) * 100 : 0,
+        pctAcumulado: totalObra ? (acumulado / totalObra) * 100 : 0,
+        curvaA: totalObra ? (antes / totalObra) < 0.8 : false,
+      };
+    });
+    return {
+      curvaA: todosOrdenados.filter(v => v.curvaA),
+      todosOrdenados,
+      restante: todosOrdenados.filter(v => !v.curvaA),
+      canteiro: { qtd: qtdCanteiro, valor: valorCanteiro },
+      totalObra,
+    };
+  }, [itensRaw]);
+
+  const restanteValor = soma(restante, 'valor') || 0;
+
+  if (itensRaw === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
+  if (erro) return <CartaoEstado texto="Erro ao carregar itens_rmi" maxHeight={620} tom={T.red} />;
+  if (todosOrdenados.length === 0) return <CartaoEstado texto="Nenhum item de RMI (obra) lançado para esta obra" maxHeight={620} />;
+
+  return (
+    <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14, overflow:'auto' }}>
+      {/* Resumo — a estatística que já justifica a tela: poucos itens
+          cobrindo a maior parte do valor. */}
+      <div className="kpi-row-flex">
+        <div style={{ flex:1, minWidth:0 }}>
+          <Balao titulo="Itens Críticos (Curva A)" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
+            valor={`${curvaA.length} de ${todosOrdenados.length}`}
+            sub={todosOrdenados.length ? `${((curvaA.length/todosOrdenados.length)*100).toFixed(1)}% dos itens de obra` : undefined} />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <Balao titulo="Valor coberto pela Curva A" cor={T.green} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
+            valor={fmtReais(soma(curvaA, 'valor') || 0)}
+            sub={totalObra ? `${((soma(curvaA,'valor')||0)/totalObra*100).toFixed(1)}% do valor de obra` : undefined} />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <Balao titulo="Valor total de obra (itens macro)" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
+            valor={fmtReais(totalObra)}
+            sub="exclui itens de canteiro/apoio" />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <Balao titulo="Itens de canteiro/apoio" cor={T.mut} bg="#f7f8fa" borda="var(--line)"
+            valor={`${canteiro.qtd}`}
+            sub={canteiro.valor ? `${fmtReais(canteiro.valor)} — não considerados` : 'não considerados'} />
+        </div>
+      </div>
+
+      <div style={{ display:'flex', gap:14, flex:1, minHeight:420 }}>
+        <div className="card" style={{ flex:'1 1 55%', minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+          <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
+            Itens Críticos — Curva A <span style={{ color:T.mut2, fontWeight:500 }}>({curvaA.length})</span>
+          </div>
+          <div className="table-scroll-x" style={{ overflow:'auto', flex:1 }}>
+            <table style={{ width:'100%', minWidth:640, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
+              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
+                <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
+                  <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>Item macro</th>
+                  <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>RMI</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Valor</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>% Individual</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>% Acumulado</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Saldo Orçamentário</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Desvio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {curvaA.map((it, i) => {
+                  const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
+                  const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
+                  return (
+                    <tr key={it.id} className="hoverable" style={{ borderBottom:'1px solid var(--line)' }}>
+                      <td style={{ padding:'9px 14px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:280, whiteSpace:'normal', lineHeight:1.35 }}>{it.descricao || '—'}</td>
+                      <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.mut }}>{it.nome_rmi ? it.nome_rmi.replace(/^CP\d+\s*-\s*/i, '') : (it.id_rmi ?? '—')}</td>
+                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
+                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.pctIndividual.toFixed(1)}%</td>
+                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut, fontVariantNumeric:'tabular-nums' }}>{it.pctAcumulado.toFixed(1)}%</td>
+                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.saldo_orcamentario != null ? fmtReais(it.saldo_orcamentario) : '—'}</td>
+                      <td style={{ padding:'9px 14px', textAlign:'center' }}>
+                        <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bgDesv, color:corDesv }}>
+                          {it.desvio_saldo_orcamentario || '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {restante.length > 0 && (
+                <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
+                  <tr>
+                    <td colSpan={7} className="mono" style={{ padding:'10px 14px', fontSize:11, color:T.mut, borderTop:'2px solid var(--line)' }}>
+                      + {restante.length} itens (Curva B/C) somam {fmtReais(restanteValor)} — {totalObra ? (100 - (soma(curvaA,'valor')||0)/totalObra*100).toFixed(1) : '0'}% restante do valor de obra
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        <div className="card" style={{ flex:'1 1 45%', minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:'16px 20px 10px' }}>
+          <div className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', marginBottom:4, flexShrink:0 }}>Curva ABC — Itens Críticos</div>
+          <div style={{ flex:1, minHeight:0 }}>
+            <GraficoCurvaA itens={curvaA} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Gráfico de Pareto (barras = valor individual, linha = % acumulado, com
+// marcador nos 80%) — mesmo padrão hand-rolled em SVG do resto do
+// arquivo (sem lib de gráfico). 2 escalas independentes: barras contra o
+// maior valor individual, linha contra 0-100%.
+function GraficoCurvaA({ itens }){
+  const wrapRef = useRef(null);
+  const [tam, setTam] = useState({ width: 500, height: 320 });
+  const [hover, setHover] = useState(null);
+
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const el = wrapRef.current;
+    const obs = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect;
+      if (w && h) setTam({ width: w, height: h });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  if (!itens || itens.length === 0) {
+    return (
+      <div ref={wrapRef} style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <span className="mono" style={{ fontSize:12, color:T.mut }}>Sem itens críticos pra plotar</span>
+      </div>
+    );
+  }
+
+  const { width, height } = tam;
+  const pad = { top: 14, right: 46, bottom: 60, left: 70 };
+  const W = Math.max(width - pad.left - pad.right, 10);
+  const H = Math.max(height - pad.top - pad.bottom, 10);
+  const maxValor = Math.max(...itens.map(i => i.valor)) * 1.1 || 1;
+  const passoX = W / itens.length;
+  const barW = Math.max(6, Math.min(46, passoX * 0.6));
+  const xCentro = i => passoX * i + passoX / 2;
+  const yValor = v => H - (v / maxValor) * H;
+  const yPct = p => H - (p / 100) * H;
+  const linhaAcumulado = itens.map((it, i) => `${i === 0 ? 'M' : 'L'} ${xCentro(i).toFixed(1)} ${yPct(it.pctAcumulado).toFixed(1)}`).join(' ');
+
+  const handleMove = e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const xLocal = ((e.clientX - rect.left) / rect.width) * width - pad.left;
+    let idx = Math.floor(xLocal / passoX);
+    idx = Math.max(0, Math.min(itens.length - 1, idx));
+    setHover(idx);
+  };
+
+  const p = hover != null ? itens[hover] : null;
+
+  return (
+    <div ref={wrapRef} style={{ position:'relative', width:'100%', height:'100%' }}>
+      <div style={{ position:'absolute', top:-8, right:6, display:'flex', gap:14, alignItems:'center', zIndex:1 }}>
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.body }}>
+          <span style={{ width:10, height:10, background:T.blue, opacity:0.5, display:'inline-block', borderRadius:2 }} />Valor do item
+        </span>
+        <span style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, color:T.amber, fontWeight:600 }}>
+          <span style={{ width:12, height:2, background:T.amber, display:'inline-block', borderRadius:1 }} />% acumulado
+        </span>
+      </div>
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none"
+        onMouseMove={handleMove} onMouseLeave={() => setHover(null)}>
+        <g transform={`translate(${pad.left},${pad.top})`}>
+          {/* Linha de referência dos 80% — é literalmente a definição da Curva A */}
+          <line x1={0} x2={W} y1={yPct(80)} y2={yPct(80)} stroke={T.amber} strokeWidth={1} strokeDasharray="4,3" opacity={0.5} />
+          <text x={W + 4} y={yPct(80)} dominantBaseline="middle" fontSize={9.5} fontFamily="'IBM Plex Mono', monospace" fill={T.amber}>80%</text>
+          {[0,25,50,75,100].map(p => (
+            <text key={p} x={-10} y={yPct(p)} textAnchor="end" dominantBaseline="middle" fontSize={9.5} fontFamily="'IBM Plex Mono', monospace" fill={T.mut2}>{p}%</text>
+          ))}
+          {itens.map((it, i) => (
+            <rect key={`b${i}`} x={xCentro(i) - barW/2} y={yValor(it.valor)} width={barW} height={Math.max(H - yValor(it.valor), 0)}
+              fill={T.blue} opacity={hover === i ? 0.65 : 0.4} rx={2} />
+          ))}
+          <path d={linhaAcumulado} fill="none" stroke={T.amber} strokeWidth={2} />
+          {itens.map((it, i) => (
+            <circle key={`c${i}`} cx={xCentro(i)} cy={yPct(it.pctAcumulado)} r={hover === i ? 5 : 3} fill={T.amber} stroke="#fff" strokeWidth={1.5} />
+          ))}
+          {hover != null && (
+            <line x1={xCentro(hover)} x2={xCentro(hover)} y1={0} y2={H} stroke={T.mut2} strokeWidth={1} strokeDasharray="3,3" opacity={0.5} />
+          )}
+          {itens.map((it, i) => (
+            <text key={`l${i}`} x={xCentro(i)} y={H + 16} textAnchor="end" fontSize={9} fontFamily="'IBM Plex Mono', monospace"
+              fill={hover === i ? T.ink : T.mut} fontWeight={hover === i ? 700 : 400}
+              transform={`rotate(-40 ${xCentro(i)} ${H + 16})`}>
+              {(it.descricao || '').length > 18 ? it.descricao.slice(0, 17) + '…' : it.descricao}
+            </text>
+          ))}
+        </g>
+      </svg>
+      {p && (
+        <div className="mono" style={{
+          position:'absolute',
+          left: `${((xCentro(hover) + pad.left) / width) * 100}%`,
+          top: 8,
+          transform:'translateX(-50%)',
+          background: T.ink, color:'#fff', borderRadius:8, padding:'6px 10px',
+          fontSize:11, lineHeight:1.5, pointerEvents:'none', boxShadow:'0 4px 14px rgba(0,0,0,0.18)', whiteSpace:'nowrap', zIndex:5,
+        }}>
+          <div style={{ fontWeight:700, marginBottom:2 }}>{p.descricao}</div>
+          <div>Valor: {fmtReais(p.valor)} ({p.pctIndividual.toFixed(1)}%)</div>
+          <div style={{ opacity:0.75 }}>Acumulado: {p.pctAcumulado.toFixed(1)}%</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Setor 8 — Medições, direto de `contratos_medicao` + `boletins_medicao`
 // (fonte trocada em 2026-08-19; antes vinha de `nfs`+`proximos_faturamentos`,
 // que só tinham nf/bm/empresa/emissão e 1 linha de "próximo" por obra — ver
@@ -6384,7 +6698,9 @@ function App(){
                       ? <ModuloTour360 obraId={obraAtual.id} obraNome={obraAtual.nome} />
                       : setor.slug === 'oc-co'
                         ? <ModuloOcCo obraId={obraAtual.id} obraNome={obraAtual.nome} />
-                        : <SetorPlaceholder setor={setor} obraId={obraAtual.id} />}
+                        : setor.slug === 'suprimentos-criticos'
+                          ? <ModuloSuprimentos obraId={obraAtual.id} obraNome={obraAtual.nome} />
+                          : <SetorPlaceholder setor={setor} obraId={obraAtual.id} />}
       </div>
     </div>
   );
