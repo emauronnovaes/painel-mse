@@ -4723,6 +4723,11 @@ function ehItemCanteiroRmi(descricao){
 function ModuloSuprimentos({ obraId, obraNome }){
   const [itensPorNivel, setItensPorNivel] = useState(null); // null = carregando; senão {n0,n1}
   const [erro, setErro] = useState(false);
+  // Detalhe (1 nível abaixo) de cada item Curva A, carregado só ao
+  // expandir a linha — não faz sentido pré-buscar folha por folha de
+  // toda obra de antemão. Chave = id do item macro.
+  const [expandidos, setExpandidos] = useState(() => new Set());
+  const [filhosPorItem, setFilhosPorItem] = useState({});
 
   useEffect(() => {
     setItensPorNivel(null); setErro(false);
@@ -4781,6 +4786,39 @@ function ModuloSuprimentos({ obraId, obraNome }){
 
   const restanteValor = soma(restante, 'valor') || 0;
 
+  // Abre 1 nível abaixo do item macro clicado. Se o item veio do nível
+  // 0 (`resolverItensMacroRmi` manteve ele como está), os filhos de
+  // nível 1 já estão em `itensPorNivel.n1` — filtra local, sem
+  // requisição nova. Se o item já É nível 1 (o ramo desceu), os filhos
+  // são nível 2, que a tela nunca buscou — precisa de 1 fetch sob
+  // demanda, só pro RMI+nível daquele ramo específico.
+  async function alternarExpandir(item){
+    setExpandidos(prev => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+      return next;
+    });
+    if (filhosPorItem[item.id]) return; // já carregado (ou carregando)
+    setFilhosPorItem(prev => ({ ...prev, [item.id]: { carregando: true } }));
+    try {
+      let brutos;
+      if (item.nivel === 0) {
+        brutos = itensPorNivel.n1.filter(r => r.raw.id_rmi === item.id_rmi && codigoPaiRmi(r.raw.codigo_seq) === item.codigo_seq);
+      } else {
+        const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+        const url = `${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&raw-%3E%3Eid_rmi=eq.${item.id_rmi}&raw-%3E%3Enivel=eq.${item.nivel + 1}&select=id,raw`;
+        const rows = await fetchPaginado(url, headers);
+        brutos = (rows || []).filter(r => codigoPaiRmi(r.raw.codigo_seq) === item.codigo_seq);
+      }
+      const filhos = brutos
+        .map(r => ({ id: r.id, ...r.raw, valor: Number(r.raw.subtotal_custo_meta_orcamento) || 0 }))
+        .sort((a, b) => b.valor - a.valor);
+      setFilhosPorItem(prev => ({ ...prev, [item.id]: { carregando: false, itens: filhos } }));
+    } catch (e) {
+      setFilhosPorItem(prev => ({ ...prev, [item.id]: { carregando: false, erro: true } }));
+    }
+  }
+
   if (itensPorNivel === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
   if (erro) return <CartaoEstado texto="Erro ao carregar itens_rmi" maxHeight={620} tom={T.red} />;
   if (todosOrdenados.length === 0) return <CartaoEstado texto="Nenhum item de RMI (obra) lançado para esta obra" maxHeight={620} />;
@@ -4834,20 +4872,34 @@ function ModuloSuprimentos({ obraId, obraNome }){
                 {curvaA.map((it, i) => {
                   const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
                   const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
+                  const aberto = expandidos.has(it.id);
+                  const filhos = filhosPorItem[it.id];
                   return (
-                    <tr key={it.id} className="hoverable" style={{ borderBottom:'1px solid var(--line)' }}>
-                      <td style={{ padding:'9px 14px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:280, whiteSpace:'normal', lineHeight:1.35 }}>{it.descricao || '—'}</td>
-                      <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.mut }}>{it.nome_rmi ? it.nome_rmi.replace(/^CP\d+\s*-\s*/i, '') : (it.id_rmi ?? '—')}</td>
-                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
-                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.pctIndividual.toFixed(1)}%</td>
-                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut, fontVariantNumeric:'tabular-nums' }}>{it.pctAcumulado.toFixed(1)}%</td>
-                      <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.saldo_orcamentario != null ? fmtReais(it.saldo_orcamentario) : '—'}</td>
-                      <td style={{ padding:'9px 14px', textAlign:'center' }}>
-                        <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bgDesv, color:corDesv }}>
-                          {it.desvio_saldo_orcamentario || '—'}
-                        </span>
-                      </td>
-                    </tr>
+                    <React.Fragment key={it.id}>
+                      <tr className="hoverable" onClick={() => alternarExpandir(it)} style={{ borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
+                        <td style={{ padding:'9px 14px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:280, whiteSpace:'normal', lineHeight:1.35 }}>
+                          <span className="mono" style={{ display:'inline-block', width:14, color:T.blue }}>{aberto ? '▾' : '▸'}</span>
+                          {it.descricao || '—'}
+                        </td>
+                        <td className="mono" style={{ padding:'9px 14px', fontSize:11.5, color:T.mut }}>{it.nome_rmi ? it.nome_rmi.replace(/^CP\d+\s*-\s*/i, '') : (it.id_rmi ?? '—')}</td>
+                        <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
+                        <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.pctIndividual.toFixed(1)}%</td>
+                        <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut, fontVariantNumeric:'tabular-nums' }}>{it.pctAcumulado.toFixed(1)}%</td>
+                        <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.saldo_orcamentario != null ? fmtReais(it.saldo_orcamentario) : '—'}</td>
+                        <td style={{ padding:'9px 14px', textAlign:'center' }}>
+                          <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bgDesv, color:corDesv }}>
+                            {it.desvio_saldo_orcamentario || '—'}
+                          </span>
+                        </td>
+                      </tr>
+                      {aberto && (
+                        <tr style={{ borderBottom:'1px solid var(--line)' }}>
+                          <td colSpan={7} style={{ padding:0, background:'#f7f8fa' }}>
+                            <LinhasDetalheRmi filhos={filhos} valorPai={it.valor} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -4865,6 +4917,38 @@ function ModuloSuprimentos({ obraId, obraNome }){
         </div>
       </div>
     </div>
+  );
+}
+
+// Mini-tabela de detalhe (1 nível abaixo do item macro) exibida ao
+// expandir uma linha da Curva A. Não reaplica o filtro de canteiro nem
+// a lógica de Curva A — é só "o que compõe este item macro por baixo",
+// puro detalhe, sem julgamento de crítico/não-crítico no nível-folha.
+function LinhasDetalheRmi({ filhos, valorPai }){
+  if (!filhos || filhos.carregando) {
+    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Carregando detalhe…</div>;
+  }
+  if (filhos.erro) {
+    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.red }}>Erro ao carregar detalhe deste item</div>;
+  }
+  if (!filhos.itens || filhos.itens.length === 0) {
+    return <div className="mono" style={{ padding:'10px 14px 10px 34px', fontSize:11.5, color:T.mut }}>Sem detalhamento — este é o último nível disponível na RMI</div>;
+  }
+  return (
+    <table style={{ width:'100%', borderCollapse:'collapse' }}>
+      <tbody>
+        {filhos.itens.map(f => (
+          <tr key={f.id} style={{ borderTop:'1px solid var(--line)' }}>
+            <td style={{ padding:'7px 14px 7px 34px', fontSize:12, color:T.body, maxWidth:280, whiteSpace:'normal', lineHeight:1.3 }}>{f.descricao || '—'}</td>
+            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', width:150 }}>{fmtReais(f.valor)}</td>
+            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.mut, fontVariantNumeric:'tabular-nums', width:100 }}>
+              {valorPai ? `${(f.valor / valorPai * 100).toFixed(1)}%` : '—'}
+            </td>
+            <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', width:150 }}>{f.saldo_orcamentario != null ? fmtReais(f.saldo_orcamentario) : '—'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
