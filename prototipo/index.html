@@ -4610,20 +4610,82 @@ function ModuloOcCo({ obraId, obraNome }){
 // gerencial dos itens críticos, os críticos serão, por hora, os itens
 // Curva A, que correspondem, em sua soma, a 80% do valor do projeto".
 //
-// "Item macro" = nível 1 do item (`raw.nivel === 1`, ex.: "Tubulação",
-// "Estrutura Metálica") — não o item-folha (existem milhares por obra,
-// numa árvore de até 5 níveis via `codigo_seq` tipo "1.1.1.16.1.2").
-// Confirmado no dado real (2026-08-21, obra 91): o subtotal do nível 1
-// bate exato com a soma de tudo abaixo dele em 153 de 161 casos — é o
-// nível certo pra "item macro" (poucas dezenas por obra, valor já
-// consolidado, em vez de milhares de peças individuais). `raw->>nivel=
-// eq.1` filtra isso direto no Supabase, sem baixar as linhas-folha.
+// "Item macro" = o ramo mais RASO da árvore de RMI que já representa uma
+// disciplina/categoria de verdade — não é sempre o mesmo nível. Achado
+// em 2026-08-21 comparando obra 91 × CNPEM Faseado (106): no nível 0 de
+// obra 91, as categorias são "balde" de origem de material (MATERIAIS -
+// UB/SP, CHANGE ORDER N, quase todos zerados) — a disciplina real
+// (Estrutura Metálica, Tubulação...) só aparece no nível 1. No CNPEM
+// Faseado é o INVERSO: nível 0 já é a disciplina (HVAC, CIVIL, ELÉTRICA
+// E SISTEMAS, COMBUSTÍVEL...) e nível 1 é item de linha bem granular
+// (ex. "Combustível para Guindaste de 35 ton" — 814 linhas, longe de
+// "estrutura básica da EAP"). Também tem RMI (43/"GERAL" na obra 91) com
+// bug de origem: o nível 0 vem com subtotal ZERADO mesmo tendo valor
+// real embaixo, ou nem existe linha própria de nível 0 pro ramo (órfão).
 //
-// Curva A = ordena os itens macro por valor decrescente, acumula, e
-// marca como crítico todo item até o ponto em que o acumulado (antes de
-// somar aquele item) ainda não tinha cruzado 80% do total — ou seja, o
-// item que cruza os 80% ainda entra na Curva A (convenção padrão de
-// análise ABC).
+// `resolverItensMacro` decide, por RAMO de nível 0 (chave id_rmi +
+// codigo_seq), se usa o próprio nível 0 ou desce pro nível 1:
+//   - desce se o nome do nível 0 bater um padrão de "balde"
+//     administrativo (`EH_BALDE_ADMINISTRATIVO_RMI` — MATERIAIS -,
+//     CHANGE ORDER, OC -, CO <número>);
+//   - desce se o subtotal do nível 0 vier ZERADO mas os filhos de nível
+//     1 daquele ramo somarem valor real (bug de rollup na origem);
+//   - desce também se o ramo for ÓRFÃO (existem itens de nível 1 com
+//     aquele código-pai, mas nenhuma linha de nível 0 correspondente —
+//     caso da RMI 43/GERAL, onde o próprio nível 0 do ramo "1" nem foi
+//     criado na origem);
+//   - senão, o nível 0 já É o item macro, usa direto.
+// Só resolve 1 nível de profundidade (nível 0 → nível 1) — suficiente
+// pros 2 padrões vistos até agora; se aparecer uma 3ª obra com "balde"
+// aninhado mais fundo, revisitar.
+//
+// Curva A = ordena os itens macro (já resolvidos) por valor decrescente,
+// acumula, e marca como crítico todo item até o ponto em que o
+// acumulado (antes de somar aquele item) ainda não tinha cruzado 80% do
+// total — ou seja, o item que cruza os 80% ainda entra na Curva A
+// (convenção padrão de análise ABC).
+const EH_BALDE_ADMINISTRATIVO_RMI = /^(MATERIAIS\s*-|CHANGE ORDER\b|OC\s*-|CO\s+\d)/;
+function codigoPaiRmi(codigoSeq){
+  if (!codigoSeq) return null;
+  const partes = String(codigoSeq).split('.');
+  if (partes.length < 2) return null; // já é raiz, sem pai
+  return partes.slice(0, -1).join('.');
+}
+function resolverItensMacroRmi(itensNivel0, itensNivel1){
+  const porChaveNivel0 = new Map();
+  itensNivel0.forEach(r => porChaveNivel0.set(`${r.raw.id_rmi}::${r.raw.codigo_seq}`, r));
+
+  const filhosPorPai = new Map(); // chave pai -> [itens de nível 1]
+  itensNivel1.forEach(r => {
+    const pai = codigoPaiRmi(r.raw.codigo_seq);
+    if (pai == null) return;
+    const chave = `${r.raw.id_rmi}::${pai}`;
+    if (!filhosPorPai.has(chave)) filhosPorPai.set(chave, []);
+    filhosPorPai.get(chave).push(r);
+  });
+
+  const resolvidos = [];
+  const nivel0Resolvidos = new Set();
+
+  filhosPorPai.forEach((filhos, chave) => {
+    const pai = porChaveNivel0.get(chave);
+    const somaFilhos = filhos.reduce((s, f) => s + (Number(f.raw.subtotal_custo_meta_orcamento) || 0), 0);
+    if (!pai) { resolvidos.push(...filhos); return; } // órfão: sem linha de nível 0, usa os filhos
+    nivel0Resolvidos.add(chave);
+    const subtotalProprio = Number(pai.raw.subtotal_custo_meta_orcamento) || 0;
+    const ehBalde = EH_BALDE_ADMINISTRATIVO_RMI.test(normalizarNomeParaMatch(pai.raw.descricao) || '');
+    const desce = ehBalde || (subtotalProprio === 0 && somaFilhos > 0);
+    if (desce) resolvidos.push(...filhos);
+    else resolvidos.push(pai);
+  });
+
+  itensNivel0.forEach(r => {
+    const chave = `${r.raw.id_rmi}::${r.raw.codigo_seq}`;
+    if (!nivel0Resolvidos.has(chave)) resolvidos.push(r); // nível 0 sem filho nenhum — fica ele mesmo
+  });
+
+  return resolvidos;
+}
 const PALAVRAS_CANTEIRO_RMI = [
   'CANTEIRO DE OBRAS', 'ALOJAMENTO', 'FILIAL', 'CONSUMI', 'UNIFORME',
   'FRETE', 'COMBUSTIVEL', 'DIESEL', 'MOBILIZA', 'FERRAMENTA', 'SEGURO',
@@ -4659,29 +4721,37 @@ function ehItemCanteiroRmi(descricao){
 }
 
 function ModuloSuprimentos({ obraId, obraNome }){
-  const [itensRaw, setItensRaw] = useState(null); // null = carregando
+  const [itensPorNivel, setItensPorNivel] = useState(null); // null = carregando; senão {n0,n1}
   const [erro, setErro] = useState(false);
 
   useEffect(() => {
-    setItensRaw(null); setErro(false);
+    setItensPorNivel(null); setErro(false);
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
-    // `raw->>nivel=eq.1` filtra o "item macro" direto no Supabase (ver
-    // comentário acima) — evita baixar as milhares de linhas-folha só
-    // pra descartar depois. Sintaxe de filtro em campo jsonb do
+    // Busca nível 0 E nível 1 — a resolução de qual é o "item macro" de
+    // cada ramo depende de comparar os dois (ver comentário acima de
+    // `resolverItensMacroRmi`). Sintaxe de filtro em campo jsonb do
     // PostgREST: `coluna->>chave=eq.valor`.
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&raw-%3E%3Enivel=eq.1&select=id,raw`, headers)
-      .then(rows => { if (rows === null) { setErro(true); setItensRaw([]); } else setItensRaw(rows); })
-      .catch(() => { setErro(true); setItensRaw([]); });
+    const base = `${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}`;
+    Promise.all([
+      fetchPaginado(`${base}&raw-%3E%3Enivel=eq.0&select=id,raw`, headers),
+      fetchPaginado(`${base}&raw-%3E%3Enivel=eq.1&select=id,raw`, headers),
+    ])
+      .then(([n0, n1]) => {
+        if (n0 === null || n1 === null) { setErro(true); setItensPorNivel({ n0: [], n1: [] }); }
+        else setItensPorNivel({ n0, n1 });
+      })
+      .catch(() => { setErro(true); setItensPorNivel({ n0: [], n1: [] }); });
   }, [obraId]);
 
-  // Separa itens de obra × canteiro, ordena os de obra por valor
-  // decrescente, acumula e marca Curva A. `todosOrdenados` alimenta o
-  // gráfico (curva inteira); `curvaA` é o subconjunto que vira tabela.
+  // Resolve o item macro por ramo (nível 0 ou nível 1, ver comentário
+  // acima), separa itens de obra × canteiro, ordena os de obra por valor
+  // decrescente, acumula e marca Curva A.
   const { curvaA, todosOrdenados, restante, canteiro, totalObra } = useMemo(() => {
-    if (!itensRaw) return { curvaA: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, totalObra: 0 };
+    if (!itensPorNivel) return { curvaA: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, totalObra: 0 };
+    const itensMacro = resolverItensMacroRmi(itensPorNivel.n0, itensPorNivel.n1);
     const validos = [];
     let qtdCanteiro = 0, valorCanteiro = 0;
-    itensRaw.forEach(r => {
+    itensMacro.forEach(r => {
       const it = r.raw || {};
       const valor = Number(it.subtotal_custo_meta_orcamento) || 0;
       if (ehItemCanteiroRmi(it.descricao)) { qtdCanteiro++; valorCanteiro += valor; return; }
@@ -4707,11 +4777,11 @@ function ModuloSuprimentos({ obraId, obraNome }){
       canteiro: { qtd: qtdCanteiro, valor: valorCanteiro },
       totalObra,
     };
-  }, [itensRaw]);
+  }, [itensPorNivel]);
 
   const restanteValor = soma(restante, 'valor') || 0;
 
-  if (itensRaw === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
+  if (itensPorNivel === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
   if (erro) return <CartaoEstado texto="Erro ao carregar itens_rmi" maxHeight={620} tom={T.red} />;
   if (todosOrdenados.length === 0) return <CartaoEstado texto="Nenhum item de RMI (obra) lançado para esta obra" maxHeight={620} />;
 
