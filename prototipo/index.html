@@ -235,6 +235,20 @@
   .status-badge-rmi-fracao { display: none; }
   .status-badge-rmi:hover .status-badge-rmi-texto { display: none; }
   .status-badge-rmi:hover .status-badge-rmi-fracao { display: inline; }
+  /* Farol Financeiro — mesma mecânica do Status acima: hover troca o
+     conteúdo dentro do próprio elemento, sem tooltip nativo (pedido
+     explícito, 2026-08-24: "o mouse por cima do farol pode funcionar
+     igual ao do status, expandindo o card do texto"). Diferença é que
+     aqui o texto (Valor/Consumido/Saldo) é bem mais largo que o ponto
+     de 10px — por isso o card vira `position:absolute` ancorado à
+     direita do ponto, pra "expandir" sem empurrar a largura da coluna
+     inteira (o farol aparece em toda linha da tabela; se o card
+     ocupasse espaço no fluxo normal, a coluna toda alargaria a cada
+     hover). */
+  .farol-financeiro-rmi { position: relative; display: inline-flex; align-items: center; justify-content: flex-end; }
+  .farol-financeiro-rmi-card { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 5; }
+  .farol-financeiro-rmi:hover .farol-financeiro-rmi-ponto { visibility: hidden; }
+  .farol-financeiro-rmi:hover .farol-financeiro-rmi-card { display: inline-block; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4894,26 +4908,41 @@ function consolidarMateriaisSemelhantes(materiais){
   // aninhados, ao clicar na linha de resumo dele".
   //
   // Data da necessidade/prazo de entrega/material em obra são atributos
-  // POR ITEM (cada peça tem seu próprio prazo de compra) — numa linha
-  // que funde vários itens diferentes não existe 1 data representativa
-  // sem inventar uma regra de agregação. Pedido explícito (2026-08-24):
-  // deixar em branco na linha de resumo quando há mais de 1 item; as
-  // datas reais de cada item aparecem no pop-up de itens aninhados.
-  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, _itens, ...m }) => ({
-    ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados,
-    // `desvio_saldo_orcamentario` que sobra do spread é só do 1º item
-    // fundido — a origem não calcula "desvio da soma" (não existe RMI
-    // consolidada lá). Achado via teste do Farol Financeiro
-    // (2026-08-24): sem recalcular, o ponto saía verde com o saldo
-    // agregado (mostrado no title) negativo — "Cabos" e "Tubulação
-    // Inox" reais tinham esse descompasso. Pelo sinal, não é um limiar
-    // novo (ADR-005): mesma regra que a origem já usa por item
-    // (saldo<0 → negativo), só aplicada à soma quando há fusão.
-    desvio_saldo_orcamentario: (_qtd > 1 && m.saldo_orcamentario != null) ? (m.saldo_orcamentario < 0 ? 'negativo' : 'positivo') : m.desvio_saldo_orcamentario,
-    dataNecessidadeCompra: _qtd > 1 ? null : m.dataNecessidadeCompra,
-    prazoEntregaDias: _qtd > 1 ? null : m.prazoEntregaDias,
-    itensOriginais: _itens.sort((a, b) => b.valor - a.valor),
-  }));
+  // POR ITEM (cada peça tem seu próprio prazo de compra). Numa linha
+  // que funde vários itens, a 1ª versão deixava essas colunas em
+  // branco (sem inventar agregação); pedido explícito de correção no
+  // mesmo dia: "vamos considerar sempre o pior caso: menor necessidade
+  // de compra, menor prazo e menor data limite em obra". As 3
+  // reduções são independentes — cada uma pega o MENOR valor entre os
+  // itens fundidos que realmente têm aquele dado (item sem data não
+  // entra na conta); "material em obra" usa o MENOR resultado já
+  // calculado por item (não a soma dos outros 2 mínimos, que poderiam
+  // vir de itens diferentes e gerar uma data que nenhum item real
+  // tem). Pra item único (`_qtd === 1`), o mínimo de 1 elemento é o
+  // próprio valor — mesmo resultado de antes, sem precisar de caso
+  // especial.
+  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, _itens, ...m }) => {
+    const datasNecessidade = _itens.map(x => x.dataNecessidadeCompra).filter(Boolean);
+    const prazos = _itens.map(x => x.prazoEntregaDias).filter(p => p != null && !isNaN(p));
+    const materiaisEmObra = _itens.map(x => calcularMaterialEmObra(x.dataNecessidadeCompra, x.prazoEntregaDias)).filter(Boolean);
+    const menor = (lista) => lista.length ? lista.reduce((a, b) => (a < b ? a : b)) : null;
+    return {
+      ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados,
+      // `desvio_saldo_orcamentario` que sobra do spread é só do 1º item
+      // fundido — a origem não calcula "desvio da soma" (não existe RMI
+      // consolidada lá). Achado via teste do Farol Financeiro
+      // (2026-08-24): sem recalcular, o ponto saía verde com o saldo
+      // agregado (mostrado no card do farol) negativo — "Cabos" e
+      // "Tubulação Inox" reais tinham esse descompasso. Pelo sinal, não
+      // é um limiar novo (ADR-005): mesma regra que a origem já usa por
+      // item (saldo<0 → negativo), só aplicada à soma quando há fusão.
+      desvio_saldo_orcamentario: (_qtd > 1 && m.saldo_orcamentario != null) ? (m.saldo_orcamentario < 0 ? 'negativo' : 'positivo') : m.desvio_saldo_orcamentario,
+      dataNecessidadeCompra: menor(datasNecessidade),
+      prazoEntregaDias: menor(prazos),
+      materialEmObra: menor(materiaisEmObra),
+      itensOriginais: _itens.sort((a, b) => b.valor - a.valor),
+    };
+  });
 }
 // Monta a árvore Área → Disciplina → Material a partir da lista plana
 // (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
@@ -5024,16 +5053,28 @@ function StatusBadgeRmi({ qtdFinalizados, qtdTotal }){
 // Farol Financeiro é essa mesma informação, só que como o "ponto de luz"
 // que o produto já usa em outros lugares (`FarolMedidoPrevisto`, Farol
 // Medido×Físico em Medições) em vez de badge de texto — por isso a
-// coluna Desvio separada saiu (redundante). Os 3 valores citados no
-// pedido (Valor/Total Consumido/Saldo) viram o `title` do ponto, mesmo
-// padrão de tooltip que os outros faróis do produto já usam.
+// coluna Desvio separada saiu (redundante).
+//
+// Os 3 valores (Valor/Total Consumido/Saldo) apareciam no `title`
+// nativo — corrigido a pedido do usuário (2026-08-24, mesmo dia):
+// "o mouse por cima do farol pode funcionar igual ao do status,
+// expandindo o card do texto". Mesma mecânica CSS do
+// `StatusBadgeRmi` (hover troca o que é exibido dentro do próprio
+// elemento, sem tooltip flutuando acima) — só que aqui o texto é
+// bem mais largo que o ponto de 10px, por isso "expande" como card
+// `position:absolute` (CSS `.farol-financeiro-rmi*`, perto do
+// `.status-badge-rmi*`) em vez de só trocar `display` no lugar.
 function FarolFinanceiroRmi({ valor, totalConsumido, saldo, desvio }){
-  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)' }
-    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)' }
-    : { cor:T.mut, borda:'#c7cdd8' };
+  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)', bg:'rgba(210,59,59,0.13)' }
+    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)', bg:'rgba(31,157,87,0.13)' }
+    : { cor:T.mut, borda:'#c7cdd8', bg:'#eef0f3' };
   return (
-    <span title={`Valor ${fmtReais(valor)} · Consumido ${fmtReais(totalConsumido)} · Saldo ${fmtReais(saldo)}`}
-      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'help', background:tom.cor, border:`1px solid ${tom.borda}` }} />
+    <span className="farol-financeiro-rmi">
+      <span className="farol-financeiro-rmi-ponto" style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, background:tom.cor, border:`1px solid ${tom.borda}` }} />
+      <span className="mono farol-financeiro-rmi-card" style={{ padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.01em', background:tom.bg, color:tom.cor, boxShadow:'0 4px 14px -2px rgba(16,24,40,0.25)' }}>
+        Valor {fmtReais(valor)} · Consumido {fmtReais(totalConsumido)} · Saldo {fmtReais(saldo)}
+      </span>
+    </span>
   );
 }
 
@@ -5226,7 +5267,6 @@ function ModuloSuprimentos({ obraId, obraNome }){
                         </tr>
                         {!discFechada && grupoDisc.materiais.map(it => {
                           const temAninhados = it.qtdConsolidada > 1;
-                          const materialEmObra = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
                           return (
                             <tr key={it.id} className="hoverable" onClick={temAninhados ? () => setMaterialAberto(it) : undefined}
                               style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
@@ -5239,7 +5279,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                               </td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
-                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(materialEmObra)}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(it.materialEmObra)}</td>
                               <td style={{ padding:'9px 14px', textAlign:'center' }}>
                                 <StatusBadgeRmi qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada} />
                               </td>
