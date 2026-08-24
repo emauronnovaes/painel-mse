@@ -3986,32 +3986,6 @@ itens cada; nenhuma descrição longa/técnica sobrando na Curva A; 0
 erros de console. Deploy: `firebase deploy --only hosting --project
 planejamento-mse`.
 
-### Suprime a Curva A, vira mapa geral de materiais (2026-08-24, mesmo dia)
-
-"Mantendo a lógica, vamos suprimir a ideia da Curva A, para montar um
-mapa geral de suprimentos." — depois de fechar disciplina, área,
-material, canteiro, catálogo padrão e consolidação (107º-114º passos,
-todos em cima do conceito de Curva A), o usuário decidiu que o produto
-final não é mais "os itens mais críticos" e sim um mapa completo.
-
-Removido o corte de 80% acumulado — TODA a lógica de classificação
-continua igual (nada mudou em disciplina/área/material/canteiro/
-catálogo/consolidação), só o filtro final de criticidade some. KPIs
-"Materiais Críticos (Curva A)"/"Valor coberto pela Curva A" viram
-"Materiais no mapa" (contagem simples) e "Valor total mapeado" (=
-valor total considerado, já que não há mais recorte — os 2 números
-ficam iguais agora). Título vira "Mapa de Suprimentos". Coluna "%
-Acumulado" removida (sem sentido sem o corte, e a ordem de exibição já
-é por área/disciplina, não ranking global). Rodapé de "Curva B/C"
-removido (não existe mais "restante").
-
-Testado via Playwright (CP029): mapa com 499 materiais (era ~35 com o
-corte de Curva A); "Valor total mapeado" = R$ 22.540.286,29 (bate
-exato com o valor total de obra); 5 colunas no cabeçalho; nenhum
-rodapé de "Curva B/C"; "Chiller" continua presente na árvore (Central
-de Água Gelada → HVAC, R$ 6.480.000,00); 0 erros de console. Deploy:
-`firebase deploy --only hosting --project planejamento-mse`.
-
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
