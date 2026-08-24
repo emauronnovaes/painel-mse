@@ -4025,6 +4025,32 @@ cinza, 3/10 âmbar); linhas de área/disciplina sem conteúdo quebrado
 nas colunas novas; 0 erros de console. Deploy: `firebase deploy
 --only hosting --project planejamento-mse`.
 
+### Remove colunas de %, Finalizado vira Status com 3 estados (2026-08-24, mesmo dia)
+
+"As % podem ser suprimidas também. Com relação ao finalizado, vamos
+chamar de coluna de status e classificar em finalizado, em andamento e
+pendente. Em andamento será para itens que já tiveram algo finalizado,
+pendente será nada finalizado, ao passar o mouse pelo status poderemos
+ver a contagem de itens 1/20 por exemplo."
+
+- Colunas "% Individual" e "% Acumulado" removidas (8 → 6 colunas). O
+  cálculo interno de % continua existindo no modelo de dados (ainda
+  decide o corte de Curva A), só parou de aparecer na tabela.
+- `FinalizadoBadgeRmi` virou `StatusBadgeRmi`, 3 estados por contagem
+  de itens finalizados na linha (uma linha pode ser consolidação de
+  várias peças — catálogo de itens padrão): nenhum finalizado =
+  **Pendente** (cinza); todos finalizados = **Finalizado** (verde); só
+  parte = **Em andamento** (âmbar). A fração "X/Y" que antes ia direto
+  no texto do badge virou tooltip (`title`, "X/Y itens finalizados").
+
+Testado via Playwright (CP029): 6 colunas confirmadas; Chiller =
+Finalizado (`title="1/1 itens finalizados"`); linha consolidada sem
+nenhum finalizado = Pendente (`title="0/7..."`); linha parcial = Em
+andamento (`title="3/10..."`); varredura de todas as 31 linhas
+consolidadas confirmou status sempre coerente com a fração; layout
+íntegro nas linhas de área/disciplina; 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
