@@ -4892,8 +4892,26 @@ function consolidarMateriaisSemelhantes(materiais){
   // completa) por trás de cada linha — pedido explícito (2026-08-24):
   // "pop-up que permita verificar quais são os itens que estão
   // aninhados, ao clicar na linha de resumo dele".
+  //
+  // Data da necessidade/prazo de entrega/material em obra são atributos
+  // POR ITEM (cada peça tem seu próprio prazo de compra) — numa linha
+  // que funde vários itens diferentes não existe 1 data representativa
+  // sem inventar uma regra de agregação. Pedido explícito (2026-08-24):
+  // deixar em branco na linha de resumo quando há mais de 1 item; as
+  // datas reais de cada item aparecem no pop-up de itens aninhados.
   return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, _itens, ...m }) => ({
     ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados,
+    // `desvio_saldo_orcamentario` que sobra do spread é só do 1º item
+    // fundido — a origem não calcula "desvio da soma" (não existe RMI
+    // consolidada lá). Achado via teste do Farol Financeiro
+    // (2026-08-24): sem recalcular, o ponto saía verde com o saldo
+    // agregado (mostrado no title) negativo — "Cabos" e "Tubulação
+    // Inox" reais tinham esse descompasso. Pelo sinal, não é um limiar
+    // novo (ADR-005): mesma regra que a origem já usa por item
+    // (saldo<0 → negativo), só aplicada à soma quando há fusão.
+    desvio_saldo_orcamentario: (_qtd > 1 && m.saldo_orcamentario != null) ? (m.saldo_orcamentario < 0 ? 'negativo' : 'positivo') : m.desvio_saldo_orcamentario,
+    dataNecessidadeCompra: _qtd > 1 ? null : m.dataNecessidadeCompra,
+    prazoEntregaDias: _qtd > 1 ? null : m.prazoEntregaDias,
     itensOriginais: _itens.sort((a, b) => b.valor - a.valor),
   }));
 }
@@ -4997,6 +5015,45 @@ function StatusBadgeRmi({ qtdFinalizados, qtdTotal }){
   );
 }
 
+// Farol Financeiro — pedido explícito (2026-08-24): "o valor, total
+// consumido e saldo orçamentário poderão ser parte de um farol...
+// funcionando similarmente ao desvio". Perguntado ao usuário qual regra
+// definiria a cor (ADR-005, não inventar limiar): confirmado reaproveitar
+// a MESMA classificação que já existia na coluna Desvio
+// (`desvio_saldo_orcamentario`: positivo=verde, negativo=vermelho) — o
+// Farol Financeiro é essa mesma informação, só que como o "ponto de luz"
+// que o produto já usa em outros lugares (`FarolMedidoPrevisto`, Farol
+// Medido×Físico em Medições) em vez de badge de texto — por isso a
+// coluna Desvio separada saiu (redundante). Os 3 valores citados no
+// pedido (Valor/Total Consumido/Saldo) viram o `title` do ponto, mesmo
+// padrão de tooltip que os outros faróis do produto já usam.
+function FarolFinanceiroRmi({ valor, totalConsumido, saldo, desvio }){
+  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)' }
+    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)' }
+    : { cor:T.mut, borda:'#c7cdd8' };
+  return (
+    <span title={`Valor ${fmtReais(valor)} · Consumido ${fmtReais(totalConsumido)} · Saldo ${fmtReais(saldo)}`}
+      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'help', background:tom.cor, border:`1px solid ${tom.borda}` }} />
+  );
+}
+
+// Data da necessidade de compra / prazo de entrega / material em obra —
+// pedido explícito (2026-08-24): "material em obra... será a Data da
+// necessidade somada ao prazo de entrega". Campos vêm prontos da origem
+// (`raw.data_necessidade_compra`, `raw.prazo_entrega` em dias) — só a
+// soma é derivada aqui, nada fabricado.
+function calcularMaterialEmObra(dataNecessidadeIso, prazoEntregaDias){
+  if (!dataNecessidadeIso || prazoEntregaDias == null || isNaN(prazoEntregaDias)) return null;
+  const dt = parseDataFlexivel(dataNecessidadeIso);
+  if (!dt) return null;
+  dt.setDate(dt.getDate() + prazoEntregaDias);
+  return dt;
+}
+function fmtDataObjRmi(dt){
+  if (!dt || isNaN(dt.getTime())) return '—';
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
+
 function ModuloSuprimentos({ obraId, obraNome }){
   const [todosItens, setTodosItens] = useState(null); // null = carregando; senão array com raw de TODOS os níveis
   const [erro, setErro] = useState(false);
@@ -5077,6 +5134,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
           desvio_saldo_orcamentario: m.raw.desvio_saldo_orcamentario,
           totalConsumido: Number(m.raw.total_consumido) || 0,
           finalizado: !!m.raw.finalizado,
+          dataNecessidadeCompra: m.raw.data_necessidade_compra || null,
+          prazoEntregaDias: (m.raw.prazo_entrega != null && m.raw.prazo_entrega !== '') ? Number(m.raw.prazo_entrega) : null,
           valor,
         });
       });
@@ -5132,10 +5191,10 @@ function ModuloSuprimentos({ obraId, obraNome }){
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>Área / Disciplina / Material</th>
-                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Valor</th>
-                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Total Consumido</th>
-                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Saldo Orçamentário</th>
-                  <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Desvio</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Farol Financeiro</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data da Necessidade de Compra</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Prazo de Entrega</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Material em Obra</th>
                   <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Status</th>
                 </tr>
               </thead>
@@ -5166,9 +5225,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
                           <td colSpan={4}></td>
                         </tr>
                         {!discFechada && grupoDisc.materiais.map(it => {
-                          const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
-                          const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
                           const temAninhados = it.qtdConsolidada > 1;
+                          const materialEmObra = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
                           return (
                             <tr key={it.id} className="hoverable" onClick={temAninhados ? () => setMaterialAberto(it) : undefined}
                               style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
@@ -5176,14 +5234,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
                                 {it.descricao || '—'}
                                 {temAninhados && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.blue }}>({it.qtdConsolidada} itens ›)</span>}
                               </td>
-                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
-                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.totalConsumido ? fmtReais(it.totalConsumido) : '—'}</td>
-                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.saldo_orcamentario != null ? fmtReais(it.saldo_orcamentario) : '—'}</td>
-                              <td style={{ padding:'9px 14px', textAlign:'center' }}>
-                                <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bgDesv, color:corDesv }}>
-                                  {it.desvio_saldo_orcamentario || '—'}
-                                </span>
+                              <td style={{ padding:'9px 14px', textAlign:'right' }}>
+                                <FarolFinanceiroRmi valor={it.valor} totalConsumido={it.totalConsumido} saldo={it.saldo_orcamentario} desvio={it.desvio_saldo_orcamentario} />
                               </td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(materialEmObra)}</td>
                               <td style={{ padding:'9px 14px', textAlign:'center' }}>
                                 <StatusBadgeRmi qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada} />
                               </td>
@@ -5222,15 +5278,23 @@ function ModuloSuprimentos({ obraId, obraNome }){
               <button onClick={() => setMaterialAberto(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-              {(materialAberto.itensOriginais || []).map((it, i) => (
+              {(materialAberto.itensOriginais || []).map((it, i) => {
+                const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
+                return (
                 <div key={it.id || i} style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, padding:'10px 0', borderBottom:'1px solid #eef0f3' }}>
-                  <div style={{ flex:1, minWidth:0, fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.35 }}>{it.descricao || '—'}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.35 }}>{it.descricao || '—'}</div>
+                    <div className="mono" style={{ fontSize:10.5, color:T.mut2, marginTop:3 }}>
+                      Necessidade: {it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'} · Prazo: {it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'} · Em obra: {fmtDataObjRmi(materialEmObraItem)}
+                    </div>
+                  </div>
                   <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0 }}>
                     <span className="mono" style={{ fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</span>
                     <span className="mono" style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', padding:'2px 7px', borderRadius:6, background: it.finalizado ? 'rgba(31,157,87,0.13)' : '#eef0f3', color: it.finalizado ? T.green : T.mut }}>{it.finalizado ? 'Finalizado' : 'Pendente'}</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
