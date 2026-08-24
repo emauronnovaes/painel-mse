@@ -4140,6 +4140,41 @@ incluindo o caso mais apertado ("Tubulação Inox", saldo -R$ 989,09); 0
 erros de console nas 2 rodadas. Deploy: `firebase deploy --only
 hosting --project planejamento-mse`.
 
+### Linha consolidada mostra pior caso de data, Farol Financeiro troca hover para card (2026-08-24, mesmo dia)
+
+Dois ajustes em cima da rodada anterior:
+
+"Para os itens agrupados em material padrão, vamos considerar sempre
+o pior caso para, menor necessidade de compra, menor prazo e menor
+data limite em obra."
+
+"O mouse por cima do farol pode funcionar igual ao do status,
+expandindo o card do texto."
+
+- Linha consolidada (indicador "(N itens ›)") deixou de mostrar "—"
+  nas 3 colunas de data — mostra o PIOR CASO: menor (mais urgente)
+  data de necessidade, menor prazo de entrega, e menor "material em
+  obra" já calculado por item. As 3 reduções são independentes entre
+  si (não precisam vir do mesmo item fundido) — evita compor uma data
+  fictícia que nenhum item real tem; item sem alguma dessas
+  informações é ignorado no cálculo do mínimo dos outros. Item único
+  segue com o próprio valor (mínimo de 1 elemento = ele mesmo).
+- `FarolFinanceiroRmi` trocou o `title` nativo pela mesma mecânica CSS
+  do `StatusBadgeRmi` (hover troca conteúdo dentro do próprio
+  elemento, sem tooltip flutuando acima). Como o texto
+  (Valor/Consumido/Saldo) é bem mais largo que o ponto de 10px, ele
+  "expande" como card `position:absolute` ancorado ao ponto, em vez de
+  só alternar `display` no lugar — evita que a coluna inteira alargue
+  a cada hover.
+
+Testado via Playwright (CP029): 6 linhas consolidadas com data
+preenchida — resumo bate exatamente com o mínimo calculado a partir
+dos itens reais dentro do pop-up de itens aninhados (Necessidade,
+Prazo e Em Obra, sem divergência); farol sem `title`, card oculto por
+padrão e visível com o texto certo (inclusive valores negativos) em 8
+faróis testados (3 vermelhos, 5 verdes); 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
