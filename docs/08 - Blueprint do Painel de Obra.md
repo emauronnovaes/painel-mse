@@ -3833,6 +3833,40 @@ famílias consolidadas ("Isolamento de Flanges" = 22 itens, "Cabo
 carbono" = 14 itens, "Fancoil Trox ICV" = 7 itens). 0 erros de console.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
 
+### Restringe a tela ao CP029 até validar as outras obras (2026-08-24)
+
+"Pela diversidade na forma como estão cadastradas as RMIs as mudanças
+terão de ser específicas para cada obra, vamos considerar que as
+feitas até o momento são válidas apenas para o cp029." — depois de
+várias rodadas desenhando/testando a régua de disciplina, área,
+material, canteiro e família comparando CP029 (CNPEM - Faseado,
+id_obra 106) × obra 91 (Novo Nordisk UB/SP), o usuário decidiu que o
+resultado só está validado pro CP029 mesmo — as 2 obras já mostraram
+convenções de RMI genuinamente diferentes (nível 0 vs. 1 pra
+disciplina, área acima vs. abaixo da disciplina), e as outras 4 obras
+do painel não foram checadas RMI por RMI ainda.
+
+`ModuloSuprimentos` ganhou `OBRA_SUPRIMENTOS_VALIDADA = 106`: pra
+qualquer `obraId` diferente, nem dispara o fetch de `itens_rmi` (evita
+chamada desnecessária) e mostra uma mensagem explicando que a obra
+ainda precisa de checagem própria, em vez de aplicar a régua atual às
+cegas — o risco de "crítico" errado silencioso numa tela gerencial é
+mais caro que deixar a tela indisponível pra quem ainda não foi
+validado.
+
+Testado via Playwright: obra 106 (CP029) continua funcionando
+normalmente (KPIs + árvore com dado real, 0 erros); obra 91 mostra a
+mensagem de bloqueio e confirmado 0 requisições a `itens_rmi`
+disparadas para ela (a restrição barra antes do fetch). Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+**Pendência registrada**: validar RMI por RMI as outras 5 obras
+(Novo Nordisk UB/SP/CP236 — apesar de já ter sido usada nos testes
+comparativos, o usuário fechou a validade só em CP029 mesmo —, Hitachi/
+CP022, Porto Itapoá/CP002, Novo Nordisk-AP/CP273 e Novo Nordisk-AP-
+Reforço/CP261) antes de estender a tela pra elas — mesmo processo usado
+até aqui (investigar estrutura real via PostgREST antes de assumir).
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
