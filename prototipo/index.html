@@ -23,7 +23,7 @@
   :root{
     --bg:#e8eaee; --card:#fff; --line:#e4e7ec;
     --ink:#192231; --body:#4d5868; --mut:#98a1b0; --mut2:#aab2bf;
-    --blue:#2563eb; --green:#1f9d57; --amber:#d9911a; --red:#d23b3b;
+    --blue:#2563eb; --green:#4CAF7F; --amber:#D4941E; --red:#C94444;
   }
   * { box-sizing: border-box; }
   html, body, #root { height: 100%; margin: 0; padding: 0; }
@@ -235,20 +235,10 @@
   .status-badge-rmi-fracao { display: none; }
   .status-badge-rmi:hover .status-badge-rmi-texto { display: none; }
   .status-badge-rmi:hover .status-badge-rmi-fracao { display: inline; }
-  /* Farol Financeiro — mesma mecânica do Status acima: hover troca o
-     conteúdo dentro do próprio elemento, sem tooltip nativo (pedido
-     explícito, 2026-08-24: "o mouse por cima do farol pode funcionar
-     igual ao do status, expandindo o card do texto"). Diferença é que
-     aqui o texto (Valor/Consumido/Saldo) é bem mais largo que o ponto
-     de 10px — por isso o card vira `position:absolute` ancorado à
-     direita do ponto, pra "expandir" sem empurrar a largura da coluna
-     inteira (o farol aparece em toda linha da tabela; se o card
-     ocupasse espaço no fluxo normal, a coluna toda alargaria a cada
-     hover). */
-  .farol-financeiro-rmi { position: relative; display: inline-flex; align-items: center; justify-content: flex-end; }
-  .farol-financeiro-rmi-card { display: none; position: absolute; right: 0; top: 50%; transform: translateY(-50%); white-space: nowrap; z-index: 5; }
-  .farol-financeiro-rmi:hover .farol-financeiro-rmi-ponto { visibility: hidden; }
-  .farol-financeiro-rmi:hover .farol-financeiro-rmi-card { display: inline-block; }
+  .farol-financeiro-rmi { transition: box-shadow 200ms ease-out; }
+  .farol-financeiro-rmi:hover { filter: brightness(1.1); }
+  .suprimentos-spine-farol { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-right: 12px; }
+  .suprimentos-linha-rmi { display: flex; align-items: center; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4951,6 +4941,19 @@ function consolidarMateriaisSemelhantes(materiais){
 // Disciplina -> Material"). `m.area` nunca vem vazio aqui — item sem
 // área é excluído antes, na coleta (pedido explícito 2026-08-24: "itens
 // sem área não precisam ser considerados").
+// Farol Financeiro nas linhas de resumo (Área/Disciplina) — pedido
+// explícito (2026-08-24): "os resumos também deverão ser farol, não
+// valor". Mesma regra de cor já usada nos materiais (soma do saldo
+// orçamentário, sinal decide positivo/negativo — nada de limiar novo),
+// só que agregando TODOS os materiais daquela área/disciplina, não só
+// os de uma família. `totalConsumido`/`saldoOrcamentario`/`desvio`
+// aqui alimentam o mesmo `FarolFinanceiroRmi` que os materiais usam.
+function farolAgregado(materiais){
+  const totalConsumido = soma(materiais, 'totalConsumido') || 0;
+  const saldoOrcamentario = soma(materiais, 'saldo_orcamentario');
+  const desvio = saldoOrcamentario == null ? null : (saldoOrcamentario < 0 ? 'negativo' : 'positivo');
+  return { totalConsumido, saldoOrcamentario, desvio };
+}
 function agruparPorAreaDisciplina(materiaisCriticos){
   const porArea = new Map();
   materiaisCriticos.forEach(m => {
@@ -4962,10 +4965,11 @@ function agruparPorAreaDisciplina(materiaisCriticos){
   const areas = Array.from(porArea.entries()).map(([area, porDisciplina]) => {
     const disciplinas = Array.from(porDisciplina.entries()).map(([disciplina, materiais]) => {
       const materiaisOrdenados = [...materiais].sort((a, b) => b.valor - a.valor);
-      return { disciplina, valor: soma(materiaisOrdenados, 'valor') || 0, materiais: materiaisOrdenados };
+      return { disciplina, valor: soma(materiaisOrdenados, 'valor') || 0, ...farolAgregado(materiaisOrdenados), materiais: materiaisOrdenados };
     }).sort((a, b) => b.valor - a.valor);
     const valorArea = disciplinas.reduce((s, d) => s + d.valor, 0);
-    return { area, valor: valorArea, disciplinas };
+    const todosMateriaisArea = disciplinas.flatMap(d => d.materiais);
+    return { area, valor: valorArea, ...farolAgregado(todosMateriaisArea), disciplinas };
   }).sort((a, b) => b.valor - a.valor);
   return areas;
 }
@@ -5055,26 +5059,20 @@ function StatusBadgeRmi({ qtdFinalizados, qtdTotal }){
 // Medido×Físico em Medições) em vez de badge de texto — por isso a
 // coluna Desvio separada saiu (redundante).
 //
-// Os 3 valores (Valor/Total Consumido/Saldo) apareciam no `title`
-// nativo — corrigido a pedido do usuário (2026-08-24, mesmo dia):
-// "o mouse por cima do farol pode funcionar igual ao do status,
-// expandindo o card do texto". Mesma mecânica CSS do
-// `StatusBadgeRmi` (hover troca o que é exibido dentro do próprio
-// elemento, sem tooltip flutuando acima) — só que aqui o texto é
-// bem mais largo que o ponto de 10px, por isso "expande" como card
-// `position:absolute` (CSS `.farol-financeiro-rmi*`, perto do
-// `.status-badge-rmi*`) em vez de só trocar `display` no lugar.
-function FarolFinanceiroRmi({ valor, totalConsumido, saldo, desvio }){
-  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)', bg:'rgba(210,59,59,0.13)' }
-    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)', bg:'rgba(31,157,87,0.13)' }
-    : { cor:T.mut, borda:'#c7cdd8', bg:'#eef0f3' };
+// Os 3 valores (Valor/Total Consumido/Saldo) passaram por 2 formatos
+// antes deste — `title` nativo, depois um card que expandia no hover
+// — até o usuário pedir, no mesmo dia: "vamos trocar o tooltip por um
+// pop-up". Agora é clique: abre o mesmo tipo de pop-up
+// (`modal-overlay-in`/`modal-card-in`) que o resto da tela já usa,
+// via `onClick` recebido de fora (quem chama decide o título e os 3
+// valores — material, Área ou Disciplina, ver `farolAgregado`).
+function FarolFinanceiroRmi({ desvio, onClick }){
+  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)', glow:'rgba(210,59,59,0.15)' }
+    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)', glow:'rgba(31,157,87,0.15)' }
+    : { cor:T.mut, borda:'#c7cdd8', glow:'rgba(199,205,216,0.1)' };
   return (
-    <span className="farol-financeiro-rmi">
-      <span className="farol-financeiro-rmi-ponto" style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, background:tom.cor, border:`1px solid ${tom.borda}` }} />
-      <span className="mono farol-financeiro-rmi-card" style={{ padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.01em', background:tom.bg, color:tom.cor, boxShadow:'0 4px 14px -2px rgba(16,24,40,0.25)' }}>
-        Valor {fmtReais(valor)} · Consumido {fmtReais(totalConsumido)} · Saldo {fmtReais(saldo)}
-      </span>
-    </span>
+    <span onClick={onClick} className="farol-financeiro-rmi"
+      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'pointer', background:tom.cor, border:`1px solid ${tom.borda}`, boxShadow:`0 0 8px 1px ${tom.glow}` }} />
   );
 }
 
@@ -5093,6 +5091,27 @@ function calcularMaterialEmObra(dataNecessidadeIso, prazoEntregaDias){
 function fmtDataObjRmi(dt){
   if (!dt || isNaN(dt.getTime())) return '—';
   return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
+
+// Calcula criticidade baseado em dias até a data limite em obra
+function calcularCriticidade(dataLimite){
+  if (!dataLimite || isNaN(dataLimite.getTime())) return { nivel: 'desconhecido', label: '—', cor: T.mut, bg: '#eef0f3' };
+  const diasRestantes = Math.ceil((dataLimite.getTime() - new Date().getTime()) / (1000*60*60*24));
+  if (diasRestantes <= 0) return { nivel: 'urgente', label: 'Urgente', cor:'#fff', bg:T.red };
+  if (diasRestantes <= 7) return { nivel: 'alta', label: 'Alta', cor:'#fff', bg:T.amber };
+  if (diasRestantes <= 30) return { nivel: 'moderada', label: 'Moderada', cor:T.ink, bg:'#fef3c7' };
+  return { nivel: 'baixa', label: 'Baixa', cor:T.body, bg:'#e0e7ff' };
+}
+
+function CriticidadeBadgeRmi({ dataLimite, finalizado }){
+  if (finalizado) return <span style={{ fontSize:11, color:T.mut }}>—</span>;
+  const crit = calcularCriticidade(dataLimite);
+  if (crit.nivel === 'desconhecido') return <span style={{ fontSize:11, color:T.mut }}>—</span>;
+  return (
+    <span className="mono" style={{ fontSize:10, fontWeight:700, letterSpacing:'0.03em', padding:'4px 10px', borderRadius:6, background:crit.bg, color:crit.cor, textTransform:'uppercase', display:'inline-block' }}>
+      {crit.label}
+    </span>
+  );
 }
 
 function ModuloSuprimentos({ obraId, obraNome }){
@@ -5117,6 +5136,14 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // `consolidarMateriaisSemelhantes`); só abre pra linha com mais de 1
   // item (linha de item único não tem nada "aninhado" pra mostrar).
   const [materialAberto, setMaterialAberto] = useState(null);
+  // Pop-up do Farol Financeiro (Valor/Total Consumido/Saldo) — pedido
+  // explícito (2026-08-24): "vamos trocar o tooltip por um pop-up".
+  // Era um card que expandia no hover (correção anterior, mesmo dia);
+  // virou clique porque o usuário queria pop-up de verdade, não mais
+  // uma variação de tooltip. Guarda só o necessário pra render (não o
+  // objeto inteiro, porque também abre a partir das linhas de
+  // Área/Disciplina, que não têm o mesmo formato de material).
+  const [farolDetalhe, setFarolDetalhe] = useState(null);
 
   useEffect(() => {
     if (!obraValidada) return;
@@ -5210,7 +5237,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
 
   const restanteValor = soma(restante, 'valor') || 0;
 
-  if (!obraValidada) return <CartaoEstado texto="Suprimentos ainda só está validado para o CP029 (CNPEM - Faseado) — as demais obras têm RMI cadastrada de forma diferente e precisam de checagem própria antes de habilitar" maxHeight={620} />;
+  if (!obraValidada) return <CartaoEstado texto="🔨 Em desenvolvimento — Suprimentos está sendo validado para esta obra" maxHeight={620} />;
   if (todosItens === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
   if (erro) return <CartaoEstado texto="Erro ao carregar itens_rmi" maxHeight={620} tom={T.red} />;
   if (todosOrdenados.length === 0) return <CartaoEstado texto="Nenhum material com valor lançado para esta obra" maxHeight={620} />;
@@ -5224,9 +5251,6 @@ function ModuloSuprimentos({ obraId, obraNome }){
           precisar voltar, só não é mais exibida. */}
       <div style={{ display:'flex', gap:14, flex:1, minHeight:420 }}>
         <div className="card" style={{ flex:1, minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
-          <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
-            Materiais Críticos — Curva A <span style={{ color:T.mut2, fontWeight:500 }}>({curvaA.length})</span>
-          </div>
           <div className="table-scroll-x" style={{ overflow:'auto', flex:1 }}>
             <table style={{ width:'100%', minWidth:680, textAlign:'left', borderCollapse:'collapse', whiteSpace:'nowrap' }}>
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
@@ -5235,7 +5259,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Farol Financeiro</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data da Necessidade de Compra</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Prazo de Entrega</th>
-                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Material em Obra</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data Limite em Obra</th>
                   <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Status</th>
                 </tr>
               </thead>
@@ -5249,7 +5273,9 @@ function ModuloSuprimentos({ obraId, obraNome }){
                         <span style={{ display:'inline-block', width:14, color:T.blue }}>{areaFechada ? '▸' : '▾'}</span>
                         {grupoArea.area}
                       </td>
-                      <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoArea.valor)}</td>
+                      <td style={{ padding:'8px 14px', textAlign:'right' }}>
+                        <FarolFinanceiroRmi desvio={grupoArea.desvio} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: grupoArea.area, valor: grupoArea.valor, totalConsumido: grupoArea.totalConsumido, saldo: grupoArea.saldoOrcamentario, desvio: grupoArea.desvio }); }} />
+                      </td>
                       <td colSpan={4}></td>
                     </tr>
                     {!areaFechada && grupoArea.disciplinas.map(grupoDisc => {
@@ -5262,7 +5288,9 @@ function ModuloSuprimentos({ obraId, obraNome }){
                             <span style={{ display:'inline-block', width:14, color:T.blue }}>{discFechada ? '▸' : '▾'}</span>
                             {grupoDisc.disciplina}
                           </td>
-                          <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, fontWeight:600, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoDisc.valor)}</td>
+                          <td style={{ padding:'7px 14px', textAlign:'right' }}>
+                            <FarolFinanceiroRmi desvio={grupoDisc.desvio} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: grupoDisc.disciplina, valor: grupoDisc.valor, totalConsumido: grupoDisc.totalConsumido, saldo: grupoDisc.saldoOrcamentario, desvio: grupoDisc.desvio }); }} />
+                          </td>
                           <td colSpan={4}></td>
                         </tr>
                         {!discFechada && grupoDisc.materiais.map(it => {
@@ -5272,10 +5300,10 @@ function ModuloSuprimentos({ obraId, obraNome }){
                               style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
                               <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:320, whiteSpace:'normal', lineHeight:1.35 }}>
                                 {it.descricao || '—'}
-                                {temAninhados && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.blue }}>({it.qtdConsolidada} itens ›)</span>}
+                                {temAninhados && <span style={{ marginLeft:6, fontSize:11, color:T.mut, fontWeight:400 }}>›</span>}
                               </td>
                               <td style={{ padding:'9px 14px', textAlign:'right' }}>
-                                <FarolFinanceiroRmi valor={it.valor} totalConsumido={it.totalConsumido} saldo={it.saldo_orcamentario} desvio={it.desvio_saldo_orcamentario} />
+                                <FarolFinanceiroRmi desvio={it.desvio_saldo_orcamentario} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: it.descricao, valor: it.valor, totalConsumido: it.totalConsumido, saldo: it.saldo_orcamentario, desvio: it.desvio_saldo_orcamentario }); }} />
                               </td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
@@ -5293,15 +5321,6 @@ function ModuloSuprimentos({ obraId, obraNome }){
                   );
                 })}
               </tbody>
-              {restante.length > 0 && (
-                <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
-                  <tr>
-                    <td colSpan={6} className="mono" style={{ padding:'10px 14px', fontSize:11, color:T.mut, borderTop:'2px solid var(--line)' }}>
-                      + {restante.length} materiais (Curva B/C) somam {fmtReais(restanteValor)} — {totalObra ? (100 - (soma(curvaA,'valor')||0)/totalObra*100).toFixed(1) : '0'}% restante do valor de obra
-                    </td>
-                  </tr>
-                </tfoot>
-              )}
             </table>
           </div>
         </div>
@@ -5318,23 +5337,50 @@ function ModuloSuprimentos({ obraId, obraNome }){
               <button onClick={() => setMaterialAberto(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-              {(materialAberto.itensOriginais || []).map((it, i) => {
-                const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
-                return (
-                <div key={it.id || i} style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, padding:'10px 0', borderBottom:'1px solid #eef0f3' }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.35 }}>{it.descricao || '—'}</div>
-                    <div className="mono" style={{ fontSize:10.5, color:T.mut2, marginTop:3 }}>
-                      Necessidade: {it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'} · Prazo: {it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'} · Em obra: {fmtDataObjRmi(materialEmObraItem)}
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0 }}>
-                    <span className="mono" style={{ fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</span>
-                    <span className="mono" style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', padding:'2px 7px', borderRadius:6, background: it.finalizado ? 'rgba(31,157,87,0.13)' : '#eef0f3', color: it.finalizado ? T.green : T.mut }}>{it.finalizado ? 'Finalizado' : 'Pendente'}</span>
-                  </div>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                <tbody>
+                  {(materialAberto.itensOriginais || []).map((it, i) => {
+                    const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
+                    return (
+                    <tr key={it.id || i} style={{ borderBottom:'1px solid #eef0f3' }}>
+                      <td style={{ padding:'9px 18px', textAlign:'left', fontSize:12, color:T.ink, fontWeight:500 }}>{it.descricao || '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias))}</td>
+                      <td style={{ padding:'9px 18px', textAlign:'center' }}>
+                        <StatusBadgeRmi qtdFinalizados={it.finalizado ? 1 : 0} qtdTotal={1} />
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {farolDetalhe && (
+        <div onClick={() => setFarolDetalhe(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10002, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:400, display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Farol Financeiro</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{farolDetalhe.titulo}</div>
+              </div>
+              <button onClick={() => setFarolDetalhe(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ padding:'6px 20px 20px' }}>
+              {[
+                ['Valor', farolDetalhe.valor, T.ink],
+                ['Total Consumido', farolDetalhe.totalConsumido, T.ink],
+                ['Saldo Orçamentário', farolDetalhe.saldo, farolDetalhe.desvio === 'negativo' ? T.red : farolDetalhe.desvio === 'positivo' ? T.green : T.ink],
+              ].map(([label, valor, cor]) => (
+                <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                  <span>{label}</span>
+                  <span className="mono" style={{ fontWeight:700, color:cor, fontVariantNumeric:'tabular-nums' }}>{fmtReais(valor)}</span>
                 </div>
-                );
-              })}
+              ))}
             </div>
           </div>
         </div>
