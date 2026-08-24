@@ -4757,19 +4757,89 @@ function coletarMateriaisDaDisciplina(disciplinaItem, areaHerdada, filhosPorPaiG
   caminhar(disciplinaItem, areaHerdada, 0);
   return materiais;
 }
-// Extrai a "família" de um material a partir da descrição — pedido
-// "ainda podemos comprimir mais os itens, em coisas similares" depois
-// de ver que a mesma peça aparece 1x por variante (ex. "Isolamento de
-// Flanges - 10" - Espuma Elastometrica; Aluminio" e mais ~20 variações
-// só de diâmetro/material, todas na RMI de Tubulação/obra 91). Refinado
-// em seguida (pedido 2026-08-24, "simplificar as descrições... Chiller
-// - Turbo Trans Air-Colled: TTA-450, modelo AD160... poderá ser
-// simplesmente: Chiller"): a família virou a descrição padrão exibida
-// SEMPRE, não só quando há duplicata pra consolidar.
+// Catálogo de itens padrão — pedido explícito (2026-08-24): "criar um
+// banco de itens padrão, a descrição deverá ter match com um daqueles
+// itens... Chiller, válvulas e acessórios, elevadores, isolamento
+// térmico, tubulação Aço Carbono, tubulação Inox, Cabos, Painéis".
+// Levantado analisando os 1.133 materiais reais do CP029 (script
+// descartável, não faz parte do repo) — cobre 97,6% do VALOR (60% da
+// CONTAGEM; o resto é cauda longa de itens únicos de baixo valor, que
+// caem no fallback por separador abaixo). Confirmado com o usuário: (1)
+// "RMTAC"/"RMG " são molas antivibratórias — vinham como maior bloco
+// não classificado, tipo "RMTAC-F2 1.0Y1 (dutos)"; (2) mantém
+// categorias de acabamento civil (Pisos, Elevadores, Divisórias...)
+// junto das de MEP, não só os exemplos dados.
+//
+// ORDEM IMPORTA — `classificarMaterialRmi` usa a PRIMEIRA categoria que
+// bate. "Válvulas e acessórios" fica por ÚLTIMO de propósito: palavras
+// curtas e genéricas (VALVULA, FLANGE, CURVA 90) colidiam com itens de
+// outra natureza quando checadas cedo demais — pego na revisão manual
+// antes de subir:
+//   - "Válvula para Mictório/Lavatório/Tanque", "Valvula de Descarga
+//     PNE" são registro de LOUÇA (acabamento), não válvula de processo
+//     — por isso "Louças e Metais" vem antes.
+//   - "Flange ligação perf fze", "Curva 90° leito horizontal..." são
+//     acessório de BANDEJA/LEITO elétrico, não de tubulação — por isso
+//     "Eletrodutos e Infraestrutura Elétrica" vem antes.
+const CATALOGO_MATERIAIS_RMI = {
+  // "Molas" vem ANTES de "Chiller" de propósito: "RMG 1.606F4-26
+  // (chillers e ventiladores)" é mola/suporte antivibratório (confirmado
+  // com o usuário), mas o texto entre parênteses contém literalmente
+  // "chillers" — pego na revisão de teste (Playwright acusou um Chiller
+  // com valor R$68 mil a mais do que o real, exatamente o valor dessa
+  // mola contaminando a categoria por checar "CHILLER" primeiro).
+  'Molas': ['RMTAC', 'RMG ', 'BASES INERCIAIS'],
+  'Chiller': ['CHILLER'],
+  'Elevadores': ['ELEVADOR'],
+  'Isolamento térmico': ['ALUCLAD', 'MANTA SUPERLON', 'TUBO SUPERLON', 'ISOLAMENTO', 'LA DE VIDRO', 'PLACAS DE LA', 'LENCOL DE BORRACHA'],
+  'Tubulação Aço Carbono': ['TUBULACAO ACO CARBONO', 'TUBO DE ACO CARBONO'],
+  'Tubulação Inox': ['TUBULACAO ACO INOX', 'TUBO INOX', 'CHAPA INOX'],
+  'Tubulação Alumínio': ['TUBULACAO ALUMINIO', 'TUBO DE ALUMINIO'],
+  'Cabos': ['CABO', 'COND CU FLEX', 'CORDAO OPTICO', 'FIBRA OTICA', 'CABO OPTICO', 'PIGTAIL', 'TERMINAL DE COMPESSAO'],
+  'Painéis': ['PAINEL', 'PAINEIS', 'QUADRO ELETRICO', 'QEE'],
+  'Fancoils e Fancoletes': ['FANCOLETE', 'FANCOIL'],
+  'Ventiladores e Exaustores': ['VENTILADOR', 'EXAUSTAO'],
+  'Difusores e Grelhas': ['DIFUSOR', 'GRELHA DE RETORNO', /^DI-\d/, /^GR-\d/],
+  'Bombas': ['BOMBA'],
+  'Instrumentação': ['TERMOMETRO', 'MANOMETRO'],
+  'Detecção e Alarme': ['DETECTOR DE FUMACA', 'BASE PARA DETECTOR', 'SENSOR DE PRESENCA', 'LEITORA DE CARTAO'],
+  'Combate a Incêndio': ['SPK ', 'SPRINKLER', 'MANGUEIRA FLEXIVEL PARA SPRINKLERS'],
+  'Ventilação e Dutos': ['DUTO FLEXIVEL', 'DUTO SUPORTADO', 'CHAPA GALVANIZADA', 'CANTO TDC'],
+  'Automação e Controle': ['AUTOMACAO', 'CONTROLADORA', 'INVERSOR'],
+  'Rede/Cabeamento Estruturado': ['PATCH PANEL', 'PATCH CORD', 'CONECTOR', 'RACK', 'DIO CASSETE'],
+  'CFTV (câmeras)': ['ILLUSTRA', 'BULLET', 'DOME'],
+  'Iluminação': ['LUMINARIA'],
+  'Eletrodutos e Infraestrutura Elétrica': ['CANALETA', 'CONDULETE', 'BANDEJA', 'LEITO ', 'LUVA ARREMATE', 'PERFILADO', 'ELETRODUTO', 'ELETROCALHA', 'CURVA VERTICAL', 'PERF FZE'],
+  'Estrutura e Suportação Metálica': ['VIGA U', 'VERGALHAO', 'CHAPA ACO', 'CANTONEIRA', 'ACO CA-50', 'ACO CA-60'],
+  'Concreto e Impermeabilização': ['CONCRETO', 'REATERRO', 'VIAPLUS', 'PLANISEAL'],
+  'Pisos': ['PISO DE BORRACHA', 'PISO PORCELANATO', 'PREPARACAO DO PISO'],
+  'Rodapés e Acabamentos': ['RODAPE'],
+  'Divisórias': ['DIVISORIA'],
+  'Esquadrias (janelas)': ['CAIXILHO', 'ESQUADRIA'],
+  'Portas': ['PORTA MADEIRA', 'PORTA DE MADEIRA'],
+  'Pintura': ['PINTURA'],
+  'Forros e Drywall': ['FORRO', 'DRYWALL', 'SANCA'],
+  'Louças e Metais': ['CUBA', 'TORNEIRA', 'ESPELHO CRISTAL', 'BACIA', 'SIFAO', 'BARRA DE ACESSIBILIDADE', 'CAIXA ACOPLADA', 'CAIXA DE DESCARGA', 'MICTORIO', 'LAVATORIO', 'VALVULA DE DESCARGA', 'VALVULA PARA TANQUE'],
+  'Marcenaria e Mobiliário': ['ARMARIO'],
+  'Revestimentos': ['PASTILHA', 'FRONTAO EM GRANITO', 'TAMPO EM GRANITO'],
+  'Válvulas e acessórios': ['VALVULA', 'FILTRO Y', 'FLANGE', 'JUNTA FLEXIVEL', 'CURVA 90'],
+};
+function classificarMaterialRmi(descNorm){
+  for (const [categoria, palavras] of Object.entries(CATALOGO_MATERIAIS_RMI)) {
+    if (palavras.some(p => p instanceof RegExp ? p.test(descNorm) : descNorm.includes(p))) return categoria;
+  }
+  return null;
+}
+// Extrai a "família" de um material a partir da descrição — 1ª tentativa
+// é bater no catálogo padrão acima; sem match, cai no corte por
+// separador (fallback anterior, pra itens fora do catálogo ainda
+// ganharem uma descrição mais curta em vez da ficha técnica inteira).
 //
 // Corte no PRIMEIRO separador entre 2 candidatos, o que vier antes:
 //   1. `" - "` (espaço-traço-espaço) — nome-base × especificação
-//      (diâmetro/capacidade/material), ex. o "Chiller" acima.
+//      (diâmetro/capacidade/material), ex. "Chiller - Turbo Trans
+//      Air-Colled: TTA-450..." (esse caso específico já cai no catálogo
+//      acima, mas o corte continua valendo pra quem não bate).
 //   2. `,` que NÃO esteja colada a dígito nos 2 lados — nome-base ×
 //      resto da ficha técnica, ex. "Elevador Linha 3300 Atlas
 //      Schindler, com capacidade..." → "Elevador Linha 3300 Atlas
@@ -4783,6 +4853,8 @@ function coletarMateriaisDaDisciplina(disciplinaItem, areaHerdada, filhosPorPaiG
 // não dá pra separar nome-base de especificação com confiança.
 function familiaMaterialRmi(descricao){
   if (!descricao) return descricao;
+  const catalogo = classificarMaterialRmi(normalizarNomeParaMatch(descricao));
+  if (catalogo) return catalogo;
   const idxTraco = descricao.indexOf(' - ');
   const bateVirgula = /(?<!\d),(?!\d)/.exec(descricao);
   const idxVirgula = bateVirgula ? bateVirgula.index : -1;
