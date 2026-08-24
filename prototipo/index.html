@@ -4761,52 +4761,65 @@ function coletarMateriaisDaDisciplina(disciplinaItem, areaHerdada, filhosPorPaiG
 // "ainda podemos comprimir mais os itens, em coisas similares" depois
 // de ver que a mesma peça aparece 1x por variante (ex. "Isolamento de
 // Flanges - 10" - Espuma Elastometrica; Aluminio" e mais ~20 variações
-// só de diâmetro/material, todas na RMI de Tubulação/obra 91). O corte
-// é no primeiro " - " (com espaços dos 2 lados) — é o separador real
-// observado entre nome-base e especificação (diâmetro/capacidade/
-// material) nesse padrão de descrição. Corte deliberadamente simples
-// (não tenta reconhecer DN/Ø/Btu/h/mm² um por um): captura o padrão
-// real validado sem risco de cortar hífen SEM espaço que é parte do
-// próprio nome/código (ex. "380-220V", "CS 600X250", "W310X38.7" nunca
-// batem — ficam intactos, sem família, o que é o comportamento seguro
-// quando não dá pra separar nome-base de especificação com confiança).
+// só de diâmetro/material, todas na RMI de Tubulação/obra 91). Refinado
+// em seguida (pedido 2026-08-24, "simplificar as descrições... Chiller
+// - Turbo Trans Air-Colled: TTA-450, modelo AD160... poderá ser
+// simplesmente: Chiller"): a família virou a descrição padrão exibida
+// SEMPRE, não só quando há duplicata pra consolidar.
+//
+// Corte no PRIMEIRO separador entre 2 candidatos, o que vier antes:
+//   1. `" - "` (espaço-traço-espaço) — nome-base × especificação
+//      (diâmetro/capacidade/material), ex. o "Chiller" acima.
+//   2. `,` que NÃO esteja colada a dígito nos 2 lados — nome-base ×
+//      resto da ficha técnica, ex. "Elevador Linha 3300 Atlas
+//      Schindler, com capacidade..." → "Elevador Linha 3300 Atlas
+//      Schindler". A ressalva do dígito existe porque vírgula também é
+//      separador DECIMAL em pt-BR dentro dessas descrições (ex. "Cabo
+//      0,6/1kV" não pode virar "Cabo 0" — a vírgula ali está colada em
+//      dígito dos 2 lados, não bate o padrão, fica intacta).
+// Deliberadamente não tenta reconhecer DN/Ø/Btu/h/mm² um por um: hífen
+// SEM espaço ao redor (`380-220V`, `CS 600X250`, `W310X38.7`) e vírgula
+// decimal nunca batem — ficam intactos, o comportamento seguro quando
+// não dá pra separar nome-base de especificação com confiança.
 function familiaMaterialRmi(descricao){
   if (!descricao) return descricao;
-  const idx = descricao.indexOf(' - ');
-  return idx === -1 ? descricao.trim() : descricao.slice(0, idx).trim();
+  const idxTraco = descricao.indexOf(' - ');
+  const bateVirgula = /(?<!\d),(?!\d)/.exec(descricao);
+  const idxVirgula = bateVirgula ? bateVirgula.index : -1;
+  const candidatos = [idxTraco, idxVirgula].filter(i => i !== -1);
+  if (!candidatos.length) return descricao.trim();
+  return descricao.slice(0, Math.min(...candidatos)).trim();
 }
 // Soma materiais da mesma família (ver `familiaMaterialRmi`) DENTRO do
 // mesmo par área+disciplina (nunca entre grupos diferentes, pra não
-// perder a orientação que é o objetivo da tela). A descrição exibida só
-// vira o nome genérico da família quando REALMENTE há mais de 1 item
-// original consolidado ali — item único mantém a descrição completa,
-// pra não perder especificação (diâmetro, material) à toa quando não
-// havia nada pra comprimir.
+// perder a orientação que é o objetivo da tela). A descrição exibida
+// sempre vira o nome da família — mesmo em item único, sem duplicata
+// pra consolidar (é simplificação de leitura, não só desduplicação).
 function consolidarMateriaisSemelhantes(materiais){
   const porChave = new Map();
   materiais.forEach(m => {
     const familia = familiaMaterialRmi(m.descricao);
     const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(familia)}`;
     const existente = porChave.get(chave);
-    if (!existente) { porChave.set(chave, { ...m, _familia: familia, _qtd: 1 }); return; }
+    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1 }); return; }
     existente.valor += m.valor;
     if (m.saldo_orcamentario != null) existente.saldo_orcamentario = (existente.saldo_orcamentario || 0) + m.saldo_orcamentario;
     existente._qtd += 1;
-    existente.descricao = existente._familia;
   });
-  return Array.from(porChave.values()).map(({ _familia, _qtd, ...m }) => ({ ...m, qtdConsolidada: _qtd }));
+  return Array.from(porChave.values()).map(({ _qtd, ...m }) => ({ ...m, qtdConsolidada: _qtd }));
 }
 // Monta a árvore Área → Disciplina → Material a partir da lista plana
 // (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
 // total decrescente, preservando "o que pesa mais primeiro" dentro do
 // agrupamento (pedido: "precisa estar organizado em níveis, Área ->
-// Disciplina -> Material").
+// Disciplina -> Material"). `m.area` nunca vem vazio aqui — item sem
+// área é excluído antes, na coleta (pedido explícito 2026-08-24: "itens
+// sem área não precisam ser considerados").
 function agruparPorAreaDisciplina(materiaisCriticos){
   const porArea = new Map();
   materiaisCriticos.forEach(m => {
-    const chaveArea = m.area || '(sem área)';
-    if (!porArea.has(chaveArea)) porArea.set(chaveArea, new Map());
-    const porDisciplina = porArea.get(chaveArea);
+    if (!porArea.has(m.area)) porArea.set(m.area, new Map());
+    const porDisciplina = porArea.get(m.area);
     if (!porDisciplina.has(m.disciplina)) porDisciplina.set(m.disciplina, []);
     porDisciplina.get(m.disciplina).push(m);
   });
@@ -4895,8 +4908,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // ordena por valor decrescente, acumula, marca Curva A e monta a
   // árvore Área → Disciplina → Material — ver comentário grande acima
   // pro racional completo.
-  const { curvaA, arvore, todosOrdenados, restante, canteiro, totalObra } = useMemo(() => {
-    if (!todosItens) return { curvaA: [], arvore: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, totalObra: 0 };
+  const { curvaA, arvore, todosOrdenados, restante, canteiro, semArea, totalObra } = useMemo(() => {
+    if (!todosItens) return { curvaA: [], arvore: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, semArea: { qtd:0, valor:0 }, totalObra: 0 };
     const itensNivel0 = todosItens.filter(r => r.raw.nivel === 0);
     const itensNivel1 = todosItens.filter(r => r.raw.nivel === 1);
     const disciplinas = resolverDisciplinasRmi(itensNivel0, itensNivel1);
@@ -4912,6 +4925,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
 
     let brutos = [];
     let qtdCanteiro = 0, valorCanteiro = 0;
+    let qtdSemArea = 0, valorSemArea = 0;
     disciplinas.forEach(({ item, nome, areaHerdada }) => {
       if (ehItemCanteiroRmi(item.raw.descricao)) {
         qtdCanteiro++; valorCanteiro += Number(item.raw.subtotal_custo_meta_orcamento) || 0;
@@ -4920,6 +4934,10 @@ function ModuloSuprimentos({ obraId, obraNome }){
       coletarMateriaisDaDisciplina(item, areaHerdada, filhosPorPaiGeral).forEach(({ item: m, area }) => {
         const valor = Number(m.raw.subtotal_custo_meta_orcamento) || 0;
         if (valor <= 0) return; // sem valor ainda — não é candidato a crítico
+        // Itens sem área não precisam ser considerados (pedido
+        // explícito, 2026-08-24) — ficam de fora do cálculo inteiro,
+        // igual canteiro, não só escondidos da árvore.
+        if (!area) { qtdSemArea++; valorSemArea += valor; return; }
         brutos.push({
           id: m.id, descricao: m.raw.descricao, unidade: m.raw.unidade,
           disciplina: nome, area, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
@@ -4951,6 +4969,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       todosOrdenados,
       restante: todosOrdenados.filter(v => !v.curvaA),
       canteiro: { qtd: qtdCanteiro, valor: valorCanteiro },
+      semArea: { qtd: qtdSemArea, valor: valorSemArea },
       totalObra,
     };
   }, [todosItens]);
@@ -4980,12 +4999,17 @@ function ModuloSuprimentos({ obraId, obraNome }){
         <div style={{ flex:1, minWidth:0 }}>
           <Balao titulo="Valor total de obra (materiais)" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
             valor={fmtReais(totalObra)}
-            sub="exclui itens de canteiro/apoio e mão de obra" />
+            sub="exclui canteiro/apoio, mão de obra e sem área" />
         </div>
         <div style={{ flex:1, minWidth:0 }}>
           <Balao titulo="Itens de canteiro/apoio" cor={T.mut} bg="#f7f8fa" borda="var(--line)"
             valor={`${canteiro.qtd}`}
             sub={canteiro.valor ? `${fmtReais(canteiro.valor)} — não considerados` : 'não considerados'} />
+        </div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <Balao titulo="Itens sem área identificada" cor={T.mut} bg="#f7f8fa" borda="var(--line)"
+            valor={`${semArea.qtd}`}
+            sub={semArea.valor ? `${fmtReais(semArea.valor)} — não considerados` : 'não considerados'} />
         </div>
       </div>
 
@@ -5011,7 +5035,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                   <React.Fragment key={grupoArea.area}>
                     <tr style={{ background:'#eef2f8', borderBottom:'1px solid var(--line)' }}>
                       <td className="mono" style={{ padding:'8px 14px', fontSize:11.5, fontWeight:700, color:T.ink, textTransform:'uppercase', letterSpacing:'0.03em' }}>
-                        {grupoArea.area === '(sem área)' ? 'Sem área identificada' : grupoArea.area}
+                        {grupoArea.area}
                       </td>
                       <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoArea.valor)}</td>
                       <td colSpan={4}></td>
