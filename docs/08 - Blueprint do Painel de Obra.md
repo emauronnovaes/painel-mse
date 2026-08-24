@@ -3867,6 +3867,42 @@ CP022, Porto Itapoá/CP002, Novo Nordisk-AP/CP273 e Novo Nordisk-AP-
 Reforço/CP261) antes de estender a tela pra elas — mesmo processo usado
 até aqui (investigar estrutura real via PostgREST antes de assumir).
 
+### Exclui itens sem área e simplifica descrições sempre (2026-08-24, mesmo dia)
+
+"Seguindo na linha do cp029. Itens sem área não precisam ser
+considerados. Precisamos agrupar e simplificar as descrições dos
+materiais... exemplo: Chiller - Turbo Trans Air-Colled: TTA-450,
+modelo AD160.4EF1AKUAA024XA.02D poderá ser simplesmente: Chiller."
+
+- **Sem área = fora do cálculo inteiro**, não só escondido da árvore —
+  mesmo tratamento que canteiro. Novo 5º KPI "Itens sem área
+  identificada" (qtd + valor), mesmo padrão visual do de canteiro, pra
+  não esconder o que foi excluído sem explicar. `agruparPorAreaDisciplina`
+  perdeu o fallback `'(sem área)'` (virou código morto — nenhum material
+  sem área chega mais até ali).
+- **`familiaMaterialRmi` ganha um 2º separador**: além do primeiro
+  `" - "` (da entrega anterior), agora também corta na primeira vírgula
+  que NÃO esteja colada a dígito dos 2 lados — usa o que vier primeiro
+  dos 2 candidatos. Pega o padrão real de descrições longas separadas
+  por vírgula (ex. "Elevador Linha 3300 Atlas Schindler, com
+  capacidade..." → "Elevador Linha 3300 Atlas Schindler"). **Ressalva
+  importante**: vírgula também é separador DECIMAL em pt-BR dentro
+  dessas descrições (ex. "Cabo 0,6/1kV") — sem o cuidado de ignorar
+  vírgula colada em dígito, "Cabo 0,6/1kV" viraria "Cabo 0", quebrado.
+- **Consolidação sempre mostra a família**, não só quando há duplicata
+  pra juntar — a entrega anterior mantinha a descrição completa em item
+  único "pra não perder especificação à toa"; o pedido de agora deixou
+  claro que a simplificação vale mesmo sem duplicata (é sobre leitura,
+  não só desduplicação).
+
+Testado: simulação em Node contra dado real do CP029 confirmou "Chiller"
+saindo limpo e nenhum corte aparentemente errado na lista inteira (88
+materiais). Playwright confirmou na tela: KPI "Itens sem área
+identificada" = 318 (R$ 5.289.265,38); nenhum grupo "(sem área)" na
+árvore; material "Chiller" exibido exatamente assim, R$ 6.480.000; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
