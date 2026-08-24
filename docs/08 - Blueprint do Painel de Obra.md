@@ -3150,6 +3150,45 @@ empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
 depois da sequência toda. 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — grid nasce travado, "Organizar" vira automático (2026-08-21)
+
+Pedido explícito, 2 dias depois: "o organizar tem que ser automático, a
+medida que o ajuste nos balões é feito. Além disso, vamos deixar o modo
+de ajuste travado, para evitar movimentações não intencionais."
+
+- **"Organizar" deixa de ser botão manual** — passa a rodar via
+  `onDragStop`/`onResizeStop` do grid, disparando sozinho ao SOLTAR um
+  arrasto/resize. Deliberadamente NÃO usei `onLayoutChange` pra isso: a
+  react-grid-layout dispara esse evento a cada frame durante o gesto
+  (não só no fim), então reorganizar ali brigaria com o drag em
+  andamento — o mesmo tipo de conflito que `compactType={null}` (seção
+  acima) já existe pra evitar. `onDragStop`/`onResizeStop` disparam 1x,
+  no soltar, então o reflow acontece depois do gesto terminar, sem
+  interferir nele. Botão "Organizar" removido (redundante).
+- **Novo estado `modoAjuste`** (sempre nasce `false`, propositalmente
+  NÃO persiste no `localStorage` — diferente de `layoutTiles`/
+  `tileOcultos`). Persistir "destravado" reabriria a mesma brecha de
+  arrasto acidental que o pedido queria fechar; o grid deve começar
+  travado toda vez que a tela é aberta, não só na 1ª vez.
+  `isDraggable`/`isResizable` do `<GridLayoutMedicoes>` só ligam com
+  esse estado.
+- **1 botão só** na barra de apoio alterna "Ajustar layout" ⇄ "Travar
+  layout" (fundo/borda azul quando destravado, pra ficar óbvio que o
+  grid está em modo de edição). A dica de uso ("Arraste pelo
+  cabeçalho...") só aparece destravado — não faz sentido mostrar
+  instrução de gesto que não funciona no momento. `TileFrame` reflete o
+  estado no próprio bloco: alça (⠿⠿) apagada (opacity 0.35) e cursor
+  volta ao normal quando travado, em vez de manter a affordance de
+  "arrastável" num bloco que não arrasta.
+
+Testado via Playwright (obra 91): grid travado por padrão (drag no
+cabeçalho não move o bloco, posição idêntica antes/depois via
+`getBoundingClientRect`); "Ajustar layout" destrava (drag move o bloco,
+resize pela alça SE funciona); "Travar layout" trava de novo (drag
+volta a não mover); botão "Organizar" confirmado ausente; dica some/
+aparece conforme o estado. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
 ### Medições — as 2 tabelas viram 1 só, consolidada (2026-08-19)
 
 Pedido explícito: "ajuste tudo em uma única tabela, compile todas as
