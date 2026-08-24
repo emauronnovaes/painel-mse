@@ -4873,12 +4873,14 @@ function consolidarMateriaisSemelhantes(materiais){
     const familia = familiaMaterialRmi(m.descricao);
     const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(familia)}`;
     const existente = porChave.get(chave);
-    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1 }); return; }
+    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1, _qtdFinalizados: m.finalizado ? 1 : 0 }); return; }
     existente.valor += m.valor;
+    existente.totalConsumido = (existente.totalConsumido || 0) + (m.totalConsumido || 0);
     if (m.saldo_orcamentario != null) existente.saldo_orcamentario = (existente.saldo_orcamentario || 0) + m.saldo_orcamentario;
     existente._qtd += 1;
+    if (m.finalizado) existente._qtdFinalizados += 1;
   });
-  return Array.from(porChave.values()).map(({ _qtd, ...m }) => ({ ...m, qtdConsolidada: _qtd }));
+  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, ...m }) => ({ ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados }));
 }
 // Monta a árvore Área → Disciplina → Material a partir da lista plana
 // (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
@@ -4955,6 +4957,26 @@ function ehItemCanteiroRmi(descricao){
 // RMI por RMI, uma de cada vez.
 const OBRA_SUPRIMENTOS_VALIDADA = 106;
 
+// Badge de "Finalizado" — pedido explícito (2026-08-24): "o finalizado
+// é algo interessante de se trazer". Vem de `raw.finalizado` (booleano
+// por item de RMI). Em item único mostra Sim/Não; numa linha
+// consolidada (várias peças da mesma família/categoria) mostra "X/Y"
+// (quantos dos itens somados já estão finalizados) — não faz sentido
+// reduzir isso a um booleano só quando a linha representa várias peças
+// físicas diferentes.
+function FinalizadoBadgeRmi({ qtdFinalizados, qtdTotal }){
+  const tudoFinalizado = qtdTotal > 0 && qtdFinalizados === qtdTotal;
+  const nadaFinalizado = qtdFinalizados === 0;
+  const cor = tudoFinalizado ? T.green : nadaFinalizado ? T.mut : T.amber;
+  const bg = tudoFinalizado ? 'rgba(31,157,87,0.13)' : nadaFinalizado ? '#eef0f3' : 'rgba(217,145,26,0.13)';
+  const texto = qtdTotal > 1 ? `${qtdFinalizados}/${qtdTotal}` : (tudoFinalizado ? 'Sim' : 'Não');
+  return (
+    <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor }}>
+      {texto}
+    </span>
+  );
+}
+
 function ModuloSuprimentos({ obraId, obraNome }){
   const [todosItens, setTodosItens] = useState(null); // null = carregando; senão array com raw de TODOS os níveis
   const [erro, setErro] = useState(false);
@@ -4991,7 +5013,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // ordena por valor decrescente, acumula, marca Curva A e monta a
   // árvore Área → Disciplina → Material — ver comentário grande acima
   // pro racional completo.
-  const { curvaA, arvore, todosOrdenados, restante, canteiro, semArea, totalObra } = useMemo(() => {
+  const { curvaA, arvore, todosOrdenados, restante, totalObra } = useMemo(() => {
     if (!todosItens) return { curvaA: [], arvore: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, semArea: { qtd:0, valor:0 }, totalObra: 0 };
     const itensNivel0 = todosItens.filter(r => r.raw.nivel === 0);
     const itensNivel1 = todosItens.filter(r => r.raw.nivel === 1);
@@ -5026,6 +5048,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
           disciplina: nome, area, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
           saldo_orcamentario: m.raw.saldo_orcamentario,
           desvio_saldo_orcamentario: m.raw.desvio_saldo_orcamentario,
+          totalConsumido: Number(m.raw.total_consumido) || 0,
+          finalizado: !!m.raw.finalizado,
           valor,
         });
       });
@@ -5066,36 +5090,11 @@ function ModuloSuprimentos({ obraId, obraNome }){
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14, overflow:'auto' }}>
-      {/* Resumo — a estatística que já justifica a tela: poucos itens
-          cobrindo a maior parte do valor. */}
-      <div className="kpi-row-flex">
-        <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Materiais Críticos (Curva A)" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
-            valor={`${curvaA.length} de ${todosOrdenados.length}`}
-            sub={todosOrdenados.length ? `${((curvaA.length/todosOrdenados.length)*100).toFixed(1)}% dos materiais com valor` : undefined} />
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Valor coberto pela Curva A" cor={T.green} bg="rgba(31,157,87,0.06)" borda="rgba(31,157,87,0.15)"
-            valor={fmtReais(soma(curvaA, 'valor') || 0)}
-            sub={totalObra ? `${((soma(curvaA,'valor')||0)/totalObra*100).toFixed(1)}% do valor de obra` : undefined} />
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Valor total de obra (materiais)" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)"
-            valor={fmtReais(totalObra)}
-            sub="exclui canteiro/apoio, mão de obra e sem área" />
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Itens de canteiro/apoio" cor={T.mut} bg="#f7f8fa" borda="var(--line)"
-            valor={`${canteiro.qtd}`}
-            sub={canteiro.valor ? `${fmtReais(canteiro.valor)} — não considerados` : 'não considerados'} />
-        </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <Balao titulo="Itens sem área identificada" cor={T.mut} bg="#f7f8fa" borda="var(--line)"
-            valor={`${semArea.qtd}`}
-            sub={semArea.valor ? `${fmtReais(semArea.valor)} — não considerados` : 'não considerados'} />
-        </div>
-      </div>
-
+      {/* Balões de resumo do topo saíram por pedido explícito
+          (2026-08-24: "vamos retirar os balões superiores") — a
+          contagem/valor de canteiro e sem área que eles mostravam
+          continua calculada (`canteiro`/`semArea`) e disponível se
+          precisar voltar, só não é mais exibida. */}
       <div style={{ display:'flex', gap:14, flex:1, minHeight:420 }}>
         <div className="card" style={{ flex:1, minWidth:320, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
           <div className="mono" style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, padding:'12px 16px 8px', flexShrink:0 }}>
@@ -5107,10 +5106,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600 }}>
                   <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>Área / Disciplina / Material</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Valor</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Total Consumido</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>% Individual</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>% Acumulado</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Saldo Orçamentário</th>
                   <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Desvio</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Finalizado</th>
                 </tr>
               </thead>
               <tbody>
@@ -5124,7 +5125,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                         {grupoArea.area}
                       </td>
                       <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoArea.valor)}</td>
-                      <td colSpan={4}></td>
+                      <td colSpan={6}></td>
                     </tr>
                     {!areaFechada && grupoArea.disciplinas.map(grupoDisc => {
                       const chaveDisc = `${grupoArea.area}::${grupoDisc.disciplina}`;
@@ -5137,7 +5138,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                             {grupoDisc.disciplina}
                           </td>
                           <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, fontWeight:600, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoDisc.valor)}</td>
-                          <td colSpan={4}></td>
+                          <td colSpan={6}></td>
                         </tr>
                         {!discFechada && grupoDisc.materiais.map(it => {
                           const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
@@ -5149,6 +5150,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
                                 {it.qtdConsolidada > 1 && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.mut }}>({it.qtdConsolidada} itens)</span>}
                               </td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.totalConsumido ? fmtReais(it.totalConsumido) : '—'}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.pctIndividual.toFixed(1)}%</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.mut, fontVariantNumeric:'tabular-nums' }}>{it.pctAcumulado.toFixed(1)}%</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.saldo_orcamentario != null ? fmtReais(it.saldo_orcamentario) : '—'}</td>
@@ -5156,6 +5158,9 @@ function ModuloSuprimentos({ obraId, obraNome }){
                                 <span className="mono" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bgDesv, color:corDesv }}>
                                   {it.desvio_saldo_orcamentario || '—'}
                                 </span>
+                              </td>
+                              <td style={{ padding:'9px 14px', textAlign:'center' }}>
+                                <FinalizadoBadgeRmi qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada} />
                               </td>
                             </tr>
                           );
@@ -5170,7 +5175,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
               {restante.length > 0 && (
                 <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
                   <tr>
-                    <td colSpan={6} className="mono" style={{ padding:'10px 14px', fontSize:11, color:T.mut, borderTop:'2px solid var(--line)' }}>
+                    <td colSpan={8} className="mono" style={{ padding:'10px 14px', fontSize:11, color:T.mut, borderTop:'2px solid var(--line)' }}>
                       + {restante.length} materiais (Curva B/C) somam {fmtReais(restanteValor)} — {totalObra ? (100 - (soma(curvaA,'valor')||0)/totalObra*100).toFixed(1) : '0'}% restante do valor de obra
                     </td>
                   </tr>
