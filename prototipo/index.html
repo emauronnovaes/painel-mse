@@ -5471,17 +5471,19 @@ const ALTURA_FALLBACK_TILE = { tabela:580, grafico:364 };
 // senão clicar nele iniciaria um arrasto. Remover só OCULTA — nada é
 // apagado, o bloco volta pelos botões "+ Nome" e reaparece na MESMA
 // posição/tamanho (a entrada dele continua guardada no layout).
-function TileFrame({ titulo, contagem, onRemover, children }){
+function TileFrame({ titulo, contagem, onRemover, travado, children }){
   return (
     <div className="card" style={{ height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
       {/* padding-right 18: deixa o "✕" fora da alça de resize do canto
           nordeste (12px + 3px de recuo), senão o clique de ocultar cai na
-          alça. padding-left 16 já passa da alça do canto noroeste. */}
-      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
+          alça. padding-left 16 já passa da alça do canto noroeste.
+          Travado (modo padrão, ver comentário no grid): cursor volta ao
+          normal e a alça (⠿⠿) fica apagada — não tem o que arrastar. */}
+      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:travado ? 'default' : 'grab', touchAction:'none' }}>
         <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
         </span>
-        <span title="Arraste para mover" style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0 }}>⠿⠿</span>
+        <span title={travado ? 'Layout travado' : 'Arraste para mover'} style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0, opacity:travado ? 0.35 : 1 }}>⠿⠿</span>
         <button onClick={onRemover} title="Remover bloco (pode trazer de volta depois)" className="mono tile-nao-arrasta"
           style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:7, width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, lineHeight:1, flexShrink:0 }}>✕</button>
       </div>
@@ -5889,6 +5891,13 @@ function ModuloMedicoes({ obraId, obraNome }){
   });
   useEffect(() => { localStorage.setItem('mse_medicoes_grid', JSON.stringify(layoutTiles)); }, [layoutTiles]);
   useEffect(() => { localStorage.setItem('mse_medicoes_tile_ocultos', JSON.stringify(tileOcultos)); }, [tileOcultos]);
+  // Grid nasce TRAVADO toda vez (não persiste) — pedido explícito
+  // (2026-08-21): "vamos deixar o modo de ajuste travado, para evitar
+  // movimentações não intencionais". Só arrasta/redimensiona depois de
+  // clicar em "Ajustar layout"; persistir como destravado entre sessões
+  // reabriria a mesma brecha de arrasto acidental que o pedido queria
+  // fechar.
+  const [modoAjuste, setModoAjuste] = useState(false);
 
   const idsVisiveis = TILES_MEDICOES_IDS.filter(id => !tileOcultos.includes(id));
   const entradaLayout = (id) => layoutTiles.find(l => l.i === id) || LAYOUT_MEDICOES_PADRAO.find(l => l.i === id);
@@ -5915,9 +5924,11 @@ function ModuloMedicoes({ obraId, obraNome }){
   // nem coluna. Existe porque o grid roda SEM compactação automática (é o
   // que faz o resize pelo topo funcionar, ver comentário no
   // <GridLayoutMedicoes>): em troca, empurrar um vizinho pra baixo deixa
-  // faixa vazia que não se fecha sozinha. Isto fecha, sob demanda, sem
-  // tirar liberdade de posicionamento — e sem desfazer o arranjo, ao
-  // contrário do "Restaurar layout".
+  // faixa vazia que não se fecha sozinha. Isto fecha o vão sem tirar
+  // liberdade de posicionamento — e sem desfazer o arranjo, ao contrário
+  // do "Restaurar layout". Rodava só por botão manual até 2026-08-21;
+  // agora é chamada automaticamente por `onDragStop`/`onResizeStop` do
+  // grid a cada ajuste (pedido explícito), o botão saiu.
   const organizarLayout = () => {
     setLayoutTiles(prev => {
       const ocultos = prev.filter(l => tileOcultos.includes(l.i));
@@ -6187,6 +6198,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         const tileProps = {
           titulo: meta.titulo,
           onRemover: () => setTileOcultos(o => [...o, id]),
+          travado: !modoAjuste,
         };
 
         if (id === 'tabela') return (
@@ -6294,9 +6306,20 @@ function ModuloMedicoes({ obraId, obraNome }){
         // x/y do bloco, não só no w/h — com compactação vertical ligada, a
         // lib puxava o bloco de volta pra cima logo depois e o gesto não
         // surtia efeito nenhum. Sem compactação, cada bloco fica exatamente
-        // onde foi posto (e pode sobrar espaço vazio no meio — é o preço da
-        // liberdade, e o botão "Restaurar layout" resolve).
+        // onde foi posto (e pode sobrar espaço vazio no meio).
+        // `onDragStop`/`onResizeStop` chamam `organizarLayout` — pedido
+        // explícito (2026-08-21): "o organizar tem que ser automático, à
+        // medida que o ajuste nos balões é feito". Antes era um botão
+        // manual; agora roda sozinho ao SOLTAR o arrasto/resize (não em
+        // `onLayoutChange`, que a react-grid-layout dispara a cada frame
+        // durante o gesto — rodar o reflow no meio do gesto brigaria com
+        // o drag em andamento, o mesmo tipo de problema que o
+        // `compactType={null}` acima já existe pra evitar). `isDraggable`/
+        // `isResizable` só ligam com `modoAjuste` — grid nasce travado
+        // (ver comentário no estado `modoAjuste`).
         <GridLayoutMedicoes layout={layoutVisivel} onLayoutChange={aoMudarLayoutTiles}
+          onDragStop={organizarLayout} onResizeStop={organizarLayout}
+          isDraggable={modoAjuste} isResizable={modoAjuste}
           style={{ flexShrink:0 }}
           cols={12} rowHeight={40} margin={[14, 14]} containerPadding={[0, 0]}
           draggableHandle=".tile-handle" draggableCancel=".tile-nao-arrasta"
@@ -6306,13 +6329,25 @@ function ModuloMedicoes({ obraId, obraNome }){
       );
       })()}
 
-      {/* Barra de apoio do grid: dica de uso (sem ela o resize/lado a lado
-          fica escondido — a alça só aparece no hover), blocos ocultos e
-          volta ao padrão. */}
+      {/* Barra de apoio do grid: trava/destrava o modo de ajuste, dica de
+          uso (só faz sentido destravado), blocos ocultos e volta ao
+          padrão. Botão "Organizar" saiu — agora roda sozinho a cada
+          ajuste (ver `onDragStop`/`onResizeStop` acima). */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
-        <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
-          Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
-        </span>
+        <button onClick={() => setModoAjuste(m => !m)} className="mono"
+          title={modoAjuste ? 'Travar o layout (evita mover/redimensionar sem querer)' : 'Destravar pra mover ou redimensionar os blocos'}
+          style={{
+            background: modoAjuste ? 'rgba(37,99,235,0.08)' : 'none',
+            border: `1px solid ${modoAjuste ? T.blue : 'var(--line)'}`,
+            color: modoAjuste ? T.blue : T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5, fontWeight:600,
+          }}>
+          {modoAjuste ? 'Travar layout' : 'Ajustar layout'}
+        </button>
+        {modoAjuste && (
+          <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
+            Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
+          </span>
+        )}
         <span style={{ flex:1, minWidth:8 }} />
         {tileOcultos.map(id => (
           <button key={id} onClick={() => setTileOcultos(o => o.filter(x => x !== id))} className="mono"
@@ -6321,10 +6356,6 @@ function ModuloMedicoes({ obraId, obraNome }){
             + {TILES_MEDICOES_META[id].titulo}
           </button>
         ))}
-        <button onClick={organizarLayout} className="mono" title="Subir os blocos para fechar espaços vazios, mantendo tamanho e coluna de cada um"
-          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
-          Organizar
-        </button>
         <button onClick={restaurarLayoutPadrao} className="mono" title="Voltar posição, tamanho e visibilidade ao padrão"
           style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
           Restaurar layout
