@@ -3903,6 +3903,24 @@ identificada" = 318 (R$ 5.289.265,38); nenhum grupo "(sem área)" na
 erros de console. Deploy: `firebase deploy --only hosting --project
 planejamento-mse`.
 
+### Permite fechar Área e Disciplina, visão macro (2026-08-24, mesmo dia)
+
+"Precisamos conseguir fechar os itens, visualização macro é relevante."
+Linhas de Área e Disciplina na árvore ganharam chevron (▾ aberto/▸
+fechado) clicável, mesmo padrão visual já usado em `LinhaLocalDesvio`
+(Desvios). Fechar uma Área esconde disciplinas + materiais dela; fechar
+uma Disciplina esconde só os materiais dela; em ambos os casos o valor
+total da própria linha continua visível — dá pra ver o "macro" (só
+áreas e disciplinas com valor) sem precisar rolar pelos materiais.
+Nasce tudo aberto (comportamento anterior preservado; fechar é opt-in).
+
+Testado via Playwright (CP029): 106 linhas visíveis com tudo aberto;
+fechar a 1ª área derruba pra 93 linhas (valor da área mantido);
+reabrir volta a 106 com o mesmo valor; fechar 1 disciplina (com a área
+aberta) derruba pra 100 linhas sem afetar as outras disciplinas da
+mesma área; reabrir volta a 106. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
