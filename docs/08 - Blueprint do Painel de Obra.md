@@ -4051,6 +4051,95 @@ consolidadas confirmou status sempre coerente com a fração; layout
 íntegro nas linhas de área/disciplina; 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Pop-up dos itens aninhados + hover do Status vira troca de texto (2026-08-24, mesmo dia)
+
+"Vamos gerar um pop-up que permita verificar quais são os itens que
+estão aninhados, ao clicar na linha de resumo dele, outro ponto, havia
+pensado na exibição ao passar o mouse como uma mudança no cartão do
+status, não uma informação acima."
+
+- `consolidarMateriaisSemelhantes` passou a guardar `itensOriginais`
+  (array com os itens de antes da fusão por família, ordenado por
+  valor decrescente) além de `qtdConsolidada`/`qtdFinalizados` — dado
+  que já existia calculado, só não estava sendo carregado adiante.
+- Linha de material com mais de 1 item consolidado ganhou indicador
+  azul "(N itens ›)" ao lado da descrição e ficou clicável; o clique
+  abre um pop-up (mesmo padrão visual `modal-overlay-in`/`modal-card-in`
+  já usado no resto do produto, ex. detalhe de OC/CO) com cabeçalho
+  "Área — Disciplina" + nome do material, e a lista dos itens
+  originais (descrição completa, valor, status individual
+  Finalizado/Pendente). Linha de item único (sem "aninhados") não
+  reage ao clique — não tem o que abrir.
+- Correção de rumo no `StatusBadgeRmi`: a fração "X/Y itens
+  finalizados" tinha sido implementada como tooltip nativo (`title`),
+  que aparece como uma caixa flutuando ACIMA do cursor. O usuário
+  queria uma troca de conteúdo DENTRO do próprio cartão do badge, não
+  uma informação por cima. Resolvido com 2 `<span>` internos e CSS
+  puro (`.status-badge-rmi-texto`/`.status-badge-rmi-fracao`, um
+  escondido e outro mostrado no `:hover` do badge) — sem `title`,
+  sem JS extra.
+
+Testado via Playwright (CP029): pop-up abre com cabeçalho e contagem
+corretos e a lista bate item a item com o "(N itens)" do título; fecha
+pelo "✕" e por clique fora do card; linha sem aninhados não abre nada
+e mantém `cursor: default`; nenhum badge tem atributo `title`; hover
+troca texto↔fração nos 35 badges da tabela, cor sempre coerente com a
+fração (verde = X=Y, cinza = 0/Y, âmbar = 0<X<Y); 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Farol Financeiro substitui Valor/Consumido/Saldo/Desvio, entram as datas de compra (2026-08-24, mesmo dia)
+
+"O valor, total consumido e saldo orçamentário poderão ser parte de um
+farol, a coluna chamará Farol Financeiro, funcionando similarmente ao
+desvio (que poderá ser suprimida). Vamos exibir a data da necessidade
+de compra, prazo de entrega, e material em obra, que será a Data da
+necessidade somada ao prazo de entrega."
+
+Duas perguntas feitas antes de codar (ADR-005 — não inventar regra de
+negócio):
+- **Regra de cor do farol** — confirmado reaproveitar a mesma
+  classificação que já existia na coluna Desvio
+  (`desvio_saldo_orcamentario`: positivo=verde, negativo=vermelho), em
+  vez de um limiar novo por % consumido.
+- **Data em linha consolidada** (vários itens fundidos pelo catálogo
+  de materiais) — confirmado deixar em branco no resumo; cada item tem
+  seu próprio prazo de compra, não existe 1 data representativa sem
+  fabricar uma regra de agregação. As datas reais aparecem no pop-up
+  de itens aninhados.
+
+Mudanças:
+- Colunas "Valor", "Total Consumido", "Saldo Orçamentário" e "Desvio"
+  saíram; entraram "Farol Financeiro", "Data da Necessidade de
+  Compra", "Prazo de Entrega" e "Material em Obra" — 6 colunas no
+  total, mesma contagem de antes.
+- `FarolFinanceiroRmi`: ponto colorido (mesmo padrão visual dos outros
+  faróis do produto — Medido×Previsto e Medido×Físico em Medições),
+  não pílula de texto; `title` mostra Valor/Consumido/Saldo em R$.
+  Linhas de Área/Disciplina continuam mostrando o rollup em R$ na
+  mesma coluna (reaproveitada — só as linhas de material viram ponto).
+- `data_necessidade_compra` e `prazo_entrega` (dias) vêm prontos da
+  origem; "Material em Obra" é a soma dos dois
+  (`calcularMaterialEmObra`). Linha consolidada mostra "—" nas 3
+  colunas de data; o pop-up de itens aninhados ganhou uma linha
+  "Necessidade: ... · Prazo: ... · Em obra: ..." por item.
+- **Bug pego pelo teste, corrigido no mesmo commit**: em linha
+  consolidada, `desvio_saldo_orcamentario` sobrava do 1º item fundido
+  (nunca recalculado) — o farol podia sair verde com o saldo agregado
+  (mostrado no próprio `title`) negativo. Achado real: "Cabos" e
+  "Tubulação Inox" com saldo negativo e ponto verde. Corrigido
+  recalculando pelo sinal do saldo somado quando há fusão de itens
+  (mesma regra da origem, só aplicada à soma).
+
+Testado via Playwright (CP029) em 2 rodadas: 6 colunas corretas;
+"Material em Obra" bate matematicamente com necessidade+prazo; farol
+renderiza como ponto (não texto), `title` com os 3 valores; pop-up
+mostra data por item. 2ª rodada, focada na correção do bug de cor:
+varredura de TODAS as 35 linhas de material (31 consolidadas + 4
+únicas) — sinal do saldo agregado bate 100% com a cor do farol,
+incluindo o caso mais apertado ("Tubulação Inox", saldo -R$ 989,09); 0
+erros de console nas 2 rodadas. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
