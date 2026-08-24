@@ -4887,6 +4887,17 @@ function ModuloSuprimentos({ obraId, obraNome }){
   const [todosItens, setTodosItens] = useState(null); // null = carregando; senão array com raw de TODOS os níveis
   const [erro, setErro] = useState(false);
   const obraValidada = obraId === OBRA_SUPRIMENTOS_VALIDADA;
+  // Fecha/abre linha de Área ou Disciplina na árvore — pedido explícito
+  // (2026-08-24): "precisamos conseguir fechar os itens, visualização
+  // macro é relevante". Chave = nome da área (fecha a área inteira) ou
+  // `área::disciplina` (fecha só aquela disciplina). Nasce tudo aberto
+  // (mesmo comportamento de sempre); fechar é opt-in por clique.
+  const [fechados, setFechados] = useState(() => new Set());
+  const alternarFechado = (chave) => setFechados(prev => {
+    const next = new Set(prev);
+    if (next.has(chave)) next.delete(chave); else next.add(chave);
+    return next;
+  });
 
   useEffect(() => {
     if (!obraValidada) return;
@@ -5031,23 +5042,32 @@ function ModuloSuprimentos({ obraId, obraNome }){
                 </tr>
               </thead>
               <tbody>
-                {arvore.map(grupoArea => (
+                {arvore.map(grupoArea => {
+                  const areaFechada = fechados.has(grupoArea.area);
+                  return (
                   <React.Fragment key={grupoArea.area}>
-                    <tr style={{ background:'#eef2f8', borderBottom:'1px solid var(--line)' }}>
+                    <tr className="hoverable" onClick={() => alternarFechado(grupoArea.area)} style={{ background:'#eef2f8', borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
                       <td className="mono" style={{ padding:'8px 14px', fontSize:11.5, fontWeight:700, color:T.ink, textTransform:'uppercase', letterSpacing:'0.03em' }}>
+                        <span style={{ display:'inline-block', width:14, color:T.blue }}>{areaFechada ? '▸' : '▾'}</span>
                         {grupoArea.area}
                       </td>
                       <td className="mono" style={{ padding:'8px 14px', textAlign:'right', fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoArea.valor)}</td>
                       <td colSpan={4}></td>
                     </tr>
-                    {grupoArea.disciplinas.map(grupoDisc => (
-                      <React.Fragment key={`${grupoArea.area}::${grupoDisc.disciplina}`}>
-                        <tr style={{ background:'#f7f8fa', borderBottom:'1px solid var(--line)' }}>
-                          <td className="mono" style={{ padding:'7px 14px 7px 30px', fontSize:11, fontWeight:600, color:T.body }}>{grupoDisc.disciplina}</td>
+                    {!areaFechada && grupoArea.disciplinas.map(grupoDisc => {
+                      const chaveDisc = `${grupoArea.area}::${grupoDisc.disciplina}`;
+                      const discFechada = fechados.has(chaveDisc);
+                      return (
+                      <React.Fragment key={chaveDisc}>
+                        <tr className="hoverable" onClick={() => alternarFechado(chaveDisc)} style={{ background:'#f7f8fa', borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
+                          <td className="mono" style={{ padding:'7px 14px 7px 30px', fontSize:11, fontWeight:600, color:T.body }}>
+                            <span style={{ display:'inline-block', width:14, color:T.blue }}>{discFechada ? '▸' : '▾'}</span>
+                            {grupoDisc.disciplina}
+                          </td>
                           <td className="mono" style={{ padding:'7px 14px', textAlign:'right', fontSize:11.5, fontWeight:600, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtReais(grupoDisc.valor)}</td>
                           <td colSpan={4}></td>
                         </tr>
-                        {grupoDisc.materiais.map(it => {
+                        {!discFechada && grupoDisc.materiais.map(it => {
                           const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
                           const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
                           return (
@@ -5069,9 +5089,11 @@ function ModuloSuprimentos({ obraId, obraNome }){
                           );
                         })}
                       </React.Fragment>
-                    ))}
+                      );
+                    })}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
               {restante.length > 0 && (
                 <tfoot style={{ position:'sticky', bottom:0, zIndex:2, background:'#fafbfc' }}>
