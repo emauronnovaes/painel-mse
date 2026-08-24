@@ -3921,6 +3921,71 @@ aberta) derruba pra 100 linhas sem afetar as outras disciplinas da
 mesma área; reabrir volta a 106. 0 erros de console. Deploy: `firebase
 deploy --only hosting --project planejamento-mse`.
 
+### Catálogo de itens padrão pra simplificar descrições (2026-08-24, mesmo dia)
+
+"Pensei no seguinte, criar um banco de itens padrão, a descrição deverá
+ter match com um daqueles itens, algo como: Chiller, válvulas e
+acessórios, elevadores, isolamento térmico, tubulação Aço Carbono,
+tubulação Inox, Cabos, Painéis. Consegue verificar os dados e gerar uma
+lista deste tipo? Que cubra a maior parte dos itens? Se ficar com
+dúvida em algum, questione."
+
+`CATALOGO_MATERIAIS_RMI` — ~30 categorias levantadas analisando os
+1.133 materiais reais do CP029 (script Node descartável contra o
+PostgREST, fora do repo). Cobre **97,6% do VALOR** (60% da contagem —
+o resto é cauda longa de itens únicos de baixo valor, que caem no
+fallback por separador da entrega anterior). Além dos 8 exemplos
+dados, entraram: Fancoils e Fancoletes, Molas, Ventiladores e
+Exaustores, Difusores e Grelhas, Bombas, Instrumentação, Detecção e
+Alarme, Combate a Incêndio, Ventilação e Dutos, Automação e Controle,
+Rede/Cabeamento Estruturado, CFTV, Iluminação, Eletrodutos e
+Infraestrutura Elétrica, Estrutura e Suportação Metálica, Concreto e
+Impermeabilização, Pisos, Rodapés e Acabamentos, Divisórias, Esquadrias,
+Portas, Pintura, Forros e Drywall, Louças e Metais, Marcenaria e
+Mobiliário, Revestimentos.
+
+**2 perguntas resolvidas antes de implementar** (ADR-005 — não
+fabricar classificação sem confirmar), via AskUserQuestion:
+1. O maior bloco não classificado era um código repetido tipo
+   "RMTAC-F2 1.0Y1 (dutos)"/"RMG 1.606F4-26 (chillers e ventiladores)"
+   — não reconhecível como tipo de material. Usuário confirmou: são
+   **molas antivibratórias** (código de sala/sistema entre parênteses).
+2. Escopo: manter categorias de acabamento civil (Pisos, Elevadores,
+   Divisórias, Pintura, Louças) junto das de MEP, não só os 8 exemplos
+   dados — confirmado que sim.
+
+`familiaMaterialRmi` passou a tentar o catálogo PRIMEIRO
+(`classificarMaterialRmi`); sem match, cai no corte por separador (" -
+"/vírgula segura) da entrega anterior. Isso faz a consolidação já
+existente juntar qualquer variante do mesmo TIPO de item dentro do
+mesmo par área+disciplina — não só duplicatas exatas ou da mesma
+"família" de nome — ex. "Válvula Borboleta 10"", "Válvula Balanceadora
+2"" e "Filtro Y 1"" viram 1 linha "Válvulas e acessórios" só.
+
+**Ordem das categorias importa** (primeira que bate, ganha) — 2 casos
+de colisão pegos ANTES e DEPOIS de subir:
+- Pego na revisão manual (antes de subir): "Louças e Metais" e
+  "Eletrodutos e Infraestrutura Elétrica" ficam ANTES de "Válvulas e
+  acessórios" — palavras curtas genéricas (VALVULA/FLANGE/CURVA 90)
+  colidiam com "Válvula para Mictório/Lavatório" (registro de louça,
+  não válvula de processo) e "Flange ligação perf fze"/"Curva 90°
+  leito horizontal" (acessório de bandeja elétrica, não de tubulação).
+- Pego no teste Playwright (depois de subir, corrigido no mesmo commit):
+  "Molas" fica ANTES de "Chiller" — "RMG 1.606F4-26 (chillers e
+  ventiladores)" é mola, mas o texto entre parênteses contém
+  literalmente "chillers", inflando o Chiller em ~R$68 mil (de R$
+  6.480.000,00 pra R$ 6.548.277,60, com indicador errado "(2 itens)").
+
+Testado: cobertura e falsos positivos revisados em Node contra dado
+real antes de subir (mesmo padrão de processo das entregas anteriores
+do dia). Playwright confirmou na tela: Curva A caiu de ~88 pra 35
+linhas; "Chiller" exato R$ 6.480.000,00 sem contaminação (confirmado
+inclusive chamando `classificarMaterialRmi` ao vivo no console do
+navegador); "Válvulas e acessórios" e "Cabos" consolidando dezenas de
+itens cada; nenhuma descrição longa/técnica sobrando na Curva A; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
