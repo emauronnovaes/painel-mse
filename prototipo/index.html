@@ -228,6 +228,13 @@
     border-top: 3px solid var(--mut2); border-radius: 3px;
   }
   .tile-handle:active { cursor: grabbing; }
+  /* Badge de Status (Suprimentos) — passar o mouse troca o texto pra
+     fração "X/Y itens finalizados" DENTRO do próprio badge, em vez de
+     tooltip nativo (pedido explícito: "uma mudança no cartão do
+     status, não uma informação acima"). */
+  .status-badge-rmi-fracao { display: none; }
+  .status-badge-rmi:hover .status-badge-rmi-texto { display: none; }
+  .status-badge-rmi:hover .status-badge-rmi-fracao { display: inline; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
@@ -4873,14 +4880,22 @@ function consolidarMateriaisSemelhantes(materiais){
     const familia = familiaMaterialRmi(m.descricao);
     const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(familia)}`;
     const existente = porChave.get(chave);
-    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1, _qtdFinalizados: m.finalizado ? 1 : 0 }); return; }
+    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1, _qtdFinalizados: m.finalizado ? 1 : 0, _itens: [m] }); return; }
     existente.valor += m.valor;
     existente.totalConsumido = (existente.totalConsumido || 0) + (m.totalConsumido || 0);
     if (m.saldo_orcamentario != null) existente.saldo_orcamentario = (existente.saldo_orcamentario || 0) + m.saldo_orcamentario;
     existente._qtd += 1;
     if (m.finalizado) existente._qtdFinalizados += 1;
+    existente._itens.push(m);
   });
-  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, ...m }) => ({ ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados }));
+  // `_itens` guarda os itens ORIGINAIS (pré-consolidação, descrição
+  // completa) por trás de cada linha — pedido explícito (2026-08-24):
+  // "pop-up que permita verificar quais são os itens que estão
+  // aninhados, ao clicar na linha de resumo dele".
+  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, _itens, ...m }) => ({
+    ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados,
+    itensOriginais: _itens.sort((a, b) => b.valor - a.valor),
+  }));
 }
 // Monta a árvore Área → Disciplina → Material a partir da lista plana
 // (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
@@ -4964,16 +4979,20 @@ const OBRA_SUPRIMENTOS_VALIDADA = 106;
 // (booleano por item de RMI), contado por linha (uma linha pode ser
 // consolidação de várias peças da mesma categoria — catálogo de itens
 // padrão): nenhuma finalizada = Pendente; todas finalizadas =
-// Finalizado; só parte = Em andamento. A contagem "X/Y" que antes ia
-// no texto do badge virou tooltip (`title`, "ao passar o mouse pelo
-// status poderemos ver a contagem de itens 1/20 por exemplo").
+// Finalizado; só parte = Em andamento. A contagem "X/Y" aparece ao
+// passar o mouse — mas como TROCA DE TEXTO dentro do próprio badge
+// (classe `.status-badge-rmi`, CSS logo abaixo do `<head>`), não como
+// tooltip nativo (`title`): pedido explícito, "havia pensado na
+// exibição ao passar o mouse como uma mudança no cartão do status, não
+// uma informação acima".
 function StatusBadgeRmi({ qtdFinalizados, qtdTotal }){
   const status = qtdTotal > 0 && qtdFinalizados === qtdTotal ? 'Finalizado' : qtdFinalizados === 0 ? 'Pendente' : 'Em andamento';
   const cor = status === 'Finalizado' ? T.green : status === 'Pendente' ? T.mut : T.amber;
   const bg = status === 'Finalizado' ? 'rgba(31,157,87,0.13)' : status === 'Pendente' ? '#eef0f3' : 'rgba(217,145,26,0.13)';
   return (
-    <span className="mono" title={`${qtdFinalizados}/${qtdTotal} itens finalizados`} style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor }}>
-      {status}
+    <span className="mono status-badge-rmi" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:bg, color:cor }}>
+      <span className="status-badge-rmi-texto">{status}</span>
+      <span className="status-badge-rmi-fracao">{qtdFinalizados}/{qtdTotal}</span>
     </span>
   );
 }
@@ -4993,6 +5012,13 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (next.has(chave)) next.delete(chave); else next.add(chave);
     return next;
   });
+  // Pop-up com os itens ORIGINAIS por trás de uma linha consolidada —
+  // pedido explícito (2026-08-24): "pop-up que permita verificar quais
+  // são os itens que estão aninhados, ao clicar na linha de resumo
+  // dele". Guarda o material inteiro (já traz `itensOriginais` de
+  // `consolidarMateriaisSemelhantes`); só abre pra linha com mais de 1
+  // item (linha de item único não tem nada "aninhado" pra mostrar).
+  const [materialAberto, setMaterialAberto] = useState(null);
 
   useEffect(() => {
     if (!obraValidada) return;
@@ -5142,11 +5168,13 @@ function ModuloSuprimentos({ obraId, obraNome }){
                         {!discFechada && grupoDisc.materiais.map(it => {
                           const corDesv = it.desvio_saldo_orcamentario === 'negativo' ? T.red : it.desvio_saldo_orcamentario === 'positivo' ? T.green : T.mut;
                           const bgDesv = it.desvio_saldo_orcamentario === 'negativo' ? 'rgba(210,59,59,0.13)' : it.desvio_saldo_orcamentario === 'positivo' ? 'rgba(31,157,87,0.13)' : '#eef0f3';
+                          const temAninhados = it.qtdConsolidada > 1;
                           return (
-                            <tr key={it.id} className="hoverable" style={{ borderBottom:'1px solid var(--line)' }}>
+                            <tr key={it.id} className="hoverable" onClick={temAninhados ? () => setMaterialAberto(it) : undefined}
+                              style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
                               <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, maxWidth:320, whiteSpace:'normal', lineHeight:1.35 }}>
                                 {it.descricao || '—'}
-                                {it.qtdConsolidada > 1 && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.mut }}>({it.qtdConsolidada} itens)</span>}
+                                {temAninhados && <span className="mono" style={{ marginLeft:6, fontSize:10, fontWeight:600, color:T.blue }}>({it.qtdConsolidada} itens ›)</span>}
                               </td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, fontWeight:600, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.totalConsumido ? fmtReais(it.totalConsumido) : '—'}</td>
@@ -5182,6 +5210,31 @@ function ModuloSuprimentos({ obraId, obraNome }){
           </div>
         </div>
       </div>
+
+      {materialAberto && (
+        <div onClick={() => setMaterialAberto(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:640, maxHeight:'78vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>{materialAberto.area} — {materialAberto.disciplina}</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{materialAberto.descricao} <span className="mono" style={{ fontSize:11, fontWeight:600, color:T.mut }}>({materialAberto.qtdConsolidada} itens)</span></div>
+              </div>
+              <button onClick={() => setMaterialAberto(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+              {(materialAberto.itensOriginais || []).map((it, i) => (
+                <div key={it.id || i} style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, padding:'10px 0', borderBottom:'1px solid #eef0f3' }}>
+                  <div style={{ flex:1, minWidth:0, fontSize:12.5, color:T.ink, fontWeight:600, lineHeight:1.35 }}>{it.descricao || '—'}</div>
+                  <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0 }}>
+                    <span className="mono" style={{ fontSize:12, fontWeight:700, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(it.valor)}</span>
+                    <span className="mono" style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', padding:'2px 7px', borderRadius:6, background: it.finalizado ? 'rgba(31,157,87,0.13)' : '#eef0f3', color: it.finalizado ? T.green : T.mut }}>{it.finalizado ? 'Finalizado' : 'Pendente'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
