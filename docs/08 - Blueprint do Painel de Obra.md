@@ -3986,6 +3986,45 @@ itens cada; nenhuma descrição longa/técnica sobrando na Curva A; 0
 erros de console. Deploy: `firebase deploy --only hosting --project
 planejamento-mse`.
 
+### Volta atrás na supressão da Curva A (2026-08-24, mesmo dia)
+
+"Volte ao anterior, estava mais alinhado" — logo depois da tentativa de
+suprimir a Curva A (mapa geral, 499 materiais), sem elaborar o motivo.
+Revertido via `git revert` dos 2 commits daquela tentativa (código +
+docs), voltando exatamente ao estado anterior (catálogo de itens
+padrão + corte de Curva A). Não testado de novo via Playwright — é
+revert byte-a-byte pra um estado já validado antes.
+
+### Remove balões do topo, adiciona Total Consumido e Finalizado (2026-08-24, mesmo dia)
+
+"Vamos retirar os balões superiores, trazer o total consumido também,
+o finalizado é algo interessante de se trazer."
+
+- Fileira de KPI do topo removida por completo — a tela vai direto do
+  cabeçalho de setores pro card da tabela. O cálculo de canteiro/sem
+  área que os balões mostravam continua rodando (ainda exclui do mapa),
+  só parou de aparecer.
+- **Total Consumido** (`raw.total_consumido`) nova coluna, entre Valor
+  e % Individual.
+- **Finalizado** (`raw.finalizado`) nova coluna, no fim — confirmado no
+  dado real que o campo varia (478 true / 522 false no CP029, não é
+  sempre a mesma coisa). Item único mostra badge Sim/Não; linha
+  consolidada (várias peças da mesma categoria) mostra "X/Y" (quantos
+  dos itens somados já estão finalizados) — reduzir a um booleano só
+  não fazia sentido quando a linha representa várias peças físicas
+  diferentes; a cor do badge acompanha (verde = todos, âmbar = parcial,
+  cinza = nenhum).
+
+Testado via Playwright (CP029): sem nenhum balão no topo; 8 colunas no
+cabeçalho (Área/Disciplina/Material, Valor, Total Consumido, %
+Individual, % Acumulado, Saldo Orçamentário, Desvio, Finalizado);
+Chiller com Total Consumido R$ 14.256.000,00 (maior que o valor
+orçado, daí o desvio NEGATIVO já existente) e Finalizado "Sim"; linhas
+consolidadas cobrindo os 3 estados de cor do badge (9/9 verde, 0/7
+cinza, 3/10 âmbar); linhas de área/disciplina sem conteúdo quebrado
+nas colunas novas; 0 erros de console. Deploy: `firebase deploy
+--only hosting --project planejamento-mse`.
+
 ## Próximos passos possíveis
 
 - Repetir o exercício para os "Outras telas herdadas" (Ranking, Mapas/3D,
