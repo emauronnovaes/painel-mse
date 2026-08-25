@@ -6746,33 +6746,24 @@ function ModuloMedicoes({ obraId, obraNome }){
           <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
-                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Composição</div>
-                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Valor Medido — {obraNome}</div>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Performance</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Indicador de Performance Financeira — {obraNome}</div>
               </div>
               <button onClick={() => setMedidoAberto(false)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Soma dos Boletins Faturados ({historico.length} {historico.length === 1 ? 'BM' : 'BMs'})</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(valorMedido)}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0', fontSize:14, color:T.ink, fontWeight:700 }}>
+                <span>Diferença de Avanço</span>
+                <span className="mono" style={{ color: (valorMedido - valorContrato) < 0 ? T.green : T.red }}>{fmtReais(valorMedido - valorContrato)}</span>
               </div>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Valor Faturado (líquido)</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</span>
-              </div>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', fontSize:14, color:T.ink, fontWeight:700 }}>
-                <span>Valor Medido</span>
-                <span className="mono">{fmtReais(valorMedido)}</span>
-              </div>
-              {saldoAFaturar != null && (
-                <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', marginTop:8, borderTop:'1px dashed #e4e7ec', fontSize:13, color:T.mut }}>
-                  <span>Saldo a Faturar</span>
-                  <span className="mono" style={{ fontWeight:600, color: saldoAFaturar < 0 ? T.red : T.body }}>{fmtReais(saldoAFaturar)}</span>
+              {(valorMedido - valorContrato) < 0 && (
+                <div style={{ marginTop:12, padding:'8px 10px', borderRadius:8, background:'rgba(31,157,87,0.08)', border:'1px solid rgba(31,157,87,0.25)', fontSize:12, color:T.green, lineHeight:1.4 }}>
+                  ✓ Dentro do previsto — saldo ainda disponível.
                 </div>
               )}
-              {saldoAFaturar < 0 && (
-                <div style={{ marginTop:10, padding:'7px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:11, color:T.red, lineHeight:1.4 }}>
-                  ⚠ Valor medido já ultrapassa o contrato.
+              {(valorMedido - valorContrato) >= 0 && (
+                <div style={{ marginTop:12, padding:'8px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:12, color:T.red, lineHeight:1.4 }}>
+                  ⚠ Acima do previsto — contrato foi ultrapassado.
                 </div>
               )}
             </div>
