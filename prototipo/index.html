@@ -6872,29 +6872,10 @@ function ModuloMedicoes({ obraId, obraNome }){
               </div>
               
               <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-                
-                {/* BLOCO DE SALDOS */}
-                <div style={{ padding:'12px 0', borderBottom:'1px dashed #eef0f3' }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Saldos Acumulados</div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
-                    <span>Saldo Previsto</span>
-                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoPrev != null ? fmtReais(saldoPrev) : '—'}</span>
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
-                    <span>Saldo Realizado (Medido)</span>
-                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoReal != null ? fmtReais(saldoReal) : '—'}</span>
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
-                    <span>Diferença de Saldo</span>
-                    <span className="mono" style={{ color:corSaldo }}>
-                      {diffSaldo != null ? (diffSaldo > 0 ? '+' : '') + fmtReais(diffSaldo) : '—'}
-                    </span>
-                  </div>
-                </div>
 
-                {/* BLOCO DE AVANÇOS */}
-                <div style={{ padding:'16px 0 6px' }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Avanços Acumulados</div>
+                {/* BLOCO DE AVANÇOS - INDICADOR DE PERFORMANCE FINANCEIRA */}
+                <div style={{ padding:'12px 0' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Indicador de Performance Financeira</div>
                   <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
                     <span>Avanço Previsto</span>
                     <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoPrev != null ? fmtReais(avancoPrev) : '—'}</span>
