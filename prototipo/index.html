@@ -4407,6 +4407,9 @@ function ModuloOcCo({ obraId, obraNome }){
     if (!dado) return null;
     const alvo = normalizarNomeParaMatch(busca);
     return dado.filter(oc => {
+      // Suprimir OCs com status "Cancelada" ou "Cancelado"
+      const statusNormalizado = (oc.status_oc || '').toLowerCase().trim();
+      if (statusNormalizado === 'cancelada' || statusNormalizado === 'cancelado') return false;
       if (filtroStatus && (oc.status_oc || '—') !== filtroStatus) return false;
       if (!alvo) return true;
       return [oc.descricao, oc.numero_oc_formatado, oc.responsavel_mse, oc.status_oc, oc.observacao]
