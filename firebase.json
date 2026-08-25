@@ -1,0 +1,12 @@
+{
+  "hosting": {
+    "site": "painel-mse-prototipo",
+    "public": "prototipo",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "combinado/**"
+    ]
+  }
+}
