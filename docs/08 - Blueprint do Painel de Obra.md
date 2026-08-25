@@ -11,10 +11,10 @@ técnica (ADR-006, ainda pendente em [[06 - Decisões de Arquitetura]]).
 > 2026-08-10) abrem com **dado real** direto do Supabase (mesmas duas chaves
 > anon do dashboard atual) — Desvios lê `EAP` direto, agrupado por Local ×
 > Disciplina; Restrições lê `restricoes_obra`; Medições lê `nfs` +
-> `proximos_faturamentos` (ver seções próprias abaixo);
-> Suprimentos e OC/CO seguem placeholder por não terem fonte (Suprimentos
-> tem tabela, falta fechar a regra de "crítico"). Quando a
-> base técnica for decidida, este arquivo é descartável — mas a lógica de
+> `proximos_faturamentos`; OC/CO (desde 2026-08-11) lê
+> `orcamentos_complementares_obra`; Suprimentos (desde 2026-08-21) lê
+> `itens_rmi` e mostra os itens críticos por Curva A (ver seções próprias
+> abaixo). Quando a base técnica for decidida, este arquivo é descartável — mas a lógica de
 > leitura (mapas de nome/id, detecção de dado congelado) vale a pena carregar
 > para a versão real.
 
@@ -476,11 +476,9 @@ produtividade de um dia em que a pessoa não trabalhou não faz sentido. A
 validar com dado real (Miguel Manabu Yamashita, obra CNPEM, aparecia Ausente
 mas com produtividade/colaboradores de outro dia preenchidos).
 
-**Deixado de fora de propósito no rascunho original** (dá pra portar depois
-se pedirem): exportar PNG do ranking (portado em 2026-08-11) e o toggle de
-Assiduidade (a própria seção original já rotula essa métrica como "só
-informativa, não entra no score" — portado em 2026-08-14, ver seção mais
-abaixo).
+**Deixado de fora de propósito** (dá pra portar depois se pedirem): exportar
+PNG do ranking, e o toggle de Assiduidade (a própria seção original já
+rotula essa métrica como "só informativa, não entra no score").
 
 ### Popup "Cards Ativos" (2026-08-06) — porta `CardsModal` do dashboard atual
 
@@ -2706,13 +2704,1475 @@ do seletor de obra).
   mesma linha. **Lição, mesmo padrão do 78º passo (múltiplas curvas)**:
   toda vez que um elemento novo entra numa linha flex que já tinha uma
   regra `width:100%` fixa pensada pro caso de "item único", checar o
-  responsivo — o problema nunca aparece no teste desktop, só span testando
+  responsivo — o problema nunca aparece no teste desktop, só testando
   a tela pequena de verdade.
 
 Testado com Playwright local em desktop (1600×900, 3 obras incluindo a
 de nome mais longo) e mobile (375×800, mesmas 3 obras, checagem de
 overflow via DOM antes/depois do fix) — sem overflow, sem sobreposição,
 sem erro de console, clique dispara a navegação corretamente. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Consolidação: repositório git vira fonte única (2026-08-14, mesmo dia)
+
+"é possível fazer o deploy pela versão do repositório?" — até aqui, o
+código vivia em DOIS lugares: `Documents\painel-mse` (sem git, onde
+tudo era editado e de onde saía o `firebase deploy`) e
+`Documents\Github\painel-mse` (com git, sincronizado na mão a cada
+tanto). Confirmado que `firebase.json`/`.firebaserc` batem exatamente
+entre os dois e que o CLI do firebase já está instalado globalmente
+(`C:\node\`) — deploy funciona igual a partir do repo git. Usuário
+escolheu consolidar: **este repositório git vira a fonte única** a
+partir de agora (editar, commitar/pushar pra `develop` e dar deploy tudo
+daqui) — resolve o anti-padrão de "duas cópias sincronizadas na mão" que
+o ADR-002 já registrava como erro do dashboard antigo.
+
+**Achado que muda uma premissa do ADR-006**: `node`/`npm` já estão
+instalados globalmente nesta máquina — a restrição "máquina sem Node"
+que embasava parte do custo da opção Vite+React+TypeScript não existe
+mais (ver [[06 - Decisões de Arquitetura]], nota de correção no ADR-006).
+
+Verificado com `git diff --no-index` que as pastas `prototipo/` dos dois
+diretórios eram byte-idênticas antes da consolidação (as 2 mudanças
+recentes — Assiduidade e Portal MSE — tinham sido portadas manualmente,
+trecho a trecho, antes deste passo). Deploy de confirmação rodado direto
+do repo git: 9 arquivos, resultado idêntico ao de sempre.
+
+### Arrastar rótulo no modo zoom não deve mais mover a câmera (2026-08-14, mesmo dia)
+
+"quando estiver no modo zoom, ao selecionar o rótulo para arrasto não
+deve mexer a tela, somente o rótulo, a não ser que chegue na borda" —
+bug real em `LineSVG`/`CurvaChart`: o `mousedown` no `<text>` do rótulo
+"vazava" (bubbling) pro `onMouseDown` do container que trata o pan da
+câmera (`CurvaChart.handleMouseDown`) — os dois aconteciam juntos sempre
+que o gráfico estava ampliado (`zoom.scale > 1`).
+
+- `LineSVG.handleDragStart` ganhou `e.stopPropagation()` — sozinho já
+  resolvia o pedido central (arrastar rótulo não move mais a tela).
+- **Parte 2 do pedido, o "a não ser que chegue na borda"**: implementado
+  auto-pan contínuo — perto de ~36px da borda visível do gráfico
+  (`containerRef`, passado de `CurvaChart` pra `LineSVG`), um loop de
+  `requestAnimationFrame` desloca sozinho o `ox`/`oy` do viewBox enquanto
+  o cursor permanecer ali (mesmo parado, sem `mousemove` novo), até
+  soltar o mouse ou sair da faixa de borda. O offset do rótulo é
+  compensado no mesmo passo (`somarOffset`) pra ele continuar "grudado"
+  no cursor durante o auto-pan, em vez de ficar pra trás conforme a
+  câmera anda sozinha.
+- **Bug relacionado, corrigido junto**: o cálculo do offset do rótulo
+  usava o delta do mouse em pixels de TELA direto como deslocamento em
+  espaço SVG — correto só quando `scale === 1`. Com zoom ampliado (ex.
+  2x), 100px de mouse deveriam virar 50 unidades de SVG (a viewBox
+  mapeia uma região menor pro mesmo tamanho de tela), mas sem a divisão
+  o rótulo "fugia" do cursor, andando mais rápido que ele. Corrigido
+  dividindo o delta por `zoomScale` (passado como prop, com um `ref`
+  interno pra não ficar preso no valor de quando o componente montou).
+  Reescrevi o cálculo do offset pra incremental (soma um delta em cima
+  do valor atual, via `somarOffset`) em vez de "recalcular do zero a
+  partir do ponto inicial" — necessário porque agora DUAS fontes
+  (mousemove normal e o loop de auto-pan) precisam concordar sobre o
+  valor "atual" do offset, não só uma.
+
+Testado com Playwright (zoom ampliado ~7x): arrastar rótulo no meio do
+gráfico não move o `viewBox` (câmera parada, só o texto se move);
+arrastar até a borda e segurar parado move o `viewBox` continuamente,
+parando exatamente no `mouseup`; distância cursor↔rótulo medida em 6
+amostras durante o auto-pan ficou constante (~0,82px, sem acumular
+atraso); sem erro de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse` (a partir do repo git, ver seção anterior).
+
+### Tela de Medições reescrita: histórico + previsão a partir de `contratos_medicao`/`boletins_medicao` (2026-08-19)
+
+"Vamos gerar a nova tela de medições a partir destes novos dados. A ideia
+central é ter duas tabelas, uma com o histórico dos faturamentos... outra
+com a previsão dos próximos faturamentos" — depois de toda a importação
+da planilha "Saldo a Faturar" (ver seções anteriores desta mesma data),
+o setor Medições (`ModuloMedicoes`) foi reescrito por completo pra parar
+de usar `nfs` + `proximos_faturamentos` + o `CONTRATOS_CP` hardcoded no
+próprio `index.html`. Confirmado com o usuário antes de mexer: **troca a
+tela inteira**, não só a tabela de baixo (KPIs também passam a vir do
+banco real).
+
+- **Histórico de Faturamentos** = todo `boletins_medicao` com
+  `status_faturamento = 'Faturado'`. Tabela com ~14 colunas (Valor
+  Medido, Valor Faturado, Data Faturamento, Desconto FD, Retenção, ISS,
+  Desc. Adiantamento, Recebimento Previsto/Real, Vencimento, Data
+  Recebimento, Status Recebimento), ordenável por coluna, rodapé com
+  totais — muito mais detalhe que a antiga tabela de NFs (que só tinha
+  BM/NF/Empresa/Valor/Emissão).
+- **Previsão de Próximos Faturamentos** = tudo que NÃO está faturado
+  ainda (a lista inteira, não só 1 registro como o `proximos_faturamentos`
+  antigo) — BM, Período, Valor Previsto, Status, Observação (pega o "BM
+  vigente" da planilha).
+- **KPIs recalculados na fonte nova**: Valor Contrato =
+  `contratos_medicao.valor_total` (contrato base + OCs, mesmo conceito do
+  `CONTRATOS_CP.original + extras` antigo); Valor Medido = soma de
+  `valor_medido` de todo o Histórico (substitui `FD fixo + soma(nfs)`).
+  Farol Medido×Físico mantém a mesma lógica (corte da Curva S mais
+  próximo da data do último faturamento), só trocando a fonte da data.
+  "Próximo Faturamento" (2 balões) agora deriva da 1ª linha da Previsão
+  com valor lançado — se nenhuma tiver valor ainda (caso comum, o "BM
+  vigente" normalmente ainda não tem previsto), mostra "sem previsão" em
+  vez de inventar (ADR-005).
+- `CONTRATOS_CP` removido do código (não tem mais nenhum uso).
+- Popups de "Valor Contrato"/"Valor Medido" adaptados — perderam a lista
+  "extras" item a item (esse conceito não existe mais, `valor_ocs` é um
+  número só agora, sem itemização) mas ganharam ISS%/prazo de vencimento
+  no popup do Contrato, que a fonte antiga não tinha.
+
+Testado com Playwright (obra 91, CP236 — a que tem mais dado, 35
+boletins no Histórico + 1 na Previsão, bate exato com os 36 totais já
+validados na sincronização): tela carrega com dado real, as 2 tabelas
+aparecem corretas, ordenação por coluna funciona, os 3 popups
+(Contrato/Medido/Farol) abrem sem erro, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — topo suprimido, Tour 360° do CNPEM corrigido, colunas enxugadas (2026-08-19)
+
+Três ajustes rápidos em cima da reescrita acima, mesmo dia:
+
+- **KPIs + gráfico suprimidos por ora** — pedido explícito ("suprimir o
+  gráfico e os botões superiores, vamos manter apenas as tabelas, por
+  hora"). Gate `MOSTRAR_TOPO_MEDICOES` (const, hoje `false`), mesmo
+  padrão do `MOSTRAR_PIZZA_MEDICOES` de 11/08: nada foi apagado,
+  reativar é só trocar a constante pra `true`.
+- **Link do Tour 360° do CNPEM - Faseado corrigido** — URL antiga
+  (`.../#/tour/10971/...`) trocada por
+  `https://visi.constructin.com.br/#/v?t=...&p=10971` (mesmo id de
+  projeto `10971`, formato de link novo do Constructin).
+- **Colunas do Histórico e da Previsão enxugadas** — a 1ª versão do
+  Histórico saiu com ~14 colunas (seção anterior), longa demais pro uso
+  real. A pedido explícito, ficou em 6: **BM | Período | Valor Previsto
+  | Valor Medido | Desconto FD | Valor Faturado**. O resto
+  (retenção/ISS/desc. adiantamento/recebimento previsto-real/vencimento/
+  data e status de recebimento) continua gravado em `boletins_medicao`,
+  só saiu da tela por ora — nenhuma coluna foi removida do banco.
+  Previsão ganhou `COLUNAS_PREVISAO` (antes era tabela hand-coded, sem
+  array): **Data de Faturamento | Status Fat. | Data do Recebimento |
+  Status Rec. | Saldo Previsto Acum. | Saldo Realizado Acum.** — sem
+  BM/Período de propósito (o foco vira status de pagamento/recebimento
+  e saldo acumulado corrente, não a identidade do boletim; normalmente
+  só existe 1 linha pendente mesmo). O **filtro de linha da Previsão não
+  mudou** (confirmado com o usuário antes de mexer): continua todo
+  boletim sem `status_faturamento = 'Faturado'`, só as colunas exibidas
+  são outras. Ordenação padrão do Histórico trocou de
+  `data_faturamento` (coluna que saiu da tela) pra `periodo_fim`.
+
+Testado com Playwright (obra 91/CP236, 35 boletins): as 2 tabelas
+mostram exatamente as colunas esperadas, na ordem certa, ordenação por
+coluna funciona, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — ordenação padrão por BM + polish visual (2026-08-19)
+
+Usuário aprovou a ordenação por BM ("vai sempre vir ordenado pela
+coluna do BM") e pediu polish geral. Perguntei antes de mexer (via
+AskUserQuestion) se BM devia virar ordenação FIXA (sem clique) ou só o
+padrão inicial mantendo clique nas colunas — usuário escolheu manter
+clicável, só trocando o padrão.
+
+- **Ordenação padrão do Histórico**: trocada de `periodo_fim` desc pra
+  `bm_label` asc. `DIRECAO_INICIAL_HIST` novo — cada coluna nasce com a
+  direção mais útil ao primeiro clique (BM/Período crescente, colunas
+  de valor decrescente, maior primeiro), corrigindo um bug latente onde
+  os dois ramos do `alternarOrdenacaoHist` caíam sempre em `'desc'`.
+- **Polish visual nas 2 tabelas**: zebra stripe (linhas pares
+  `#f7f8fa`), hover azul sutil (`rgba(37,99,235,0.06)`, classe CSS
+  `.tabela-medicoes`), cabeçalho/rodapé com fundo `#fafbfc` e borda
+  2px (era 1px), padding de célula maior (9-10px/14px, era 7-9px/12px),
+  colunas BM e Valor Faturado em negrito pra dar hierarquia ao extrato.
+
+Testado com Playwright (obra 91/CP236): BM ▲ ativo por padrão no
+carregamento, zebra/hover visíveis em screenshot, clique em "Valor
+Faturado" ordena decrescente (maior primeiro), 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+**Correção no mesmo dia**: usuário apontou "tem que vir ordenado do
+maior para o menor" — o padrão inicial (asc) estava invertido do que
+fazia sentido pra um extrato (mais recente primeiro). Trocado pra
+`bm_label` **desc** (e `periodo_fim` também nasce desc no 1º clique,
+mesmo critério das colunas de valor). Testado: carga inicial mostra BM
+33→1, header com ▼ ativo, 0 erros de console.
+
+### Medições — Previsão ganha Período e Valor Previsto de volta (2026-08-19)
+
+Pedido explícito, "por hora" (sinaliza que pode mudar de novo): a
+tabela de Previsão volta a mostrar **Período** e **Valor Previsto**,
+direto de `boletins_medicao` (mesma leitura do Histórico —
+`fmtPeriodo`/`valor_previsto`). BM continua fora. Ordem final das 8
+colunas: Período | Valor Previsto | Data de Faturamento | Status Fat. |
+Data do Recebimento | Status Rec. | Saldo Previsto Acum. | Saldo
+Realizado Acum.
+
+Testado com Playwright (obra 91/CP236): 8 colunas na ordem certa,
+Período/Valor Previsto com valores sensatos, Histórico inalterado, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Período/Valor Previsto alinhados entre as 2 tabelas (2026-08-19)
+
+Pedido explícito: "faça com que as colunas iguais fiquem alinhadas
+entre as duas tables". Período e Valor Previsto aparecem nas duas
+tabelas (Histórico e Previsão) — passaram a usar a MESMA largura fixa
+em px (`<colgroup>` + `tableLayout:'fixed'`), então caem exatamente na
+mesma posição horizontal quando as tabelas ficam empilhadas. Previsão
+ganhou uma coluna fantasma sem rótulo no lugar do BM (que só existe no
+Histórico), só pra reservar o mesmo espaço.
+
+**Bug pego no meio do caminho**: com `table-layout:fixed`, se a soma
+das larguras das colunas for menor que a largura real do container
+(`width:100%`), o navegador estica TODAS as colunas proporcionalmente
+pra preencher — isso quebrava o alinhamento porque o Histórico (menos
+colunas, soma menor) esticava e a Previsão (mais colunas, soma maior,
+já forçava scroll horizontal) não. Corrigido com uma coluna-filler sem
+`width` no fim do Histórico — absorve a sobra, as colunas com largura
+fixa não são mais esticadas. De quebra, "Data de Faturamento"/"Data do
+Recebimento" estavam sendo cortadas (130px insuficiente pro rótulo) —
+subiu pra 160px.
+
+Testado com Playwright (obra 91/CP236, viewport 1440×900): Período e
+Valor Previsto com `left`/`width` idênticos entre as 2 tabelas
+(`getBoundingClientRect`), sem clipping nos cabeçalhos de data, 0
+erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Histórico volta a ser auto, Previsão acompanha (2026-08-19)
+
+Correção do passo acima: forçar largura fixa em px deixou o Histórico
+espremido (valores grandes de moeda ficavam apertados). Pedido
+explícito: "a de cima deveria seguir como estava, a de baixo deveria,
+em caso de similaridade, acompanhar a de cima".
+
+- **Histórico** volta ao layout automático — sem `colgroup`/
+  `tableLayout:fixed`, largura por conteúdo, como era antes de toda
+  essa história de alinhamento.
+- **Previsão** mede ao vivo as colunas BM/Período/Valor Previsto já
+  renderizadas no Histórico (`refLarguraHist` + `ResizeObserver` no
+  wrapper do Histórico) e replica esses px nas suas próprias colunas
+  Período/Valor Previsto/spacer via `largurasHist` (estado). Reage a
+  resize de janela e a qualquer mudança de layout do Histórico — é
+  sempre a tabela de baixo que segue a de cima, nunca o contrário.
+
+Testado com Playwright (obra 91/CP236): "R$ 17.535.256,45" (Valor
+Faturado) sem quebra/corte, Período e Valor Previsto com `left`/`width`
+batendo a <1px entre as 2 tabelas, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — live tiles, resumo na Previsão, gráfico Previsto × Medido (2026-08-19)
+
+Pedido explícito, em 3 partes: "o previsto pode ter resumos também";
+"seria interessante que as tabelas fossem como live tiles... remover,
+incluir, mudar a posição"; "teremos um gráfico que plotará as duas
+curvas, do previsto e do medido". Escopo confirmado com o usuário:
+tabelas + gráfico entram no sistema de tiles, **sem KPIs** (o bloco de
+KPIs/pizza/gráfico antigo, `MOSTRAR_TOPO_MEDICOES`/
+`MOSTRAR_PIZZA_MEDICOES`, continua fora, intocado).
+
+- **`TileFrame`** (novo componente): bloco com cabeçalho (título +
+  contagem), arrastável via **HTML5 drag-and-drop nativo** (sem lib
+  externa — mesmo padrão "tudo à mão" do resto do arquivo) e um "✕" que
+  só OCULTA (nunca apaga) — reaparece por um botão "+ Nome do bloco"
+  que surge abaixo quando há algo oculto.
+- **3 tiles**: Histórico de Faturamentos, Previsão de Próximos
+  Faturamentos, e o novo **Previsto × Medido — Acumulado**. Ordem e
+  visibilidade persistem em `localStorage`
+  (`mse_medicoes_tile_ordem`/`mse_medicoes_tile_ocultos`) — chave
+  GLOBAL (preferência de interface, não dado por obra).
+- **Resumo na Previsão**: `<tfoot>` somando só Valor Previsto. As 2
+  colunas "Acum." (Saldo Previsto/Realizado) ficam de fora da soma de
+  propósito — são snapshot carregado da planilha (arrastam o último
+  valor real pra frente, ver [[modelo-dados-supabase]]), somar geraria
+  número sem sentido.
+- **`GraficoPrevistoMedido`** (novo): 2 curvas acumuladas por período —
+  **Previsto** (tracejado âmbar, soma `valor_previsto` de
+  histórico+previsão — a trajetória contratual completa, passado e
+  futuro já lançado) × **Medido** (linha cheia azul, só `valor_medido`
+  do histórico — o progresso real até agora, nunca ultrapassa o
+  presente). Mesmo padrão hand-rolled em SVG do `GraficoMedicoes`
+  existente (ResizeObserver, hover com tooltip mostrando os 2 valores).
+
+Testado com Playwright (obra 91/CP236): 0 erros de console; 3 tiles
+corretos (Histórico 35 linhas, Previsão com "Total", gráfico com
+legenda e tooltip Previsto/Medido); remover/restaurar bloco funciona;
+drag-reorder troca a ordem visual (testado arrastando Previsão sobre
+Histórico); reload da página preserva ordem/ocultos via `localStorage`.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — arrasto de tiles mais fluido, estilo widget (2026-08-19)
+
+Pedido explícito: "quero algo mais fluido, ao arrastar, como um
+widget". A 1ª versão dos live tiles usava HTML5 drag-and-drop nativo —
+só trocava a ordem no solto (`drop`), sem nenhum retorno visual durante
+o arrasto ("seco" demais pro efeito pedido).
+
+Reescrito com **Pointer Events + posicionamento absoluto**:
+- Container `position:relative` com altura explícita (soma das alturas
+  fixas por tipo de tile — `ALTURA_TILE = {historico:440, previsao:300,
+  grafico:340}` — mais `GAP_TILE=14` — dá pra calcular o "slot" de cada
+  bloco sem medir nada em tempo real).
+- Bloco arrastado: `transform:translateY` segue o cursor 1:1, **sem**
+  `transition` (senão fica com lag perceptível), ganha leve scale-up
+  (1.015) e sombra elevada — efeito de "peça levantada".
+- Outros blocos: `transition:transform 0.28s`, deslizam suavemente pro
+  novo slot assim que a prévia de ordem (`arrasto.ordemPreview`) muda —
+  recalculada a cada `pointermove` comparando o centro do bloco
+  arrastado com o meio de cada slot vizinho, ainda com o botão
+  pressionado (preview ao vivo, não só no soltar).
+- `setPointerCapture` no cabeçalho de cada tile garante que
+  `pointermove`/`pointerup` continuam chegando nele mesmo se o cursor
+  sair da área durante o arrasto.
+- Ordem definitiva (persistida em `localStorage`) só é gravada no
+  `pointerup`.
+
+Testado com Playwright (obra 91/CP236, arrasto contínuo via
+`mouse.move` interpolado): confirmado que o tile "Previsão" já sobe
+~454px **durante** o arrasto (antes do soltar) — reordenação ao vivo
+funcionando de fato, não só no drop. Ordem final persiste
+corretamente, 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — grid de widgets de verdade: mover, redimensionar, lado a lado (2026-08-19)
+
+Pedido explícito: "preciso de algo realmente interativo, que seja capaz
+de re-dimensionar, colocar lado a lado... apesar da animação ter ficado
+mais interessante, ainda parece engessado". As duas versões anteriores
+(HTML5 drag-and-drop, depois Pointer Events com `translateY`) eram
+feitas à mão e **só reordenavam numa coluna** — nenhuma quantidade de
+polimento na animação resolve isso, porque o que faltava era o modelo
+de layout, não o efeito.
+
+**Entrou `react-grid-layout` via CDN UMD** (86KB, só React/ReactDOM
+externos; `react-draggable`/`react-resizable` vêm embutidos). Decisão
+consciente de trazer dependência externa num arquivo que é todo "à
+mão": reescrever colisão, compactação e resize em 2 eixos não se paga,
+e o projeto já carrega React/Babel de CDN.
+
+- 12 colunas × linhas de 40px, gap 14. Arrasta pelo cabeçalho
+  (`draggableHandle=".tile-handle"` — assim a tabela continua rolando e
+  ordenando por dentro do bloco), redimensiona pelo canto e pelas
+  bordas direita/inferior (`resizeHandles={['se','e','s']}`, alças
+  aparecem no hover). Sombra do slot de destino durante o arrasto.
+- O "✕" leva `tile-nao-arrasta` (é o `draggableCancel`) — sem isso,
+  clicar nele começaria um arrasto.
+- Posição (X **e** Y), tamanho e visibilidade persistem em
+  `localStorage` na chave **nova** `mse_medicoes_grid` (formato
+  `{i,x,y,w,h}`; a chave antiga guardava só a ordem, reaproveitar
+  carregaria lixo incompatível). A entrada de um bloco oculto continua
+  guardada, então ele volta na mesma posição/tamanho. Botão
+  **"Restaurar layout"** novo.
+- **A folha de estilo da lib NÃO é carregada** — o arquivo tem só as
+  regras equivalentes, no visual do painel (alças desenhadas com
+  `border`, placeholder azul translúcido). As essenciais são
+  `position:relative` no container e dar tamanho às alças (sem isso não
+  há o que agarrar).
+- **Layout padrão já vem lado a lado**: Histórico (w7) + gráfico (w5) na
+  primeira fileira, Previsão (w12) embaixo. Motivo: num grid onde tudo
+  nasce com w=12, "pôr lado a lado" exige primeiro encolher um bloco, e
+  quem abre a tela não descobre isso sozinho (o teste com Playwright
+  bateu exatamente nisso). Histórico em w7 (~890px) sobra pras suas 6
+  colunas; o gráfico é responsivo e cabe bem em w5; a Previsão, tabela
+  mais larga (~1450px), fica em w12 pra não virar tira que só rola.
+- **Fallback**: se o CDN falhar, `GridLayoutMedicoes` fica `null` e a
+  tela cai num empilhamento simples com as alturas antigas — nunca fica
+  em branco por causa disso.
+
+**Dois bugs pegos no teste:**
+1. O grid é filho de um flex column e a altura inline calculada pela lib
+   era **esmagada pelo `flex-shrink` padrão**; como os blocos são
+   `position:absolute`, eles mantinham o offset real e vazavam pra fora
+   do container, cobrindo a barra de apoio — o botão "Restaurar layout"
+   ficava inclicável sempre que o grid passava da altura da tela.
+   Corrigido com `style={{flexShrink:0}}` no grid.
+2. `.medicoes-row` (a fileira da pizza + gráfico antigo, ambos
+   desligados por flag) ficava **vazia com `flex:1`**, roubando altura.
+   Agora só renderiza quando `MOSTRAR_PIZZA_MEDICOES` ou
+   `MOSTRAR_TOPO_MEDICOES` está ligado.
+
+De quebra: a decimação dos rótulos do eixo X do gráfico Previsto×Medido
+passou a derivar o espaçamento mínimo da **largura estimada do rótulo**
+(`LARGURA_ROTULO_X`), em vez de um `70` mágico — com o gráfico estreito
+(w5) as datas colidiam. O último rótulo é ancorado à direita, então
+ocupa espaço à esquerda do ponto final: daí a folga de 1.5× o rótulo.
+
+Testado com Playwright (obra 91/CP236, 1600×1000): 0 erros de console;
+grid real (não o fallback); padrão lado a lado confirmado por
+`getBoundingClientRect` (sobrepõe na vertical, não na horizontal);
+resize pela alça SE grava `w` menor no `localStorage`; arrasto mostra
+`.react-grid-placeholder` ao vivo antes de soltar; layout persiste no
+reload; tabela continua rolando e ordenando por coluna dentro do bloco;
+"Restaurar layout" e "+ Nome" clicáveis sem `force`; rótulos do eixo X
+sem sobreposição na largura padrão e também 250px mais estreito. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — redimensionar por qualquer lado + botão "Organizar" (2026-08-19)
+
+Pedido explícito: "só consigo ajustar o tamanho para baixo ou para o
+lado direito". A entrada do grid tinha ficado com só 3 alças
+(`['se','e','s']`), o padrão da lib.
+
+- **8 alças** agora: `['nw','n','ne','w','e','sw','s','se']`. CSS
+  próprio pras novas (a folha da lib continua não sendo carregada):
+  cantos são um "L" de 2 bordas apontando pra fora, laterais são uma
+  barrinha no meio do lado, cada uma com o cursor diagonal certo.
+  Confirmado no bundle 1.5.0 que a lib tem a lógica de pivô que ajusta
+  `x`/`y` quando a alça é do lado norte/oeste — sem isso, redimensionar
+  por cima só cresceria pra baixo.
+- **`compactType` foi de `"vertical"` pra `null`, e isso não é
+  opcional**: redimensionar pelo topo/esquerda mexe no `x`/`y` do bloco,
+  não só no `w`/`h`; com compactação vertical ligada a lib puxava o
+  bloco de volta pra cima logo depois e o gesto não surtia efeito
+  nenhum. Sem compactação, cada bloco fica exatamente onde foi posto.
+- **`padding-right` do cabeçalho de 10 → 18px**: a alça do canto
+  nordeste (12px + 3px de recuo) ficava por cima do "✕" e roubava o
+  clique de ocultar. Verificado com `elementFromPoint`.
+- **Botão "Organizar" novo** — é o preço de ter tirado a compactação
+  automática: empurrar um vizinho pra baixo deixava faixa vazia que não
+  fechava mais sozinha. Ele sobe cada bloco até encostar, **sem mudar
+  largura, altura nem coluna** (só o `y`). Diferente de "Restaurar
+  layout": organiza sem desfazer o arranjo escolhido. Implementado à mão
+  (uma dúzia de linhas, 3 blocos) em vez de chamar
+  `ReactGridLayout.utils.compact` — não amarra em export interno da lib.
+
+**Decisão de projeto registrada:** ficou `preventCollision={false}`
+(padrão) de propósito. Com `true`, o resize pararia de empurrar vizinho
+(fecharia a faixa vazia na origem), mas o arrasto passaria a só aceitar
+espaço livre — não daria pra trocar dois blocos de lugar. Preferi manter
+o arrasto permissivo e resolver a faixa vazia com o "Organizar", pra não
+tirar liberdade de novo (é exatamente o erro dos passos 89-90).
+
+Testado com Playwright (obra 91/CP236, 1600×1000): as 4 direções novas
+funcionam de fato — topo (`n`) sobe a borda superior e aumenta a altura;
+esquerda (`w`) move a borda esquerda e aumenta a largura; cantos `nw` e
+`sw` idem nos 2 eixos, todas gravando no `localStorage`. 8 alças nos 3
+blocos (24 no total). "✕" clicável normalmente. "Organizar" fechou uma
+faixa de 716px mexendo só no `y`, é idempotente, persiste no reload e
+respeita coluna (blocos em colunas diferentes sobem os dois, sem
+empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
+depois da sequência toda. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — grid nasce travado, "Organizar" vira automático (2026-08-21)
+
+Pedido explícito, 2 dias depois: "o organizar tem que ser automático, a
+medida que o ajuste nos balões é feito. Além disso, vamos deixar o modo
+de ajuste travado, para evitar movimentações não intencionais."
+
+- **"Organizar" deixa de ser botão manual** — passa a rodar via
+  `onDragStop`/`onResizeStop` do grid, disparando sozinho ao SOLTAR um
+  arrasto/resize. Deliberadamente NÃO usei `onLayoutChange` pra isso: a
+  react-grid-layout dispara esse evento a cada frame durante o gesto
+  (não só no fim), então reorganizar ali brigaria com o drag em
+  andamento — o mesmo tipo de conflito que `compactType={null}` (seção
+  acima) já existe pra evitar. `onDragStop`/`onResizeStop` disparam 1x,
+  no soltar, então o reflow acontece depois do gesto terminar, sem
+  interferir nele. Botão "Organizar" removido (redundante).
+- **Novo estado `modoAjuste`** (sempre nasce `false`, propositalmente
+  NÃO persiste no `localStorage` — diferente de `layoutTiles`/
+  `tileOcultos`). Persistir "destravado" reabriria a mesma brecha de
+  arrasto acidental que o pedido queria fechar; o grid deve começar
+  travado toda vez que a tela é aberta, não só na 1ª vez.
+  `isDraggable`/`isResizable` do `<GridLayoutMedicoes>` só ligam com
+  esse estado.
+- **1 botão só** na barra de apoio alterna "Ajustar layout" ⇄ "Travar
+  layout" (fundo/borda azul quando destravado, pra ficar óbvio que o
+  grid está em modo de edição). A dica de uso ("Arraste pelo
+  cabeçalho...") só aparece destravado — não faz sentido mostrar
+  instrução de gesto que não funciona no momento. `TileFrame` reflete o
+  estado no próprio bloco: alça (⠿⠿) apagada (opacity 0.35) e cursor
+  volta ao normal quando travado, em vez de manter a affordance de
+  "arrastável" num bloco que não arrasta.
+
+Testado via Playwright (obra 91): grid travado por padrão (drag no
+cabeçalho não move o bloco, posição idêntica antes/depois via
+`getBoundingClientRect`); "Ajustar layout" destrava (drag move o bloco,
+resize pela alça SE funciona); "Travar layout" trava de novo (drag
+volta a não mover); botão "Organizar" confirmado ausente; dica some/
+aparece conforme o estado. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
+### Medições — as 2 tabelas viram 1 só, consolidada (2026-08-19)
+
+Pedido explícito: "ajuste tudo em uma única tabela, compile todas as
+informações de uma só vez". Fecha o ciclo que começou com a reescrita da
+tela: Histórico (boletim faturado) e Previsão (boletim pendente) eram
+duas tabelas com filtro de linha oposto e recortes de coluna diferentes.
+
+- **`COLUNAS_MEDICOES`** substitui `COLUNAS_HISTORICO` +
+  `COLUNAS_PREVISAO`: 12 colunas, união das duas, na ordem do ciclo de
+  vida do boletim (identificação → medição → faturamento →
+  recebimento → saldo acumulado): BM | Período | Valor Previsto | Valor
+  Medido | Desconto FD | Valor Faturado | Data de Faturamento | Status
+  Fat. | Data do Recebimento | Status Rec. | Saldo Previsto Acum. |
+  Saldo Realizado Acum.
+- **Uma linha por boletim, faturado OU pendente.** Quem separa os dois
+  casos agora é o badge da coluna "Status Fat.", não a tabela.
+- Rodapé "Total" soma sobre TODOS os boletins, nas 4 colunas de valor
+  por boletim. As 2 "Acum." continuam fora da soma (snapshot carregado
+  da planilha, ver [[modelo-dados-supabase]] — somar daria número sem
+  sentido).
+- Ordenação em qualquer das 12 colunas, padrão BM decrescente. Como a
+  direção inicial de toda coluna é decrescente, o mapa
+  `DIRECAO_INICIAL_HIST` escrito à mão saiu: coluna nova já nasce com o
+  comportamento certo, sem precisar cadastrar.
+- **Grid: 3 blocos viraram 2** (`tabela` + `grafico`), ambos `w12`
+  empilhados. Lado a lado continua possível, mas não como padrão — com
+  12 colunas a tabela viraria uma tira que só rola.
+- **Migração automática de layout**: os ids mudaram
+  (`historico`/`previsao` → `tabela`), então um layout salvo da versão
+  anterior não passa na validação de `layoutTiles` e cai no padrão novo
+  sozinho. Não precisou de chave nova no `localStorage` — e a lista de
+  ocultos também filtra id desconhecido, então um `["previsao"]` velho
+  não esconde nada.
+- **Saiu** a maquinaria que espelhava as larguras de BM/Período/Valor
+  Previsto entre as duas tabelas (`ResizeObserver` + refs + estado
+  `largurasHist`): não há mais duas tabelas pra alinhar.
+- Respiro horizontal das células é **10px** só nesta tabela (o resto do
+  painel usa 14): com 14 a largura natural ia a ~1900px e as 2 últimas
+  colunas caíam fora da tela num monitor de 1920. Com 10, cabe inteira
+  em 1920 sem rolagem; abaixo disso rola na horizontal, que é o
+  esperado num extrato de 12 colunas (apertar mais já foi rejeitado —
+  "colunas espremidas").
+
+Testado com Playwright (obra 91/CP236): 36 linhas = o total (antes 35 +
+1 em tabelas separadas), com o boletim pendente (BM 34, "Dentro do
+prazo") na mesma tabela dos faturados; 12 cabeçalhos na ordem certa;
+ordenação por "Saldo Realizado Acum." (coluna que só existia na
+Previsão) funciona; rodapé com os 4 totais e as "Acum." em branco;
+layout salvo no formato antigo não quebra nada; arrastar e redimensionar
+(8 alças) seguem funcionando; em 1920×1080 a tabela cabe inteira sem
+rolagem horizontal e nenhuma célula fica truncada; 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — farol Medido × Previsto, corte e colunas no gráfico (2026-08-19)
+
+Pedido explícito: "incluir um farol ao lado do valor medido, que ficará
+verde quando o medido for maior que o previsto, amarelo quando for pouca
+coisa menor, vermelho quando bem abaixo. No gráfico, a curva do real
+deve ir somente ao corte com dados, é importante incluir as colunas
+também".
+
+**Farol (`FarolMedidoPrevisto`, novo)** — ponto colorido à direita do
+número, na coluna Valor Medido, uma por linha.
+
+- "Pouca coisa menor" e "bem abaixo" saem do limiar que o painel **já**
+  usa pra severidade de desvio (`corDesvio`: `>= 0` verde, até `-5` p.p.
+  amarelo, abaixo vermelho) — mesmo critério de Desvios e do farol
+  Medido×Físico, em vez de inventar um número só pra cá.
+- Tooltip mostra os 2 valores e o percentual.
+- Sem previsto (nulo ou zero) não há com o que comparar: renderiza um
+  **slot vazio de largura fixa**, nunca um farol chutado (ADR-005). O
+  slot existe pra não desalinhar a coluna de números — o rodapé também
+  tem o slot, pelo mesmo motivo (sem ele, o total encostava 16px mais à
+  direita e caía embaixo dos pontos em vez dos números).
+- **SEM farol agregado no rodapé, de propósito.** Tentei e reverti:
+  Previsto e Medido estão preenchidos em conjuntos DIFERENTES de
+  boletins na planilha (previsto só nos BMs antigos, medido em quase
+  todos), então o total cheio dava −47% e, restringindo aos boletins com
+  os 2 valores, −67%. Os dois números falam mais do estado de
+  preenchimento da planilha que da obra. Revisar quando o previsto
+  estiver completo — o usuário avisou em 2026-08-19 que a planilha ainda
+  está sendo preenchida, "inclusive o valor previsto".
+
+**Gráfico**
+
+- **Curva do Medido para no CORTE** (último período com `valor_medido`
+  lançado). Depois dele `medidoAcum`/`medidoDia` vêm `null` e nada é
+  desenhado — antes esticava uma reta horizontal que parecia "medição
+  parada" quando o certo é "ainda não medido". Mesma ideia do realizado
+  da Curva S. O último ponto ganha um anel pra deixar claro que a série
+  acaba ali, não que sumiu.
+- **Colunas por período**, 2 por ponto (previsto âmbar, medido azul),
+  no MESMO eixo Y das curvas acumuladas — convenção que o
+  `GraficoMedicoes` já fixou (barra com escala própria foi tentada e
+  revertida lá). Coluna do medido também para no corte.
+- Tooltip mostra acumulado **e** valor do período das 2 séries, e "sem
+  medição lançada" depois do corte. Legenda ganhou o par linha+coluna
+  por cor mais a nota "linha = acumulado · coluna = do período".
+- **O que conta como medido** passou a ser `valor_medido != null` em
+  QUALQUER boletim, não só nos já faturados: boletim medido e ainda não
+  faturado é dado real e tem que entrar no corte.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 29 faróis + 7 slots
+vazios nas 36 linhas, com **0 divergência de cor** contra a regra
+recalculada de forma independente pelo teste; coluna de números alinhada
+inclusive no rodapé (0px de diferença); no gráfico 36 pontos âmbar × 35
+azuis, com o azul terminando à esquerda do âmbar tanto nos pontos quanto
+no `path`; 35 colunas azuis e 29 âmbar, sem `NaN` nem altura negativa;
+tooltip mostra "sem medição lançada" depois do corte. 0 erros de
+console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — coluna Farol, cinza sem previsto, destaque por estado da linha (2026-08-19)
+
+Pedido explícito: "quando não tiver previsto, deixe em cinza. Gere uma
+coluna chamada 'Farol', para contemplar isso. O último BM faturado vai
+ter mais destaque, talvez com um fundo em um tom de verde claro, o
+histórico de faturamentos terá de ficar mais apagado, os futuros ficarão
+como está".
+
+- **Coluna "Farol" própria**, entre Valor Medido e Desconto FD — a
+  tabela vai a **13 colunas**. O ponto saiu de dentro da célula de Valor
+  Medido, que volta a ser texto puro alinhado à direita; o slot vazio que
+  reservava espaço no rodapé saiu junto, não é mais necessário.
+- **Cinza quando não há previsto** (`#dfe3ea`, tooltip "Sem valor
+  previsto para comparar"), no lugar do slot invisível da 1ª versão: um
+  vazio se confundia com "não carregou". Cinza é estado próprio — "não
+  há o que comparar" — não uma cor de severidade chutada (ADR-005).
+- **A coluna é ordenável**: `campo:'farol'` é sintético (não existe em
+  `boletins_medicao`) e a ordenação é tratada à parte, pelo desvio
+  medido×previsto — dá pra trazer o pior desempenho primeiro. Linha sem
+  previsto (farol cinza) não tem desvio e vai pro fim.
+- **3 estados de linha, via classe CSS**:
+  - último BM faturado → fundo `rgba(31,157,87,0.13)` (0.2 no hover);
+  - faturados anteriores → `opacity: .5`, voltando a `1` no hover
+    (apagado é hierarquia visual, não pra impedir a leitura);
+  - não faturados → sem classe, como estavam.
+  As regras vêm **depois** das de zebra/hover de propósito: a
+  especificidade empata (`tr.classe` vs `tr:nth-child(even)`) e quem
+  decide é a ordem no arquivo.
+- **Qual é o "último BM faturado"**: maior `periodo_fim` entre as linhas
+  com `status_faturamento = 'Faturado'`, desempate pelo número do BM.
+  Não uso `data_faturamento` (falta em parte das linhas) nem só o número
+  do BM (há rótulo sem número — "BM 01 - Limpeza", "MSE x ROCKTEC").
+  Detalhe que o teste confirmou: em CP236 o destaque cai no **BM 33**, e
+  não no BM 34, que tem período posterior mas está "Dentro do prazo" —
+  ou seja, ainda não faturado. Correto.
+- `minWidth` da tabela de 1180 → 1230 por causa da coluna nova.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 13 cabeçalhos na
+ordem certa; 36 de 36 linhas com exatamente 1 ponto na coluna Farol (10
+verdes, 19 vermelhos, 7 cinzas — nenhum âmbar porque nenhuma linha caiu
+na faixa −5..0), com **0 divergência** contra a regra recalculada de
+forma independente pelo teste; Valor Medido sem tooltip e alinhado com o
+rodapé (611.2px nos dois); 1 linha destacada, 34 apagadas em `opacity
+.5` que volta a `1` no hover, 1 sem classe; rodapé com a célula de Farol
+vazia e os 4 totais intactos; ordenação pela coluna Farol funciona nos 2
+sentidos com as cinzas no fim; a tabela ainda cabe em 1920 sem rolagem
+horizontal (1854 = 1854). 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — cores da curva seguem a referência da Curva S (2026-08-19)
+
+Pedido explícito: "com relação as cores da curva, utilize a mesma
+referência da Curva S". O gráfico Previsto × Medido tinha nascido com
+previsto âmbar e medido azul fixo — ou seja, **azul queria dizer coisas
+diferentes nas duas telas** (na Curva S azul é o PREVISTO). Erro meu de
+não ter olhado a convenção que já existia antes de escolher cor.
+
+Convenção da Curva S, agora aplicada aqui:
+
+- **Previsto**: azul `#2563eb`, tracejado `8 4`, 2px, `opacity` 0.7.
+  Colunas do período em azul, `opacity` 0.35 (0.55 no hover).
+- **Medido** (equivalente do Realizado): cor **dinâmica pelo desvio no
+  corte**, linha cheia de 3px — mesma regra do `desvioColor` da Curva S,
+  que por sua vez é o mesmo limiar do `corDesvio` usado no farol da
+  tabela (verde `>= 0`, âmbar até `-5` p.p., vermelho abaixo, cinza
+  quando não há desvio a calcular). Colunas na mesma cor, `opacity` 0.6
+  (0.8 no hover). Em CP236 o desvio no corte é −47%, então sai vermelho.
+- Pontos e o anel do corte acompanham a cor da respectiva série; a
+  legenda espelha a da Curva S, inclusive o texto do "Medido" colorido e
+  em negrito.
+
+**Divergência interna da tela de Curva S, registrada e NÃO mexida** (fora
+do pedido): a legenda dela usa `6 3`/2.5px, mas o `LineSVG` desenha
+`8 4`/3px. Copiei o **gráfico**, que é a referência visual de fato — se
+um dia alguém alinhar a legenda da Curva S ao gráfico dela, esta tela já
+está no valor certo.
+
+Testado com Playwright nas 2 telas (obra 91): **match exato nos 8
+atributos** comparados (cor, largura, `dasharray` e `opacity` das 2
+séries) — Previsto `rgb(37,99,235)`/2/`8 4`/0.7 e Realizado-Medido
+`rgb(210,59,59)`/3/sem dash/1 nas duas. Sem regressão em Medições: 29
+colunas azuis @0.35 + 35 vermelhas @0.6, anel do corte vermelho, 13
+cabeçalhos, 36 linhas, 1 destacada + 34 apagadas, "Medido" da legenda
+vermelho e em negrito. 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Avanço Previsto/Realizado Acumulado na tabela (2026-08-19)
+
+Pedido explícito: "incluir também o avanço previsto acumulado e o avanço
+realizado acumulado". Entraram no fim da tabela, junto das outras 2
+colunas de acumulado — **15 colunas** agora.
+
+**Descoberta que mudou a implementação — o nome engana.** Apesar de
+"avanço", `avanco_previsto_acumulado` e `avanco_realizado_acumulado`
+**não são percentuais**: guardam valor em REAIS. Conferi no dado antes
+de decidir o formato (CP236, CP002 e CP022, via fetch direto no
+PostgREST, já que o MCP do Supabase estava fora):
+
+- no 1º BM, `avanco_realizado_acumulado` == `valor_medido` da linha;
+- o máximo de `avanco_previsto_acumulado` == total da coluna Valor
+  Previsto (R$ 336.302.373,48);
+- o máximo de `avanco_realizado_acumulado` == total de Valor Medido
+  (R$ 177.460.890,18);
+- `saldo_previsto_acumulado` = contrato − `avanco_previsto_acumulado`.
+
+Ou seja: são o acumulado do previsto e do medido, em moeda — os mesmos
+números que o gráfico Previsto×Medido calcula por conta própria a partir
+dos valores por BM. Formatadas com `fmtReais`, alinhadas à direita.
+Vieram do PostgREST como `number` (não string), com o ruído de float
+esperado (`336302373.4799999`).
+
+Não entram na soma do rodapé (ficam em branco): já **são** acumulado — o
+último valor É o total — e ainda carregam o valor pra frente em linha sem
+atividade real (a armadilha catalogada em [[modelo-dados-supabase]]).
+Mesmo motivo das 2 colunas de Saldo Acum. `colSpan` final do rodapé foi
+de 6 → 8.
+
+Nota de dado achada de passagem: em **CP022** o acumulado NÃO é
+monotônico porque o mesmo `cp_codigo` mistura frentes distintas no
+`bm_label` ("2 - Oleoduto", "1 - Mesa") e o acumulado reinicia por
+frente. Só afeta quem for validar monotonicidade — a exibição não se
+importa.
+
+`minWidth` da tabela de 1230 → 1450. Com 15 colunas ela passa dos
+~2100px e **rola na horizontal mesmo em 1920** (2165 contra 1854 de
+container) — inevitável nesse tamanho; apertar mais as colunas já foi
+rejeitado antes, e o bloco é redimensionável.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): 15 cabeçalhos na
+ordem certa, 36 linhas **todas** com 15 células, as 2 colunas novas em
+formato de moeda e alinhadas à direita, máximos batendo exatamente com
+os totais do rodapé (a prova de que é moeda acumulada), rodapé com as 2
+novas em branco e slots somando 15, ordenação funcionando nos 2 sentidos
+nas colunas novas, rolagem horizontal revelando a última coluna por
+completo. Sem regressão: 1 linha destacada + 34 apagadas, 36 faróis (10
+verdes / 19 vermelhos / 7 cinzas), curvas do gráfico intactas. 0 erros
+de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Medições — Saldo/Avanço Acumulado saem da tabela e viram pop-up por linha (2026-08-19)
+
+Pedido explícito: "vamos colocar as 4 últimas colunas dentro de um
+pop-up, acessado ao clicar no item". Ajuste feito diretamente no editor
+(fora desta sessão de chat) e já com deploy confirmado.
+
+- Tabela volta de 15 pra **11 colunas**: Saldo Previsto Acum., Saldo
+  Realizado Acum., Avanço Previsto Acum. e Avanço Realizado Acum. saem
+  de `COLUNAS_MEDICOES` e das células do corpo.
+- Linha da tabela agora é clicável (`hoverable`, `cursor:pointer`) e abre
+  um pop-up (`linhaSelecionada`) com essas 4 colunas do boletim clicado,
+  mais a diferença Previsto−Realizado (Saldo) e Realizado−Previsto
+  (Avanço), coloridas por sinal.
+- **Rodapé de totais da tabela removido por completo** (não só as 4
+  colunas novas — Total/Valor Previsto/Valor Medido/Desconto FD/Valor
+  Faturado também saíram). Confirmado como intencional.
+- **Farol Medido × Físico ganhou um cartão horizontal fixo no topo da
+  tela**, fora do gate `MOSTRAR_TOPO_MEDICOES` — sempre visível agora,
+  não mais atrás da flag. Mesmo clique de sempre abre o pop-up de
+  detalhe (`farolAberto`).
+- Pop-up do Farol ganhou uma seção "Totais Financeiros da Obra" (Previsto
+  = valor do contrato; Medido = Desconto FD + Retenção + Valor Faturado,
+  com o detalhamento dos 3 componentes).
+
+Não testado nem revisado por mim antes do deploy — o ajuste e a
+publicação já estavam prontos quando entrei, só fiz o commit/push do que
+já estava no arquivo.
+
+### Medições — tooltip do gráfico cortado perto da borda (2026-08-19)
+
+Pedido explícito: "ao passar o mouse em um ponto do gráfico perto da
+borda, o detalhamento fica cortado". O clamping da posição do tooltip
+(`GraficoPrevistoMedido`) usava uma margem fixa "chutada" (metade de uma
+largura estimada, `70px`), que não batia com o tamanho real do
+tooltip — o conteúdo varia bastante em comprimento (4 linhas de
+acumulado/período contra "Medido: sem medição lançada" a partir do
+corte).
+
+Agora mede o tooltip de verdade via ref (`tipRef`/estado `tipTam`,
+recalculado a cada troca de ponto por um `useEffect` que roda depois do
+render) e usa o tamanho REAL pro clamping nos dois eixos:
+
+- **horizontal**: continua centralizado no ponto, mas a borda do
+  tooltip nunca passa da borda do gráfico — o cálculo usa a metade da
+  largura medida, não uma constante;
+- **vertical**: mesma lógica de acima/abaixo do ponto conforme a altura
+  na tela (herdada), agora limitando pelo topo/fundo REAIS do bloco —
+  relevante desde que o bloco virou redimensionável (91º passo): um
+  bloco encolhido também cortava o tooltip por cima/baixo com a margem
+  fixa antiga.
+
+Testado com Playwright (obra 91/CP236, 1920×1080): ponto mais à esquerda
+e mais à direita com o tooltip inteiro dentro do container (nenhuma
+borda extrapolada); ponto do meio continua centralizado (diferença
+<0.1px); bloco encolhido ~150px de altura via alça sul (`.react-
+resizable-handle-s`) ainda mantém o tooltip dentro dos limites
+verticais; conteúdo legível em todos os casos. 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+## Setor 4 — Suprimentos sai do placeholder, Curva A dos itens macro (2026-08-21)
+
+"a partir da table itens RMI iremos basear a tela de suprimentos, quase
+que como um mapa de suprimentos automático... a ideia é fazer um
+acompanhamento gerencial dos itens críticos, os críticos serão, por
+hora, os itens Curva A, que correspondem, em sua soma, a 80% do valor do
+projeto" — em cima de `itens_rmi` (fonte `rmi_api`, ver
+[[07 - Modelo de Dados]] e `n8n/rmi-suprimentos.README.md`).
+
+**"Item macro" = `raw.nivel === 1`, não o item-folha.** Cada obra tem
+milhares de itens numa árvore de até 5 níveis (`codigo_seq` tipo
+"1.1.1.16.1.2"); nível 1 (ex. "Tubulação", "Estrutura Metálica") é a
+granularidade certa pra visão gerencial — validado no dado real (obra
+91): o subtotal do nível 1 bate exato com a soma de tudo abaixo dele em
+153 de 161 casos. **Nível 0 é NÃO confiável** — na RMI "GERAL" o
+subtotal do nível 0 vem zerado apesar de ~95M de valor real embaixo (bug
+da própria origem, não do painel); por isso o cálculo nunca usa nível 0.
+
+**Curva A** = ordena os itens macro por `subtotal_custo_meta_orcamento`
+decrescente, acumula, e marca como crítico todo item cujo acumulado
+ANTES de somá-lo ainda não tinha cruzado 80% do total (convenção padrão
+de curva ABC — o item que cruza o corte ainda entra).
+
+**Itens de canteiro/apoio ficam de fora do cálculo inteiro** — correção
+de escopo pedida em seguida: "vamos nos ater aos itens de obra, itens de
+canteiro como consumíveis, alojamento e afins não precisam ser
+considerados". Como são 2.975 descrições distintas nas 6 obras (sem
+taxonomia fixa), a separação é por PALAVRA-CHAVE (`ehItemCanteiroRmi`),
+não lista fechada de nomes:
+
+- Exclui (canteiro): CANTEIRO DE OBRAS, ALOJAMENTO, FILIAL, CONSUMÍVEIS,
+  UNIFORME, FRETE, COMBUSTÍVEL/DIESEL, MOBILIZAÇÃO, FERRAMENTA, SEGURO,
+  ÔNIBUS, ASO, EPI(S), QUALIFICAÇÃO DE SOLDADORES, TREINAMENTO, e
+  equipamento alugado (ESCAVADEIRA, MOTONIVELADORA, ROLO COMPACTADOR,
+  CAMINHÃO BASCULANTE, PLATAFORMA DE LANÇA ARTICULADA, RETROESCAVADEIRA,
+  GUINDASTE, MUNCK) — decidido via pergunta direta ao usuário.
+- Fica como item de obra (NÃO exclui), por decisão explícita: Serviços
+  Terceirizados, Equipamentos de Medição e Apoio.
+- **Categoria nova/desconhecida (sem match de palavra-chave) entra como
+  item de obra por padrão** — a lista é só de EXCLUSÃO, nunca inclusão
+  fechada. Racional do usuário: melhor arriscar incluir um item de
+  canteiro raro do que esconder um item de obra real por engano de
+  classificação (mesmo espírito de `corStatusRestricao`/`corStatusOc`,
+  nunca esconder categoria desconhecida).
+
+**`prazo_status` descartado como critério** — investigado antes de
+decidir: 100% dos itens de obra 91 vieram `sem_data` (API ainda não
+popula essa dimensão pra nenhuma obra carregada). O placeholder antigo
+falava em "prazo × impacto"; ficou só valor (Curva A) como critério de
+"crítico" por hora. `desvio_saldo_orcamentario` (positivo/negativo/
+zerado) já vem populado e aparece como badge complementar na tabela, sem
+custo extra de ingestão.
+
+**UI**: 4 balões de resumo (Itens Críticos "N de M", Valor coberto pela
+Curva A, Valor total de obra considerado, Itens de canteiro excluídos +
+seu valor) + tabela dos itens Curva A (Descrição, RMI de origem, Valor,
+% individual, % acumulado, Saldo Orçamentário, badge de Desvio) com
+rodapé somando o restante (Curva B/C) + gráfico de Curva ABC (`Grafico
+CurvaA`, SVG hand-rolled no mesmo padrão do resto do arquivo: barras de
+valor individual, linha de % acumulado, linha de referência nos 80%,
+tooltip por hover).
+
+Testado via Playwright (obra 91): 5 itens críticos de 143 macro-itens
+somam 83.7% do valor de obra (R$ 84,4M de R$ 100,8M); nenhum item de
+canteiro (Alojamento, Consumíveis, Construção do Canteiro) vazou na
+tabela; 18 itens de canteiro excluídos (R$ 32,7M) contabilizados à
+parte; 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+### Gráfico sai por hora, foco na tabela (2026-08-21, mesmo dia)
+
+"Vamos focar na tabela, por hora" → confirmado "Deixar só a tabela".
+`GraficoCurvaA` removido (função inteira, não usada em nenhum outro
+lugar) e a tabela passou a ocupar a largura inteira do card. Sem
+gráfico nenhum na tela por ora — pode voltar depois se fizer sentido.
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou, olhando o CNPEM Faseado: "Ainda tem algumas linhas
+que não nos interessam... vamos exibir as linhas relacionadas aos
+níveis, que são a estrutura básica da EAP". Investiguei os 2 casos reais
+antes de mexer em código (ADR-005) — achado que muda a premissa da
+seção acima:
+
+- **Obra 91**: nível 0 é "balde" de origem de material (`MATERIAIS -
+  UB`, `MATERIAIS - SP`, `CHANGE ORDER N` — quase todos com subtotal
+  zerado). A disciplina real ("Estrutura Metálica", "Tubulação") só
+  aparece no nível 1 — por isso nível 1 fixo funcionava aqui.
+- **CNPEM Faseado**: é o INVERSO — nível 0 já É a disciplina real (HVAC
+  R$11,7M, CIVIL R$4,7M, ELÉTRICA E SISTEMAS R$6M, COMBUSTÍVEL, EPI,
+  CANTEIRO...). Nível 1 aqui é item de linha bem granular ("Combustível
+  para Guindaste de 35 ton") — 814 linhas, nível 1 fixo quebrava aqui.
+- **RMI 43/GERAL (obra 91)**: tem um ramo cujo nível 0 nem existe como
+  linha na origem (órfão) — só os filhos de nível 1 carregam o valor
+  real (~R$46M nesse ramo). Já era o motivo de nível 0 ter sido
+  descartado como "não confiável" na 1ª versão desta tela.
+
+**Não dá pra fixar 1 nível pro produto inteiro** — muda de RMI pra RMI,
+dependendo de como cada RMI foi montada na origem. Perguntei ao usuário
+como resolver isso (AskUserQuestion) em vez de supor: escolheu detecção
+automática por padrão de nome, em vez de confirmação manual RMI a RMI.
+
+`resolverItensMacroRmi` decide, por RAMO (`id_rmi` + `codigo_seq`), se
+usa o nível 0 ou desce pro nível 1 do ramo:
+1. **Padrão de nome** — nível 0 com nome batendo `/^(MATERIAIS\s*-|
+   CHANGE ORDER\b|OC\s*-|CO\s+\d)/` (normalizado, maiúsculo sem acento)
+   é tratado como "balde" administrativo → sempre desce.
+2. **Subtotal zerado com filho de valor real** — nível 0 = 0 mas a soma
+   dos filhos de nível 1 daquele ramo é > 0 → desce (pega o bug de
+   rollup da origem, não só o nome).
+3. **Ramo órfão** — existem itens de nível 1 com aquele código-pai mas
+   nenhuma linha de nível 0 correspondente → desce (não tem outra opção).
+4. Nenhuma das 3 condições → usa o nível 0 direto (já é a disciplina).
+
+Só resolve 1 nível de profundidade (nível 0 → nível 1); se aparecer uma
+3ª obra com "balde" aninhado mais fundo, revisitar.
+
+**Custo**: fetch mudou de 1 pra 2 requisições por obra (nível 0 + nível
+1) — a resolução por ramo precisa comparar os dois antes de decidir.
+
+**Validado sem regressão**: simulei a lógica nova em Node contra o dado
+real das 2 obras antes de tocar na UI. Obra 91 bateu EXATO com o
+resultado já testado antes (5 itens, R$ 84.419.464,60 de R$
+100.813.420,36 — mesmos valores, dígito a dígito). CNPEM Faseado: 4
+itens críticos de 315 macro-itens (HVAC, Elétrica e Sistemas, Civil,
+Custos com Efetivo MSE), 81,5% do valor considerado, nenhuma linha
+granular tipo "Combustível para Guindaste" sobrando. Playwright
+confirmou os mesmos números nas 2 obras depois, 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Linha da Curva A expande e mostra 1 nível de detalhe (2026-08-21, mesmo dia)
+
+"Preciso conseguir abrir mais um nível e ver o que está contemplado na
+curva A". Cada linha da tabela virou clicável (mesmo padrão visual de
+`LinhaLocalDesvio` em Desvios — chevron `▸`/`▾` mono antes do texto,
+`React.Fragment` com uma 2ª `<tr>` condicional pro detalhe).
+
+Como o "item macro" pode ter vindo do nível 0 OU do nível 1 (depende do
+ramo, ver seção acima), o detalhe também é resolvido caso a caso:
+- Item de nível 0 → filhos são nível 1, **já estão em memória**
+  (`itensPorNivel.n1`, a obra inteira já foi buscada) — filtra local,
+  sem requisição nova.
+- Item de nível 1 → filhos são nível 2, nunca buscados antes — 1 fetch
+  sob demanda só daquele `id_rmi`+nível, disparado ao expandir (não
+  pré-carrega a árvore inteira da obra de antemão, que seria caro pra
+  RMIs com milhares de folhas).
+- Resultado cacheado por item (`filhosPorItem`) — fechar e reabrir não
+  refaz o fetch.
+
+`LinhasDetalheRmi` é só apresentação (Descrição, Valor, % do item pai,
+Saldo Orçamentário) — não reaplica filtro de canteiro nem lógica de
+Curva A no nível-folha, é puro "o que compõe isso por baixo".
+
+Testado via Playwright (obra 91 e CNPEM Faseado): expandir/colapsar
+funciona nos 2 casos (memória e fetch sob demanda), cache confirmado
+(reabrir não refaz requisição, mesmos dados), valores sempre ≤ item
+pai, 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+**Correção no mesmo dia**: "Preciso que o valor esteja alinhado na
+coluna da macro, o saldo orçamentário também, a % não é necessária" —
+a 1ª versão usava uma mini-tabela própria dentro de 1 `<td colSpan=7>`,
+que não alinhava com as colunas do pai. `LinhasDetalheRmi` passou a
+renderizar `<tr>` direto nas mesmas 7 colunas da tabela pai (Valor e
+Saldo Orçamentário caem exatamente sob os cabeçalhos correspondentes;
+RMI/%/Desvio ficam vazios no detalhe); coluna de % removida. Validado
+via `getBoundingClientRect` (0px de diferença entre cabeçalho e linhas
+de detalhe). **Lição**: ao empilhar uma tabela de detalhe dentro de
+outra, alinhamento de coluna exige usar a MESMA grade de `<td>` da
+tabela pai — uma tabela aninhada nunca alinha por conta própria, por
+mais que as larguras pareçam parecidas.
+
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+"no CNPEM o item de custo com efetivo não precisa aparecer também.
+Observe no nível de material, é isso que precisamos exibir, os
+materiais críticos, orientados por área e disciplina." — correção de
+escopo maior que as anteriores: o crítico deixa de ser a DISCIPLINA
+inteira (Estrutura Metálica, HVAC — o que a tela mostrava desde a 1ª
+versão) e passa a ser o MATERIAL (item-folha de verdade), com
+disciplina/área como colunas de contexto.
+
+**Material não é nível fixo** (nem sequer dentro do mesmo ramo — RMI
+41/obra 91 tem material genuíno tanto em nível 3 quanto 4). Identificado
+por 2 sinais, não posição na árvore:
+1. `unidade` populada e diferente de `SERV` (mão de obra) e `VB`/`VERBA`
+   (verba/lump-sum, geralmente RH — é assim que "Custos com Efetivo
+   MSE" se resolveu sozinho: por baixo só tem treinamento, passagens e
+   plano de saúde, todos `vb`, nenhum material de verdade).
+2. Descrição não bate uma lista curta de itens que escapam do filtro de
+   unidade mas não são material (TESTES E MEDIÇÕES, OMISSOS,
+   Comissionamento — vêm com unidade "UN", igual material de verdade).
+
+**Evita contar 2x**: um nó com valor real (ex. "Estrutura média",
+2,46M) pode ter um filho-complemento zerado com a MESMA unidade (visto
+na obra 91: "SPINE COMPLEMENT" kg, valor 0, filho de "Estrutura média").
+Só desce pro filho se ele também tiver valor > 0; senão o próprio nó já
+é o material.
+
+**Área**: investigação (comparando as 2 obras de novo) achou que a
+"área" (zona física) só existe como conceito claro quando fica ABAIXO
+da disciplina na árvore — CNPEM: disciplina "HVAC" → área "Instalações
+Nível 614" → (sistema/circuito, ignorado) → material. Na obra 91 é o
+INVERSO: a "área" (UB/SP) é exatamente o nível que a resolução de
+disciplina descarta como "balde" (`MATERIAIS - UB`/`MATERIAIS - SP`) —
+fica ACIMA, não abaixo. Perguntei ao usuário como tratar essa
+assimetria (AskUserQuestion) em vez de tentar unificar os 2 casos num
+conceito só de "linha de área": escolhido dobrar o nome da disciplina
+quando a área fica acima (`Estrutura Metálica — SP`), e área vira
+coluna própria só quando fica abaixo.
+
+**Bug pego na validação, corrigido antes de subir**: o sufixo só pode
+ser aplicado quando a descida da disciplina foi por PADRÃO DE NOME
+reconhecível (`MATERIAIS - X`) — no fallback de "subtotal zerado com
+filho de valor real" (pensado pro bug de rollup da RMI 43/GERAL), o pai
+às vezes é só uma referência de aditivo/escopo (RMI pequena tipo "SAE002
+- Rede de coleta de condensados", vista no CNPEM), sem nenhuma
+informação de disciplina/área. Dobrar o nome nesse caso produzia rótulo
+sem sentido ("Central de vácuo Bonito... — SAE002 - Rede de coleta de
+condensados"). Corrigido restringindo o dobramento só ao caso de padrão
+de nome.
+
+Fetch mudou de "nível 0 + nível 1" pra "obra inteira, 1 requisição só" —
+resolver disciplina/área/material precisa caminhar a árvore até a
+folha, que pode estar em qualquer profundidade (volume por obra já
+confirmado pequeno o bastante, ~500 a ~8.000 linhas). A funcionalidade
+de "expandir 1 nível" (do pedido anterior, mesmo dia) ficou obsoleta —
+a linha já É o material agora, não há mais nível pra abrir — e foi
+removida (`LinhasDetalheRmi` deletada).
+
+**Padrão de processo que valeu a pena repetir**: antes de tocar na UI,
+simulei a lógica inteira (bem mais complexa que a resolução de
+disciplina do pedido anterior — combina 3 regras: material,
+disciplina, área) em um script Node isolado contra o dado real das 2
+obras. Foi assim que o bug do "SAE002" apareceu e foi corrigido ANTES
+do teste de navegador — iterar em Node é bem mais rápido que
+recarregar a tela a cada ajuste numa lógica com várias condições
+combinadas.
+
+Testado via Playwright depois da simulação bater: obra 91 = 86 de 746
+materiais críticos (mesmos valores da simulação, dígito a dígito);
+CNPEM Faseado = 158 de 1451, 0 disciplinas com "EFETIVO" remanescentes.
+0 erros de console nas 2 obras. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"a ideia é essa, mas precisa estar organizado em nívels, Área ->
+Disciplina -> Material, outro ponto é, a necessidade de compilar
+materiais similares em uma coisa só" — 2 pedidos no mesmo comentário.
+
+**Área vira campo próprio, não mais sufixo no nome.** A entrega anterior
+tinha resolvido a assimetria (área acima da disciplina na obra 91 vs.
+abaixo no CNPEM) dobrando o nome (`Estrutura Metálica — SP`) porque a
+tabela era plana — não tinha onde mais colocar a área. Com hierarquia
+de verdade pedida agora, isso deixou de fazer sentido: UB/SP e
+"Instalações Nível 614" viraram NÓS de área reais, ambos exibidos da
+mesma forma (Área → Disciplina → Material), não importa se na árvore
+original do RMI a área fica acima ou abaixo da disciplina.
+
+**Consolidação** (`consolidarMateriaisSemelhantes`): soma valor (+
+saldo orçamentário) de materiais com a MESMA descrição normalizada
+dentro do MESMO par área+disciplina — nunca entre grupos diferentes
+(perderia a orientação que é o objetivo da tela) nem tenta casar
+descrições parecidas-mas-diferentes (tubulação DN 14"/DN 12" continuam
+linhas separadas, são especificações diferentes).
+
+**2 bugs reais pegos na validação em Node, antes do teste de
+navegador** (mesmo padrão de processo da entrega anterior, valeu ainda
+mais aqui):
+1. A área herdada de cima (obra 91) estava sendo sobrescrita pelo
+   primeiro sub-agrupamento encontrado 1 nível abaixo da disciplina —
+   resultado: "áreas" sem sentido tipo "Aço Carbono", "Vigas - Perfís
+   laminados...". Só captura área de baixo quando NÃO existe área
+   herdada de cima.
+2. Quando o material é filho DIRETO da disciplina, sem camada de área
+   nenhuma (ex. "Equipamentos"/obra 91 — cada linha já É um equipamento
+   específico), a área virava igual ao nome do próprio material. Só
+   promove o nome do nível-abaixo a "área" quando esse nível NÃO é ele
+   mesmo o material.
+
+Resultado real: obra 91 colapsa pra 3 áreas (UB, SP, "sem área" —
+Equipamentos e Serviços Terceirizados, que não têm quebra por zona);
+CNPEM Faseado pra 6 áreas (Central de Água Gelada, Instalações Nível
+614/619/623, Caixa de Acesso, "sem área"). Tabela caiu de 8 pra 6
+colunas — Área/Disciplina/Material vira 1 coluna hierárquica com
+indentação (linha de área só com valor total, disciplina idem, material
+com % Individual/Acumulado/Saldo/Desvio completos).
+
+**Ponto cosmético aceito, não corrigido**: RMIs pequenas de aditivo
+(SAE001-005 no CNPEM) não têm disciplina real — o nome da disciplina
+acaba sendo igual ao do único material dentro dela, então a árvore
+mostra o mesmo texto 2x seguidas (header de disciplina + linha de
+material). Não é perda de dado (a linha de material continua com
+%/saldo/desvio completos), só redundância visual num punhado de itens
+de baixo valor. Não mexi nisso por ora.
+
+Testado via Playwright: obra 91 e CNPEM Faseado renderizando a árvore
+de 3 níveis corretamente (6 colunas, indentação, valores nas linhas
+certas), 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+### Consolida materiais por família — mesma peça, tamanhos diferentes (2026-08-21, mesmo dia)
+
+"É nesse sentido, mas ainda podemos comprimir mais os itens, em coisas
+similares" — a consolidação anterior só juntava descrição EXATA
+idêntica; a mesma peça em tamanhos diferentes (ex. "Isolamento de
+Flanges - 10\" - Espuma..." e mais ~20 variações de diâmetro/material,
+todas na RMI de Tubulação/obra 91) continuava em linhas separadas.
+
+`familiaMaterialRmi` corta a descrição no primeiro `" - "` (espaço-
+traço-espaço) — é o separador real observado entre nome-base e
+especificação nesse padrão de descrição. Deliberadamente simples: não
+tenta reconhecer DN/Ø/Btu/h/mm² um por um. Hífen SEM espaço ao redor
+(`380-220V`, `CS 600X250`, `W310X38.7`) nunca bate — fica intacto, o
+comportamento seguro quando não dá pra separar nome-base de
+especificação com confiança. Antes de implementar, mostrei o padrão
+achado e perguntei (AskUserQuestion) se comprimir mantendo detalhe num
+popup ou sem guardar detalhe — escolhido sem guardar detalhe.
+
+Consolidação passou a agrupar por família (não mais descrição exata)
+dentro do mesmo par área+disciplina — mas a descrição exibida só vira o
+nome genérico quando REALMENTE há mais de 1 item consolidado ali; item
+único mantém a descrição completa (evita perder especificação à toa
+quando não havia nada pra comprimir). Indicador `(N itens)` cinza ao
+lado do nome quando a linha é fruto de consolidação.
+
+Testado: simulação em Node confirmou compressão real sem nenhuma junção
+aparentemente errada; Playwright confirmou na tela — obra 91 com 8
+famílias consolidadas ("Isolamento de Flanges" = 22 itens, "Cabo
+0,6/1kV..." = 15 itens); CNPEM Faseado com 21 famílias ("Tubulação Aço
+carbono" = 14 itens, "Fancoil Trox ICV" = 7 itens). 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Restringe a tela ao CP029 até validar as outras obras (2026-08-24)
+
+"Pela diversidade na forma como estão cadastradas as RMIs as mudanças
+terão de ser específicas para cada obra, vamos considerar que as
+feitas até o momento são válidas apenas para o cp029." — depois de
+várias rodadas desenhando/testando a régua de disciplina, área,
+material, canteiro e família comparando CP029 (CNPEM - Faseado,
+id_obra 106) × obra 91 (Novo Nordisk UB/SP), o usuário decidiu que o
+resultado só está validado pro CP029 mesmo — as 2 obras já mostraram
+convenções de RMI genuinamente diferentes (nível 0 vs. 1 pra
+disciplina, área acima vs. abaixo da disciplina), e as outras 4 obras
+do painel não foram checadas RMI por RMI ainda.
+
+`ModuloSuprimentos` ganhou `OBRA_SUPRIMENTOS_VALIDADA = 106`: pra
+qualquer `obraId` diferente, nem dispara o fetch de `itens_rmi` (evita
+chamada desnecessária) e mostra uma mensagem explicando que a obra
+ainda precisa de checagem própria, em vez de aplicar a régua atual às
+cegas — o risco de "crítico" errado silencioso numa tela gerencial é
+mais caro que deixar a tela indisponível pra quem ainda não foi
+validado.
+
+Testado via Playwright: obra 106 (CP029) continua funcionando
+normalmente (KPIs + árvore com dado real, 0 erros); obra 91 mostra a
+mensagem de bloqueio e confirmado 0 requisições a `itens_rmi`
+disparadas para ela (a restrição barra antes do fetch). Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+**Pendência registrada**: validar RMI por RMI as outras 5 obras
+(Novo Nordisk UB/SP/CP236 — apesar de já ter sido usada nos testes
+comparativos, o usuário fechou a validade só em CP029 mesmo —, Hitachi/
+CP022, Porto Itapoá/CP002, Novo Nordisk-AP/CP273 e Novo Nordisk-AP-
+Reforço/CP261) antes de estender a tela pra elas — mesmo processo usado
+até aqui (investigar estrutura real via PostgREST antes de assumir).
+
+### Exclui itens sem área e simplifica descrições sempre (2026-08-24, mesmo dia)
+
+"Seguindo na linha do cp029. Itens sem área não precisam ser
+considerados. Precisamos agrupar e simplificar as descrições dos
+materiais... exemplo: Chiller - Turbo Trans Air-Colled: TTA-450,
+modelo AD160.4EF1AKUAA024XA.02D poderá ser simplesmente: Chiller."
+
+- **Sem área = fora do cálculo inteiro**, não só escondido da árvore —
+  mesmo tratamento que canteiro. Novo 5º KPI "Itens sem área
+  identificada" (qtd + valor), mesmo padrão visual do de canteiro, pra
+  não esconder o que foi excluído sem explicar. `agruparPorAreaDisciplina`
+  perdeu o fallback `'(sem área)'` (virou código morto — nenhum material
+  sem área chega mais até ali).
+- **`familiaMaterialRmi` ganha um 2º separador**: além do primeiro
+  `" - "` (da entrega anterior), agora também corta na primeira vírgula
+  que NÃO esteja colada a dígito dos 2 lados — usa o que vier primeiro
+  dos 2 candidatos. Pega o padrão real de descrições longas separadas
+  por vírgula (ex. "Elevador Linha 3300 Atlas Schindler, com
+  capacidade..." → "Elevador Linha 3300 Atlas Schindler"). **Ressalva
+  importante**: vírgula também é separador DECIMAL em pt-BR dentro
+  dessas descrições (ex. "Cabo 0,6/1kV") — sem o cuidado de ignorar
+  vírgula colada em dígito, "Cabo 0,6/1kV" viraria "Cabo 0", quebrado.
+- **Consolidação sempre mostra a família**, não só quando há duplicata
+  pra juntar — a entrega anterior mantinha a descrição completa em item
+  único "pra não perder especificação à toa"; o pedido de agora deixou
+  claro que a simplificação vale mesmo sem duplicata (é sobre leitura,
+  não só desduplicação).
+
+Testado: simulação em Node contra dado real do CP029 confirmou "Chiller"
+saindo limpo e nenhum corte aparentemente errado na lista inteira (88
+materiais). Playwright confirmou na tela: KPI "Itens sem área
+identificada" = 318 (R$ 5.289.265,38); nenhum grupo "(sem área)" na
+árvore; material "Chiller" exibido exatamente assim, R$ 6.480.000; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
+### Permite fechar Área e Disciplina, visão macro (2026-08-24, mesmo dia)
+
+"Precisamos conseguir fechar os itens, visualização macro é relevante."
+Linhas de Área e Disciplina na árvore ganharam chevron (▾ aberto/▸
+fechado) clicável, mesmo padrão visual já usado em `LinhaLocalDesvio`
+(Desvios). Fechar uma Área esconde disciplinas + materiais dela; fechar
+uma Disciplina esconde só os materiais dela; em ambos os casos o valor
+total da própria linha continua visível — dá pra ver o "macro" (só
+áreas e disciplinas com valor) sem precisar rolar pelos materiais.
+Nasce tudo aberto (comportamento anterior preservado; fechar é opt-in).
+
+Testado via Playwright (CP029): 106 linhas visíveis com tudo aberto;
+fechar a 1ª área derruba pra 93 linhas (valor da área mantido);
+reabrir volta a 106 com o mesmo valor; fechar 1 disciplina (com a área
+aberta) derruba pra 100 linhas sem afetar as outras disciplinas da
+mesma área; reabrir volta a 106. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
+### Catálogo de itens padrão pra simplificar descrições (2026-08-24, mesmo dia)
+
+"Pensei no seguinte, criar um banco de itens padrão, a descrição deverá
+ter match com um daqueles itens, algo como: Chiller, válvulas e
+acessórios, elevadores, isolamento térmico, tubulação Aço Carbono,
+tubulação Inox, Cabos, Painéis. Consegue verificar os dados e gerar uma
+lista deste tipo? Que cubra a maior parte dos itens? Se ficar com
+dúvida em algum, questione."
+
+`CATALOGO_MATERIAIS_RMI` — ~30 categorias levantadas analisando os
+1.133 materiais reais do CP029 (script Node descartável contra o
+PostgREST, fora do repo). Cobre **97,6% do VALOR** (60% da contagem —
+o resto é cauda longa de itens únicos de baixo valor, que caem no
+fallback por separador da entrega anterior). Além dos 8 exemplos
+dados, entraram: Fancoils e Fancoletes, Molas, Ventiladores e
+Exaustores, Difusores e Grelhas, Bombas, Instrumentação, Detecção e
+Alarme, Combate a Incêndio, Ventilação e Dutos, Automação e Controle,
+Rede/Cabeamento Estruturado, CFTV, Iluminação, Eletrodutos e
+Infraestrutura Elétrica, Estrutura e Suportação Metálica, Concreto e
+Impermeabilização, Pisos, Rodapés e Acabamentos, Divisórias, Esquadrias,
+Portas, Pintura, Forros e Drywall, Louças e Metais, Marcenaria e
+Mobiliário, Revestimentos.
+
+**2 perguntas resolvidas antes de implementar** (ADR-005 — não
+fabricar classificação sem confirmar), via AskUserQuestion:
+1. O maior bloco não classificado era um código repetido tipo
+   "RMTAC-F2 1.0Y1 (dutos)"/"RMG 1.606F4-26 (chillers e ventiladores)"
+   — não reconhecível como tipo de material. Usuário confirmou: são
+   **molas antivibratórias** (código de sala/sistema entre parênteses).
+2. Escopo: manter categorias de acabamento civil (Pisos, Elevadores,
+   Divisórias, Pintura, Louças) junto das de MEP, não só os 8 exemplos
+   dados — confirmado que sim.
+
+`familiaMaterialRmi` passou a tentar o catálogo PRIMEIRO
+(`classificarMaterialRmi`); sem match, cai no corte por separador (" -
+"/vírgula segura) da entrega anterior. Isso faz a consolidação já
+existente juntar qualquer variante do mesmo TIPO de item dentro do
+mesmo par área+disciplina — não só duplicatas exatas ou da mesma
+"família" de nome — ex. "Válvula Borboleta 10"", "Válvula Balanceadora
+2"" e "Filtro Y 1"" viram 1 linha "Válvulas e acessórios" só.
+
+**Ordem das categorias importa** (primeira que bate, ganha) — 2 casos
+de colisão pegos ANTES e DEPOIS de subir:
+- Pego na revisão manual (antes de subir): "Louças e Metais" e
+  "Eletrodutos e Infraestrutura Elétrica" ficam ANTES de "Válvulas e
+  acessórios" — palavras curtas genéricas (VALVULA/FLANGE/CURVA 90)
+  colidiam com "Válvula para Mictório/Lavatório" (registro de louça,
+  não válvula de processo) e "Flange ligação perf fze"/"Curva 90°
+  leito horizontal" (acessório de bandeja elétrica, não de tubulação).
+- Pego no teste Playwright (depois de subir, corrigido no mesmo commit):
+  "Molas" fica ANTES de "Chiller" — "RMG 1.606F4-26 (chillers e
+  ventiladores)" é mola, mas o texto entre parênteses contém
+  literalmente "chillers", inflando o Chiller em ~R$68 mil (de R$
+  6.480.000,00 pra R$ 6.548.277,60, com indicador errado "(2 itens)").
+
+Testado: cobertura e falsos positivos revisados em Node contra dado
+real antes de subir (mesmo padrão de processo das entregas anteriores
+do dia). Playwright confirmou na tela: Curva A caiu de ~88 pra 35
+linhas; "Chiller" exato R$ 6.480.000,00 sem contaminação (confirmado
+inclusive chamando `classificarMaterialRmi` ao vivo no console do
+navegador); "Válvulas e acessórios" e "Cabos" consolidando dezenas de
+itens cada; nenhuma descrição longa/técnica sobrando na Curva A; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
+### Volta atrás na supressão da Curva A (2026-08-24, mesmo dia)
+
+"Volte ao anterior, estava mais alinhado" — logo depois da tentativa de
+suprimir a Curva A (mapa geral, 499 materiais), sem elaborar o motivo.
+Revertido via `git revert` dos 2 commits daquela tentativa (código +
+docs), voltando exatamente ao estado anterior (catálogo de itens
+padrão + corte de Curva A). Não testado de novo via Playwright — é
+revert byte-a-byte pra um estado já validado antes.
+
+### Remove balões do topo, adiciona Total Consumido e Finalizado (2026-08-24, mesmo dia)
+
+"Vamos retirar os balões superiores, trazer o total consumido também,
+o finalizado é algo interessante de se trazer."
+
+- Fileira de KPI do topo removida por completo — a tela vai direto do
+  cabeçalho de setores pro card da tabela. O cálculo de canteiro/sem
+  área que os balões mostravam continua rodando (ainda exclui do mapa),
+  só parou de aparecer.
+- **Total Consumido** (`raw.total_consumido`) nova coluna, entre Valor
+  e % Individual.
+- **Finalizado** (`raw.finalizado`) nova coluna, no fim — confirmado no
+  dado real que o campo varia (478 true / 522 false no CP029, não é
+  sempre a mesma coisa). Item único mostra badge Sim/Não; linha
+  consolidada (várias peças da mesma categoria) mostra "X/Y" (quantos
+  dos itens somados já estão finalizados) — reduzir a um booleano só
+  não fazia sentido quando a linha representa várias peças físicas
+  diferentes; a cor do badge acompanha (verde = todos, âmbar = parcial,
+  cinza = nenhum).
+
+Testado via Playwright (CP029): sem nenhum balão no topo; 8 colunas no
+cabeçalho (Área/Disciplina/Material, Valor, Total Consumido, %
+Individual, % Acumulado, Saldo Orçamentário, Desvio, Finalizado);
+Chiller com Total Consumido R$ 14.256.000,00 (maior que o valor
+orçado, daí o desvio NEGATIVO já existente) e Finalizado "Sim"; linhas
+consolidadas cobrindo os 3 estados de cor do badge (9/9 verde, 0/7
+cinza, 3/10 âmbar); linhas de área/disciplina sem conteúdo quebrado
+nas colunas novas; 0 erros de console. Deploy: `firebase deploy
+--only hosting --project planejamento-mse`.
+
+### Remove colunas de %, Finalizado vira Status com 3 estados (2026-08-24, mesmo dia)
+
+"As % podem ser suprimidas também. Com relação ao finalizado, vamos
+chamar de coluna de status e classificar em finalizado, em andamento e
+pendente. Em andamento será para itens que já tiveram algo finalizado,
+pendente será nada finalizado, ao passar o mouse pelo status poderemos
+ver a contagem de itens 1/20 por exemplo."
+
+- Colunas "% Individual" e "% Acumulado" removidas (8 → 6 colunas). O
+  cálculo interno de % continua existindo no modelo de dados (ainda
+  decide o corte de Curva A), só parou de aparecer na tabela.
+- `FinalizadoBadgeRmi` virou `StatusBadgeRmi`, 3 estados por contagem
+  de itens finalizados na linha (uma linha pode ser consolidação de
+  várias peças — catálogo de itens padrão): nenhum finalizado =
+  **Pendente** (cinza); todos finalizados = **Finalizado** (verde); só
+  parte = **Em andamento** (âmbar). A fração "X/Y" que antes ia direto
+  no texto do badge virou tooltip (`title`, "X/Y itens finalizados").
+
+Testado via Playwright (CP029): 6 colunas confirmadas; Chiller =
+Finalizado (`title="1/1 itens finalizados"`); linha consolidada sem
+nenhum finalizado = Pendente (`title="0/7..."`); linha parcial = Em
+andamento (`title="3/10..."`); varredura de todas as 31 linhas
+consolidadas confirmou status sempre coerente com a fração; layout
+íntegro nas linhas de área/disciplina; 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Pop-up dos itens aninhados + hover do Status vira troca de texto (2026-08-24, mesmo dia)
+
+"Vamos gerar um pop-up que permita verificar quais são os itens que
+estão aninhados, ao clicar na linha de resumo dele, outro ponto, havia
+pensado na exibição ao passar o mouse como uma mudança no cartão do
+status, não uma informação acima."
+
+- `consolidarMateriaisSemelhantes` passou a guardar `itensOriginais`
+  (array com os itens de antes da fusão por família, ordenado por
+  valor decrescente) além de `qtdConsolidada`/`qtdFinalizados` — dado
+  que já existia calculado, só não estava sendo carregado adiante.
+- Linha de material com mais de 1 item consolidado ganhou indicador
+  azul "(N itens ›)" ao lado da descrição e ficou clicável; o clique
+  abre um pop-up (mesmo padrão visual `modal-overlay-in`/`modal-card-in`
+  já usado no resto do produto, ex. detalhe de OC/CO) com cabeçalho
+  "Área — Disciplina" + nome do material, e a lista dos itens
+  originais (descrição completa, valor, status individual
+  Finalizado/Pendente). Linha de item único (sem "aninhados") não
+  reage ao clique — não tem o que abrir.
+- Correção de rumo no `StatusBadgeRmi`: a fração "X/Y itens
+  finalizados" tinha sido implementada como tooltip nativo (`title`),
+  que aparece como uma caixa flutuando ACIMA do cursor. O usuário
+  queria uma troca de conteúdo DENTRO do próprio cartão do badge, não
+  uma informação por cima. Resolvido com 2 `<span>` internos e CSS
+  puro (`.status-badge-rmi-texto`/`.status-badge-rmi-fracao`, um
+  escondido e outro mostrado no `:hover` do badge) — sem `title`,
+  sem JS extra.
+
+Testado via Playwright (CP029): pop-up abre com cabeçalho e contagem
+corretos e a lista bate item a item com o "(N itens)" do título; fecha
+pelo "✕" e por clique fora do card; linha sem aninhados não abre nada
+e mantém `cursor: default`; nenhum badge tem atributo `title`; hover
+troca texto↔fração nos 35 badges da tabela, cor sempre coerente com a
+fração (verde = X=Y, cinza = 0/Y, âmbar = 0<X<Y); 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Farol Financeiro substitui Valor/Consumido/Saldo/Desvio, entram as datas de compra (2026-08-24, mesmo dia)
+
+"O valor, total consumido e saldo orçamentário poderão ser parte de um
+farol, a coluna chamará Farol Financeiro, funcionando similarmente ao
+desvio (que poderá ser suprimida). Vamos exibir a data da necessidade
+de compra, prazo de entrega, e material em obra, que será a Data da
+necessidade somada ao prazo de entrega."
+
+Duas perguntas feitas antes de codar (ADR-005 — não inventar regra de
+negócio):
+- **Regra de cor do farol** — confirmado reaproveitar a mesma
+  classificação que já existia na coluna Desvio
+  (`desvio_saldo_orcamentario`: positivo=verde, negativo=vermelho), em
+  vez de um limiar novo por % consumido.
+- **Data em linha consolidada** (vários itens fundidos pelo catálogo
+  de materiais) — confirmado deixar em branco no resumo; cada item tem
+  seu próprio prazo de compra, não existe 1 data representativa sem
+  fabricar uma regra de agregação. As datas reais aparecem no pop-up
+  de itens aninhados.
+
+Mudanças:
+- Colunas "Valor", "Total Consumido", "Saldo Orçamentário" e "Desvio"
+  saíram; entraram "Farol Financeiro", "Data da Necessidade de
+  Compra", "Prazo de Entrega" e "Material em Obra" — 6 colunas no
+  total, mesma contagem de antes.
+- `FarolFinanceiroRmi`: ponto colorido (mesmo padrão visual dos outros
+  faróis do produto — Medido×Previsto e Medido×Físico em Medições),
+  não pílula de texto; `title` mostra Valor/Consumido/Saldo em R$.
+  Linhas de Área/Disciplina continuam mostrando o rollup em R$ na
+  mesma coluna (reaproveitada — só as linhas de material viram ponto).
+- `data_necessidade_compra` e `prazo_entrega` (dias) vêm prontos da
+  origem; "Material em Obra" é a soma dos dois
+  (`calcularMaterialEmObra`). Linha consolidada mostra "—" nas 3
+  colunas de data; o pop-up de itens aninhados ganhou uma linha
+  "Necessidade: ... · Prazo: ... · Em obra: ..." por item.
+- **Bug pego pelo teste, corrigido no mesmo commit**: em linha
+  consolidada, `desvio_saldo_orcamentario` sobrava do 1º item fundido
+  (nunca recalculado) — o farol podia sair verde com o saldo agregado
+  (mostrado no próprio `title`) negativo. Achado real: "Cabos" e
+  "Tubulação Inox" com saldo negativo e ponto verde. Corrigido
+  recalculando pelo sinal do saldo somado quando há fusão de itens
+  (mesma regra da origem, só aplicada à soma).
+
+Testado via Playwright (CP029) em 2 rodadas: 6 colunas corretas;
+"Material em Obra" bate matematicamente com necessidade+prazo; farol
+renderiza como ponto (não texto), `title` com os 3 valores; pop-up
+mostra data por item. 2ª rodada, focada na correção do bug de cor:
+varredura de TODAS as 35 linhas de material (31 consolidadas + 4
+únicas) — sinal do saldo agregado bate 100% com a cor do farol,
+incluindo o caso mais apertado ("Tubulação Inox", saldo -R$ 989,09); 0
+erros de console nas 2 rodadas. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
+### Linha consolidada mostra pior caso de data, Farol Financeiro troca hover para card (2026-08-24, mesmo dia)
+
+Dois ajustes em cima da rodada anterior:
+
+"Para os itens agrupados em material padrão, vamos considerar sempre
+o pior caso para, menor necessidade de compra, menor prazo e menor
+data limite em obra."
+
+"O mouse por cima do farol pode funcionar igual ao do status,
+expandindo o card do texto."
+
+- Linha consolidada (indicador "(N itens ›)") deixou de mostrar "—"
+  nas 3 colunas de data — mostra o PIOR CASO: menor (mais urgente)
+  data de necessidade, menor prazo de entrega, e menor "material em
+  obra" já calculado por item. As 3 reduções são independentes entre
+  si (não precisam vir do mesmo item fundido) — evita compor uma data
+  fictícia que nenhum item real tem; item sem alguma dessas
+  informações é ignorado no cálculo do mínimo dos outros. Item único
+  segue com o próprio valor (mínimo de 1 elemento = ele mesmo).
+- `FarolFinanceiroRmi` trocou o `title` nativo pela mesma mecânica CSS
+  do `StatusBadgeRmi` (hover troca conteúdo dentro do próprio
+  elemento, sem tooltip flutuando acima). Como o texto
+  (Valor/Consumido/Saldo) é bem mais largo que o ponto de 10px, ele
+  "expande" como card `position:absolute` ancorado ao ponto, em vez de
+  só alternar `display` no lugar — evita que a coluna inteira alargue
+  a cada hover.
+
+Testado via Playwright (CP029): 6 linhas consolidadas com data
+preenchida — resumo bate exatamente com o mínimo calculado a partir
+dos itens reais dentro do pop-up de itens aninhados (Necessidade,
+Prazo e Em Obra, sem divergência); farol sem `title`, card oculto por
+padrão e visível com o texto certo (inclusive valores negativos) em 8
+faróis testados (3 vermelhos, 5 verdes); 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
 ## Próximos passos possíveis

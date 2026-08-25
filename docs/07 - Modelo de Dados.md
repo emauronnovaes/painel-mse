@@ -71,17 +71,33 @@ levantamento do dashboard atual — detalhamento completo no vault
   formatadas dd/mm/aaaa), `nome_eap`/`id_eap`, `responsabilidade`,
   `usuario_cadastro`. Alimenta o setor Restrições do blueprint desde
   2026-08-07 — ver armadilha 11 abaixo (RLS).
-- **`nfs`** — 1 linha por Nota Fiscal emitida (`nf`, `bm` = nº do Boletim de
-  Medição vinculado, `empresa`, `emissao`, `valor`). Na implantação original
-  (2026-08-10) não tinha coluna de valor — ganhou `valor` (numeric) depois,
-  no mesmo dia, 100% preenchida nas 22 obras da tabela; a curva do setor
-  Medições passou de contagem de NFs pra valor acumulado por data de
-  emissão. Chave de obra é o **código de contrato** ("CP029", "CP273"...) —
-  uma 4ª convenção de nome de obra, além de `curva`/`origemTV`/`origemPTS`
-  — ver armadilha 12.
-- **`proximos_faturamentos`** — 1 linha por obra (quando existe): próxima
-  `data_prevista` + `valor_previsto`. Mesma chave de obra (código CP) de
-  `nfs`. As duas alimentam o setor Medições desde 2026-08-10.
+- **`nfs`** e **`proximos_faturamentos`** — fontes ORIGINAIS do setor
+  Medições (2026-08-10), **substituídas em 2026-08-19** por
+  `contratos_medicao`/`boletins_medicao` abaixo (pedido explícito: "não
+  vamos utilizar os dados que já existem, vamos fazer uma nova
+  importação"). Ficam registradas aqui só por histórico — `nfs` tinha 1
+  linha por Nota Fiscal (`nf`/`bm`/`empresa`/`emissao`/`valor`),
+  `proximos_faturamentos` tinha 1 linha por obra com a próxima
+  `data_prevista`+`valor_previsto`. O painel não lê mais nenhuma das duas.
+- **`contratos_medicao`** (1 linha por contrato — `cp_codigo` PK) e
+  **`boletins_medicao`** (1 linha por BM/boletim de medição, chave
+  `cp_codigo`+`linha_planilha`) — fonte atual do setor Medições, importada
+  via Apps Script da planilha "Saldo a Faturar - Geral - Medições" (ver
+  [[08 - Blueprint do Painel de Obra]] pro schema completo e o histórico
+  de bugs do parser). `contratos_medicao` tem `valor_contrato`/
+  `valor_ocs`/`valor_total`/`iss_fracao`/`prazo_vencimento_dias`.
+  `boletins_medicao` tem o extrato completo por BM: previsto, medido,
+  desconto FD, retenção, faturado, datas, status de faturamento/
+  recebimento, saldos acumulados (guardados tal qual a planilha calcula,
+  só pra auditoria — **não** usados pra decidir se uma linha "existe":
+  essas colunas carregam o último valor conhecido pra frente via fórmula
+  da planilha, mesmo em linha sem nenhuma atividade real). Chave de obra
+  continua sendo o **código de contrato** ("CP029", "CP273"...) — mesma 4ª
+  convenção de nome de obra de sempre, além de `curva`/`origemTV`/
+  `origemPTS` — ver armadilha 12. Ingestão é upsert (não substituição em
+  lote como as demais tabelas do projeto) — rodar a sincronização de novo
+  atualiza linhas existentes e insere as novas, nunca apaga uma linha que
+  saiu da planilha.
 
 ## Como o dado entra (importante para o novo desenho)
 
@@ -249,6 +265,206 @@ transcrição conferida contra Soma/Pico/Total ANTES de gravar (bateu
 Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
+
+### Suprimentos — regra de "crítico" fechada: Curva A por item macro (2026-08-21)
+
+Decisão de produto que faltava desde 2026-08-05 (ver seção anterior):
+"os críticos serão, por hora, os itens Curva A, que correspondem, em sua
+soma, a 80% do valor do projeto" — implementado só em cima de
+`itens_rmi` (as outras 2 fontes de Suprimentos, `pedidos_suprimentos` e
+`itens_mapa_compras`, seguem sem tela própria).
+
+- **Grão = "item macro"** (disciplina) — não o item-folha, ~~fixado em
+  `raw.nivel === 1` inicialmente~~. **Corrigido 2x no mesmo dia**: 1º
+  pra resolução por RMI (nível 0 ou 1, varia por ramo — ver seção
+  abaixo); depois o próprio conceito de "crítico" desceu de disciplina
+  pra MATERIAL (ver "Crítico vira MATERIAL" mais abaixo) — o "item
+  macro"/disciplina virou só coluna de contexto, não mais o grão da
+  Curva A.
+- **Curva A**: ordena os macro-itens por `subtotal_custo_meta_orcamento`
+  decrescente, acumula, inclui todo item até o acumulado ANTES dele
+  cruzar 80% do total.
+- **Itens de canteiro/apoio excluídos do cálculo inteiro** (não entram
+  nem no denominador) — pedido em seguida: "itens de canteiro como
+  consumíveis, alojamento e afins não precisam ser considerados".
+  Classificação por palavra-chave (não taxonomia fixa — 2.975
+  descrições distintas de nível 1 nas 6 obras). Ver detalhe completo e
+  lista de palavras-chave em [[08 - Blueprint do Painel de Obra]],
+  seção "Setor 4 — Suprimentos sai do placeholder".
+- **`prazo_status` não virou critério**: checado no dado real antes de
+  decidir — 100% dos itens da obra 91 vieram `sem_data`, API ainda não
+  popula essa dimensão. `desvio_saldo_orcamentario` (já populado) virou
+  badge complementar na tabela, não critério de corte.
+- Consulta usa filtro de expressão jsonb direto no PostgREST:
+  `raw->>nivel=eq.1` (índice de expressão já existia pra
+  `prazo_status`/`desvio_saldo_orcamentario`, não pra `nivel` — sem
+  índice dedicado ainda, aceitável pro volume atual de ~150-900
+  itens/obra depois do filtro por `id_obra`).
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou linhas indesejadas no CNPEM Faseado — investigado antes
+de mexer (ADR-005) e o achado invalida a premissa da seção acima:
+`nivel === 1` fixo NÃO é universal. Comparando obra 91 × CNPEM Faseado
+(106) com consulta direta no PostgREST:
+
+- Obra 91: nível 0 é "balde" de origem de material (`MATERIAIS - UB/SP`,
+  `CHANGE ORDER N`, quase todos zerados) — a disciplina real só aparece
+  no nível 1. Por isso nível 1 fixo funcionava aqui.
+- CNPEM Faseado: é o INVERSO — nível 0 já É a disciplina real (HVAC,
+  CIVIL, ELÉTRICA E SISTEMAS, COMBUSTÍVEL...). Nível 1 é item de linha
+  granular (814 linhas na obra) — nível 1 fixo quebrava aqui.
+- RMI 43/GERAL (obra 91): tem ramo cujo nível 0 nem existe como linha
+  na origem (órfão) — só nível 1 carrega o valor real desse ramo.
+
+Consulta passou a buscar nível 0 E nível 1 da obra (2 requisições em
+vez de 1) e resolver por RAMO (`id_rmi`+`codigo_seq`) qual usar:
+desce pro nível 1 se o nome do nível 0 bater padrão de "balde"
+administrativo (`MATERIAIS -`, `CHANGE ORDER`, `OC -`, `CO <número>`),
+se o subtotal do nível 0 vier zerado com filho de valor real, ou se o
+ramo for órfão; senão usa o nível 0 direto. Detalhe completo e código em
+[[08 - Blueprint do Painel de Obra]], seção "'Item macro' deixa de ser
+nível fixo". Validado sem regressão (obra 91 bateu exato com o resultado
+anterior) + CNPEM Faseado com resultado sensato (4 itens críticos:
+HVAC, Elétrica e Sistemas, Civil, Custos com Efetivo MSE).
+
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+Correção de escopo maior, no mesmo dia: "no CNPEM o item de custo com
+efetivo não precisa aparecer também... observe no nível de material, é
+isso que precisamos exibir, os materiais críticos, orientados por área
+e disciplina" — o grão da Curva A desce de disciplina (resultado da
+seção anterior) pro MATERIAL real (item-folha); disciplina/área viram
+colunas de contexto.
+
+- **Material não é nível fixo** — varia até dentro do mesmo ramo (RMI
+  41/obra 91 tem material genuíno em nível 3 E 4). Identificado por
+  `unidade` populada e ≠ `SERV`/`VB`/`VERBA`, mais uma lista curta de
+  exceção por nome (TESTES, OMISSOS, COMISSIONAMENTO — vêm com unidade
+  "UN" igual material de verdade, mas não são). Evita contar 2x: só
+  desce pro filho se ele também tiver valor > 0 (não só a mesma
+  unidade do pai).
+- **"Custos com Efetivo MSE" some sozinho** — por baixo só tem
+  treinamento/passagens/plano de saúde, tudo `vb`, sem regra especial.
+- **Área**: pode vir de ABAIXO da disciplina na árvore (CNPEM) ou de
+  CIMA (obra 91 — UB/SP é o nível que a resolução de disciplina
+  descarta como balde). ~~Nesse 2º caso virava sufixo no nome da
+  disciplina~~ — **corrigido horas depois** (ver "Tabela vira árvore"
+  abaixo): virou campo próprio em todo material, igual nos 2 casos.
+- Fetch mudou de "nível 0 + nível 1" pra obra inteira (1 requisição) —
+  precisa caminhar até a folha, que pode estar em qualquer profundidade.
+
+Detalhe completo, o bug do "SAE002" pego na validação (sufixo só se
+aplica quando a descida foi por padrão de nome, não pelo fallback de
+subtotal zerado) e os números de validação em
+[[08 - Blueprint do Painel de Obra]], seção "Crítico vira MATERIAL".
+
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"precisa estar organizado em nívels, Área -> Disciplina -> Material...
+a necessidade de compilar materiais similares em uma coisa só" — área
+deixa de ser sufixo no nome da disciplina (só fazia sentido numa tabela
+plana) e vira campo próprio em todo material, virando nó real na árvore
+de exibição, não importa se fica acima ou abaixo da disciplina no RMI
+original. `consolidarMateriaisSemelhantes` soma valor+saldo de materiais
+com a mesma descrição normalizada dentro do MESMO par área+disciplina.
+
+2 bugs pegos na validação em Node antes do teste de UI: (1) área
+herdada de cima sendo sobrescrita pelo 1º sub-agrupamento abaixo da
+disciplina; (2) quando o material é filho direto da disciplina (sem
+camada de área), a área virava igual ao nome do próprio material.
+Resultado real: obra 91 = 3 áreas (UB, SP, sem área); CNPEM Faseado = 6
+áreas (Central de Água Gelada, Instalações Nível 614/619/623, Caixa de
+Acesso, sem área). Detalhe completo em
+[[08 - Blueprint do Painel de Obra]], seção "Tabela vira árvore".
+
+### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
+
+Tabela `itens_rmi` desenhada (SQL em `painel-mse\n8n\rmi-suprimentos.README.md`)
+e workflow n8n criado (`rmi-suprimentos.workflow.json`, mesma pasta) —
+ainda não aplicado no Supabase nem rodado.
+
+Fonte: API externa `rmi_api` do PortalMSE
+(`https://portalmse.com.br/microservices/rmi_api/GUIA_USUARIO.php`) —
+**serviço distinto de `mapa_compras_api`**, confirmado pelo `/health` de
+cada um (nomes de `service` diferentes) e por uma chave de um dar 403 no
+outro. Guia bem mais completo que o de Mapa de Compras: confirma o
+formato do envelope (`{page,per_page,total,data:[...]}`) e traz exemplo
+de JSON de resposta real.
+
+**Achado que muda o jogo pra regra de "crítico"** (pendente desde
+2026-08-05/08-11, ver seção "Suprimentos ganha fonte nova" abaixo e
+[[02 - Escopo e Telas]]): os itens da `rmi_api` já vêm com
+`prazo_status` (atrasado/no_prazo/sem_data) e `desvio_saldo_orcamentario`
+(positivo/negativo) **prontos da origem**, algo que nenhuma das outras 2
+fontes de Suprimentos tinha por item. A API até aceita filtrar direto
+por esses 2 campos via query string. Ainda não virou regra de produto
+("crítico = o quê exatamente"), mas agora existe dado pronto pra decidir
+em cima.
+
+1 linha por item, chave = `id` (o próprio id numérico do item na
+origem) — é a 1ª das 4 fontes de ingestão do projeto a ter um id
+numérico confirmado; as outras 3 (`pedidos_suprimentos`,
+`orcamentos_complementares_obra`, `itens_mapa_compras`) precisaram de
+chave composta "no chute" por falta disso.
+
+Suprimentos agora tem **3 fontes de ingestão coexistindo**
+(`pedidos_suprimentos`, `itens_mapa_compras`, `itens_rmi`), cada uma com
+um grão/foco diferente do mesmo processo de compra — ver tabela
+comparativa no README do `rmi-suprimentos` pra quando for desenhar a
+tela.
+
+**Ajuste no workflow (2026-08-20)**: usuário testou a API e o Supabase
+funcionando via Postman, mas o workflow do `rmi-suprimentos` ficava
+"rodando e não retornava" no n8n — suspeita de limitação de hardware na
+máquina que hospeda. Causa provável: o desenho original buscava as 6
+obras primeiro e só depois processava tudo junto, exigindo manter as 6
+respostas inteiras na memória ao mesmo tempo antes de gravar qualquer
+coisa. Corrigido pra processar **1 obra por vez em loop** (`Split In
+Batches`) — busca, transforma e grava uma obra antes de buscar a
+próxima, liberando memória a cada volta.
+
+**Schema de `itens_rmi` simplificado (2026-08-20)**: a pedido explícito
+("é possível retirar esta etapa?", referindo-se à tradução campo-a-campo
+no Code node), a tabela deixou de ter uma coluna por campo da API — agora
+é só `id` (chave), `id_obra` (filtro) + `raw jsonb` (item inteiro), mesmo
+padrão de `orcamentos_complementares_obra`. Filtro por `prazo_status`/
+`desvio_saldo_orcamentario` continua possível via `raw->>campo` no
+PostgREST, com índice de expressão nos dois. Ver `rmi-suprimentos.README.md`
+pra detalhe completo e exemplos de consulta.
+
+### Suprimentos ganha 2ª fonte em ingestão — Mapa de Compras (2026-08-19)
+
+Tabela `itens_mapa_compras` desenhada (SQL em
+`painel-mse\n8n\mapa-compras-suprimentos.README.md`) e workflow n8n criado
+(`mapa-compras-suprimentos.workflow.json`, mesma pasta) — ainda não
+aplicado no Supabase nem rodado.
+
+Fonte: API externa `mapa_compras_api` do PortalMSE
+(`https://portalmse.com.br/microservices/mapa_compras_api/GUIA_USUARIO.php`)
+— itens de requisição/mapa de compra (código, descrição, quantidade,
+preço de referência, custo meta de orçamento, saldo orçamentário, quanto
+já foi pedido/consumido, melhor oferta). 1 linha por item (chave composta
+`id_obra`+`id_mapa_compras`+`codigo_seq`, suposição a confirmar com dado
+real).
+
+**Guia da API bem mais magro que os das 2 ingestões anteriores** — sem
+nenhum exemplo de JSON de resposta completo. Por isso ficaram 3 pontos em
+aberto (detalhados no README do workflow, seção "Antes de importar"):
+formato do envelope da resposta (`{data:[...]}` presumido, com fallback e
+erro explícito se não bater), nomes exatos dos 3 campos `melhor_oferta_*`
+(a doc só descreve em texto corrido, não nomeia), e a tabela de
+requisições (cabeçalho do RMI) **não foi criada** — a doc não detalha os
+campos de `/v1/requisicoes` o suficiente pra desenhar schema sem
+fabricar dado.
+
+Não confundir com `pedidos_suprimentos` (ingestão anterior, mesma aba
+Suprimentos): são 2 fontes/grãos diferentes do mesmo ERP —
+`pedidos_suprimentos` é o pedido de compra já fechado (fornecedor, valor,
+prazo de entrega); `itens_mapa_compras` é o item dentro da requisição,
+antes/durante a compra (orçamento, saldo, se já tem pedido). A regra de
+"crítico" do setor Suprimentos provavelmente vai precisar cruzar as duas
+— nenhuma tem sozinha tanto o lado do prazo quanto o lado do orçamento.
 
 ### Suprimentos ganha fonte nova em ingestão (2026-08-11)
 

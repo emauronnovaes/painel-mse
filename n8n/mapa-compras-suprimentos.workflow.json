@@ -1,0 +1,101 @@
+{
+  "name": "Mapa de Compras (Suprimentos) → Supabase (painel-mse)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "days", "daysInterval": 1, "triggerAtHour": 7, "triggerAtMinute": 30 }
+          ]
+        }
+      },
+      "id": "trigger-diario",
+      "name": "Agendamento Diário",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-900, 300]
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Mesma lista/ids do array OBRAS em prototipo/index.html -- igual ao fluxo\n// de Pedidos (Suprimentos), essa API exige `obra_id` por chamada (sem\n// endpoint \"lista todas as obras\"), então a lista fixa é inevitável.\n// CNPEM - Auditório (id 103) fica DE FORA de propósito, mesma decisão já\n// tomada nos outros 2 fluxos de ingestão. Se uma obra nova entrar no\n// painel, adicionar aqui também.\nconst OBRAS = [\n  { id: 106, nome: 'CNPEM - Faseado' },\n  { id: 110, nome: 'Hitachi' },\n  { id: 94,  nome: 'Porto Itapoá' },\n  { id: 107, nome: 'Novo Nordisk - AP' },\n  { id: 108, nome: 'Novo Nordisk - AP - Reforço' },\n  { id: 91,  nome: 'Novo Nordisk - UB/SP' },\n];\n\nreturn OBRAS.map(o => ({ json: { id_obra: o.id, nome_obra: o.nome } }));"
+      },
+      "id": "code-lista-obras",
+      "name": "Lista de obras",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-660, 300]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "url": "=https://portalmse.com.br/microservices/mapa_compras_api/v1/itens",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "obra_id", "value": "={{$json.id_obra}}" },
+            { "name": "all", "value": "true" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } },
+          "timeout": 60000
+        }
+      },
+      "id": "http-itens-por-obra",
+      "name": "Buscar itens por obra",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-420, 300],
+      "credentials": {
+        "httpBearerAuth": { "name": "PortalMSE - Mapa de Compras (Suprimentos)" }
+      }
+    },
+    {
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Modo padrão \"Run Once for All Items\" (não mexer) -- mesmo motivo do\n// fluxo de Pedidos (Suprimentos): a saída é um FAN-OUT de 1 item de obra\n// pra N linhas de item de mapa de compras.\n//\n// Casa cada resposta HTTP com sua obra de origem por POSIÇÃO (mesma ordem\n// de entrada/saída). Guard explícito: se as contagens não baterem, aborta\n// em vez de arriscar juntar item com obra errada.\nconst listaObras = $('Lista de obras').all();\nconst respostas = $input.all();\nif (listaObras.length !== respostas.length) {\n  throw new Error(`Descompasso entre lista de obras (${listaObras.length}) e respostas HTTP (${respostas.length}) -- abortando pra não misturar item com obra errada.`);\n}\n\n// Conversão numérica defensiva -- a API irmã (pedidos_usuarios_api) já\n// devolveu valor monetário como STRING (\"418607.66\") apesar da doc dizer\n// \"número\" (ver README do fluxo de Orçamentos Complementares). Sem essa\n// conversão, um valor assim viraria texto dentro de uma coluna numeric e o\n// insert falharia (ou, pior, uma coluna numeric aceitaria a string mas o\n// front-end que já usa Number()/parseValNum() ficaria duplicando o cast).\nconst num = (v) => (v === null || v === undefined || v === '') ? null : Number(v);\n\nreturn respostas.map((resp, i) => {\n  const idObra = listaObras[i].json.id_obra;\n  const nomeObra = listaObras[i].json.nome_obra;\n  const corpo = resp.json;\n\n  // FORMATO DO ENVELOPE AINDA NÃO CONFIRMADO com dado real -- o guia da API\n  // não mostra um exemplo de JSON completo pra /v1/itens (só a tabela de\n  // campos). A API irmã da mesma família (pedidos_usuarios_api) devolve\n  // `{ data: [...] }`, então essa é a 1ª tentativa; cai pra array direto\n  // como 2ª tentativa. Se nenhuma bater, o erro abaixo aparece na 1ª\n  // execução real em vez de gravar silenciosamente 0 linhas -- ajustar\n  // aqui assim que a forma real for vista (ex.: pode ser `{ items: [...] }`\n  // ou vir com metadados de paginação por fora do array).\n  const itens = Array.isArray(corpo?.data) ? corpo.data\n    : Array.isArray(corpo) ? corpo\n    : (() => { throw new Error(`Formato de resposta inesperado pra obra ${idObra} (nem {data:[...]} nem array direto) -- confira a resposta real e ajuste este node antes de reexecutar.`); })();\n\n  const linhas = itens.map(it => ({\n    id_obra: idObra,\n    obra_nome: nomeObra,\n    id_mapa_compras: num(it.id_mapa_compras),\n    requisicao: it.requisicao != null ? String(it.requisicao) : null,\n    codigo_seq: it.codigo_seq != null ? String(it.codigo_seq) : null,\n    descricao: it.descricao || null,\n    unidade: it.unidade || null,\n    quantidade: num(it.quantidade),\n    preco_referencia_bd_s1: num(it.preco_referencia_bd_s1),\n    subtotal_referencia_bd_s1: num(it.subtotal_referencia_bd_s1),\n    custo_meta_orcamento: num(it.custo_meta_orcamento),\n    subtotal_custo_meta_orcamento: num(it.subtotal_custo_meta_orcamento),\n    saldo_orcamentario: num(it.saldo_orcamentario),\n    saldo_quantidade: num(it.saldo_quantidade),\n    quantidade_pedida: num(it.quantidade_pedida),\n    total_consumido: num(it.total_consumido),\n    tem_pedido: it.tem_pedido === true || it.tem_pedido === 'true' || it.tem_pedido === 1,\n    fornecedor_ref: it.fornecedor_ref || null,\n    projeto_ref: it.projeto_ref || null,\n    // Nomes exatos de melhor_oferta_* NÃO confirmados pela doc (ela só diz\n    // \"unitário/subtotal/fornecedor\", sem nomear os campos JSON de verdade)\n    // -- ajustar assim que a resposta real chegar. `raw` guarda o item\n    // inteiro, então nada se perde mesmo se estes 3 vierem null por nome\n    // errado.\n    melhor_oferta_unitario: num(it.melhor_oferta_unitario),\n    melhor_oferta_subtotal: num(it.melhor_oferta_subtotal),\n    melhor_oferta_fornecedor: it.melhor_oferta_fornecedor || null,\n    raw: it,\n    atualizado_em: new Date().toISOString(),\n  }));\n  return { json: { id_obra: idObra, linhas } };\n});"
+      },
+      "id": "code-achatar-itens",
+      "name": "Montar linhas por obra",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-180, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/itens_mapa_compras?on_conflict=id_obra,id_mapa_compras,codigo_seq",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.linhas) }}"
+      },
+      "id": "http-upsert-supabase",
+      "name": "Upsert no Supabase (lote por obra)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 300],
+      "credentials": {
+        "httpCustomAuth": { "name": "Supabase - API Portal (service_role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Agendamento Diário": { "main": [[{ "node": "Lista de obras", "type": "main", "index": 0 }]] },
+    "Lista de obras": { "main": [[{ "node": "Buscar itens por obra", "type": "main", "index": 0 }]] },
+    "Buscar itens por obra": { "main": [[{ "node": "Montar linhas por obra", "type": "main", "index": 0 }]] },
+    "Montar linhas por obra": { "main": [[{ "node": "Upsert no Supabase (lote por obra)", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

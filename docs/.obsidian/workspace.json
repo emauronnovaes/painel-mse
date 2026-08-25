@@ -11,14 +11,10 @@
             "id": "0e20a5341ed04af1",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "01 - Visão do Produto.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "01 - Visão do Produto"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "Visualização em gráfico"
             }
           }
         ]
@@ -187,15 +183,10 @@
   },
   "active": "0e20a5341ed04af1",
   "lastOpenFiles": [
-    "Design System.md",
-    "01 - Visão do Produto.md",
-    "02 - Escopo e Telas.md",
-    "09 - Log do Gemini.md",
-    "Início.md",
-    "03 - Padrão de URLs e Abas.md",
-    "Sem título 1.canvas",
     "08 - Blueprint do Painel de Obra.md.tmp.17736.1111ffab8dc6",
     "08 - Blueprint do Painel de Obra.md.tmp.17736.255341ebd54c",
+    "Início.md",
+    "09 - Log do Gemini.md",
     "10 - Log do Auto.md",
     "08 - Blueprint do Painel de Obra.md.tmp.17736.fbc074d9f2de",
     "08 - Blueprint do Painel de Obra.md.tmp.17736.884670fbfa28",
@@ -206,8 +197,12 @@
     "07 - Modelo de Dados.md.tmp.17736.b4a77fcb0cd6",
     "07 - Modelo de Dados.md.tmp.17736.b8ccca55ac77",
     "Sem título.canvas",
+    "03 - Padrão de URLs e Abas.md",
+    "02 - Escopo e Telas.md.tmp.15508.cf508601cca4",
+    "02 - Escopo e Telas.md",
     "08 - Blueprint do Painel de Obra.md",
     "05 - Herança do Dashboard Atual.md",
-    "04 - Reuso de Telas.md"
+    "04 - Reuso de Telas.md",
+    "01 - Visão do Produto.md"
   ]
 }
