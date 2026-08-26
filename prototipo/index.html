@@ -362,15 +362,18 @@ const OBRAS = [
   { id: 110, nome: 'Hitachi',                       curva: 'HITACHI',                   origemTV: 'HITACHI',                                                      origemCP: 'CP022' },
   { id: 94,  nome: 'Porto Itapoá',                  curva: 'PORTO',                     origemTV: 'PORTO ITAPOÁ',                                                 origemCP: 'CP002' },
   { id: 107, nome: 'Novo Nordisk - AP',              curva: 'NOVO NORDISK - AP',         origemTV: 'NN - AP - ELETROMECÂNICA',       origemPTS: 'Novo Nordisk AP', origemCP: 'CP273',
-    // NN - AP tem 4 curvas na mesma planilha (pedido 2026-08-14: "no NN AP
+    // NN - AP tinha 4 curvas na mesma planilha (pedido 2026-08-14: "no NN AP
     // temos mais de uma curva... botões na parte de baixo pra navegar entre
-    // elas"; Estudo somada em 2026-08-26). `curva` acima continua sendo a
-    // chave PADRÃO (consolidada, igual sempre foi) — as demais só aparecem
-    // como opção de botão.
+    // elas"; Estudo somada em 2026-08-26). Pedido explícito (2026-08-26):
+    // "pode suprimir as curvas PPU+OC e CO do AP" — os botões "PPU + C.O."
+    // (consolidado) e "C.O." isolado saíram do seletor; só "PPU" e "Estudo"
+    // continuam. `curva` acima (chave PADRÃO usada fora do seletor) NÃO
+    // mudou — segue 'NOVO NORDISK - AP' (mantém o vínculo com o resto do
+    // painel); o 1º item de `curvas` (agora "PPU") vira o default só DENTRO
+    // do seletor de Curva S (`curvaChaveAtual` cai pro `curvas?.[0]?.chave`
+    // quando nada foi clicado ainda).
     curvas: [
-      { chave: 'NOVO NORDISK - AP',         label: 'PPU + C.O.' },
       { chave: 'NOVO NORDISK - AP - PPU',   label: 'PPU' },
-      { chave: 'NOVO NORDISK - AP - C.O.',  label: 'C.O.' },
       { chave: 'NOVO NORDISK - AP - Estudo', label: 'Estudo' },
     ] },
   { id: 108, nome: 'Novo Nordisk - AP - Reforço',    curva: 'NOVO NORDISK - REFORÇO AP', origemTV: 'NN - REFORÇO EST. METÁLICAS',                                  origemCP: 'CP261' },
@@ -3009,7 +3012,9 @@ const GRAN_EFETIVO = [
 ];
 
 function ModuloEfetivo({ obraId, obraNome }){
-  const [granularidade, setGranularidade] = useState('mes');
+  // Pedido explícito (2026-08-26): "por padrão o histograma será aberto
+  // no semanal" — antes abria em 'mes'.
+  const [granularidade, setGranularidade] = useState('semana');
   const [moiModFiltro, setMoiModFiltro] = useState('TOTAL');
   const [filtroDataDe, setFiltroDataDe] = useState('');
   const [filtroDataAte, setFiltroDataAte] = useState('');
@@ -4180,6 +4185,23 @@ function corStatusRestricao(label){
   if (s.includes('abert')) return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
   return { cor:T.mut, bg:'#eef0f3' };
 }
+// Monitoramento — pedido explícito (2026-08-26): "coluna... calculada
+// com base na data limite de resolução e a data atual. Vencida =
+// Atrasado, falta 1 semana = Em risco, mais de 1 semana = No prazo".
+// Só calcula pra restrição ABERTA — uma concluída/cancelada já teve seu
+// desfecho, marcar "Atrasado" nela seria enganoso (mesmo racional do
+// balão "Abertas" já existente, que também isola por status). Retorna
+// `null` nesse caso, exibido como "—" na tabela.
+function monitoramentoRestricao(dataConclusao, statusLabel){
+  if (!(statusLabel || '').toLowerCase().includes('abert')) return null;
+  if (!dataConclusao) return null;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const limite = new Date(dataConclusao + 'T00:00:00');
+  const diasRestantes = Math.round((limite - hoje) / 86400000);
+  if (diasRestantes < 0) return { texto:'Atrasado', cor:T.red, bg:'rgba(210,59,59,0.13)', ordem:0 };
+  if (diasRestantes <= 7) return { texto:'Em risco', cor:T.amber, bg:'rgba(217,145,26,0.13)', ordem:1 };
+  return { texto:'No prazo', cor:T.green, bg:'rgba(31,157,87,0.13)', ordem:2 };
+}
 // `onClick`/`ativo` são opcionais — sem eles, continua o mesmo badge
 // estático de sempre (Restrições usa assim). Com `onClick`, vira um botão
 // disfarçado de badge (cursor pointer + anel de destaque quando `ativo`).
@@ -4205,16 +4227,49 @@ function nomeUsuarioCadastro(usuario){
 
 const RANK_CRITICIDADE = { alta: 0, média: 1, media: 1, baixa: 2 };
 const COLUNAS_RESTRICOES = [
-  { label:'Criticidade', campo:'criticidade' },
-  { label:'Status',      campo:'status' },
-  { label:'Tarefa',      campo:'tarefa' },
   { label:'Descrição',   campo:'descricao' },
   { label:'Tipo',        campo:'tipo' },
   { label:'Responsável', campo:'responsavel' },
   { label:'Cadastrado por', campo:'usuario' },
   { label:'Início',      campo:'inicio',    align:'right' },
   { label:'Conclusão',   campo:'conclusao', align:'right' },
+  { label:'Monitoramento', campo:'monitoramento' },
+  { label:'Criticidade', campo:'criticidade' },
+  { label:'Status',      campo:'status' },
 ];
+
+// IRC — Índice de Responsabilidade Contratual (pedido explícito,
+// 2026-08-26): "balão... que será uma barra, numa ponta MSE e na
+// outra cliente, exibindo com base nas restrições quantos % é de
+// responsabilidade da MSE e quantos % é do cliente". Mesmo visual de
+// cartão do `Balao`, mas o corpo é uma barra bipolar em vez de um
+// número — só considera restrições com `responsabilidade` reconhecida
+// (MSE/CLIENTE); as demais (em branco ou outro valor) não entram no
+// cálculo, não é tratado como 0%.
+function BalaoIRC({ pctMse, pctCliente, temDados }){
+  return (
+    <div className="card" style={{ borderRadius:16, background:'#fff', border:`1px solid ${T.line}`, padding:'10px 14px',
+      display:'flex', flexDirection:'column', height:'100%', minHeight:74, boxSizing:'border-box', gap:8 }}>
+      <span className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:T.mut, textTransform:'uppercase', fontWeight:600 }}>
+        IRC · Índice de Responsabilidade Contratual
+      </span>
+      {temDados ? (
+        <>
+          <div style={{ display:'flex', height:16, borderRadius:8, overflow:'hidden', border:`1px solid ${T.line}` }}>
+            <div style={{ width:`${pctMse}%`, background:T.blue, transition:'width 0.3s ease' }} title={`MSE: ${pctMse}%`} />
+            <div style={{ width:`${pctCliente}%`, background:T.amber, transition:'width 0.3s ease' }} title={`Cliente: ${pctCliente}%`} />
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, fontWeight:700 }}>
+            <span style={{ color:T.blue }}>MSE {pctMse}%</span>
+            <span style={{ color:T.amber }}>Cliente {pctCliente}%</span>
+          </div>
+        </>
+      ) : (
+        <span style={{ fontSize:12, color:T.mut, alignSelf:'center', margin:'auto 0' }}>Sem restrições classificadas</span>
+      )}
+    </div>
+  );
+}
 
 function ModuloRestricoes({ obraId, obraNome }){
   const [dado, setDado] = useState(null);
@@ -4269,13 +4324,13 @@ function ModuloRestricoes({ obraId, obraNome }){
       switch (ordenarPor) {
         case 'criticidade': return rankCriticidade(r);
         case 'status': return rankStatusAberto(r);
-        case 'tarefa': return (r.nome_eap || '').toLowerCase();
         case 'descricao': return (r.descricao || '').toLowerCase();
         case 'tipo': return (r.nome_tipo_restricao || '').toLowerCase();
         case 'responsavel': return (r.responsabilidade || '').toLowerCase();
         case 'usuario': return (nomeUsuarioCadastro(r.usuario_cadastro) || '').toLowerCase();
         case 'inicio': return r.data_inicio || '';
         case 'conclusao': return r.data_conclusao || '';
+        case 'monitoramento': return monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label)?.ordem ?? 3;
         default: return 0;
       }
     };
@@ -4292,13 +4347,19 @@ function ModuloRestricoes({ obraId, obraNome }){
 
   const abertas = dado.filter(r => (r.status_cadastro_label || '').toLowerCase().includes('abert')).length;
   const altas = dado.filter(r => (r.criticidade || '').trim().toLowerCase() === 'alta').length;
+  const qtdMse = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'MSE').length;
+  const qtdCliente = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'CLIENTE').length;
+  const totalResp = qtdMse + qtdCliente;
+  const pctMse = totalResp ? Math.round((qtdMse / totalResp) * 100) : 0;
+  const pctCliente = totalResp ? 100 - pctMse : 0;
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
-      <div className="kpi-row cols-3">
+      <div className="kpi-row cols-4">
         <Balao titulo="Restrições" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={dado.length} />
         <Balao titulo="Abertas" cor={T.amber} bg="rgba(217,145,26,0.06)" borda="rgba(217,145,26,0.12)" valor={abertas} />
         <Balao titulo="Criticidade Alta" cor={T.red} bg="rgba(210,59,59,0.06)" borda="rgba(210,59,59,0.12)" valor={altas} />
+        <BalaoIRC pctMse={pctMse} pctCliente={pctCliente} temDados={totalResp > 0} />
       </div>
 
       <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
@@ -4333,17 +4394,18 @@ function ModuloRestricoes({ obraId, obraNome }){
               {restricoes.map(r => {
                 const cc = corCriticidade(r.criticidade);
                 const cs = corStatusRestricao(r.status_cadastro_label);
+                const cm = monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label);
                 return (
                   <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.criticidade} cor={cc.cor} bg={cc.bg} /></td>
-                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.status_cadastro_label} cor={cs.cor} bg={cs.bg} /></td>
-                    <td style={{ padding:'10px 14px', fontSize:12.5, color:T.body, maxWidth:220 }}>{r.nome_eap || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12.5, color:T.ink, maxWidth:380, lineHeight:1.4 }}>{r.descricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.nome_tipo_restricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.responsabilidade || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{nomeUsuarioCadastro(r.usuario_cadastro) || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_inicio_formatada || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_conclusao_formatada || '—'}</td>
+                    <td style={{ padding:'10px 14px' }}>{cm ? <BadgePill texto={cm.texto} cor={cm.cor} bg={cm.bg} /> : <span style={{ color:T.mut }}>—</span>}</td>
+                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.criticidade} cor={cc.cor} bg={cc.bg} /></td>
+                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.status_cadastro_label} cor={cs.cor} bg={cs.bg} /></td>
                   </tr>
                 );
               })}
@@ -4899,7 +4961,20 @@ const CATALOGO_MATERIAIS_RMI = {
   'Molas': ['RMTAC', 'RMG ', 'BASES INERCIAIS'],
   'Chiller': ['CHILLER'],
   'Elevadores': ['ELEVADOR'],
-  'Isolamento térmico': ['ALUCLAD', 'MANTA SUPERLON', 'TUBO SUPERLON', 'ISOLAMENTO', 'LA DE VIDRO', 'PLACAS DE LA', 'LENCOL DE BORRACHA'],
+  // `ISOLAMENTO` bare (removido 2026-08-26, pedido explícito: "os cabos
+  // estão caindo em isolamento térmico") batia qualquer descrição de
+  // CABO ELÉTRICO, já que "isolamento" é termo padrão de especificação
+  // elétrica ("Cabo 0,6/1kV... isolamento de HEPR 90°...") — como esta
+  // categoria é checada antes de `Cabos`, R$9,24M de cabos reais na
+  // obra UB/SP (e R$3,04M na NN-AP, já deployada) caíam aqui por
+  // engano. Trocado por frases compostas que só batem isolamento
+  // mecânico de verdade (tubo/conexão/válvula/flange), confirmado
+  // contra os itens reais de várias obras sem nenhuma perda de
+  // cobertura genuína (valor>0) fora do UB/SP e NN-AP.
+  'Isolamento térmico': [
+    'ALUCLAD', 'MANTA SUPERLON', 'TUBO SUPERLON', 'LA DE VIDRO', 'PLACAS DE LA', 'LENCOL DE BORRACHA',
+    'ISOLAMENTO DE TUBO', 'ISOLAMENTO DE CONEX', 'ISOLAMENTO DE VALVULA', 'ISOLAMENTO DE FLANGE', 'ISOLAMENTO TERMICO', 'ISOLAMENTO DE FILTRO',
+  ],
   'Tubulação Aço Carbono': ['TUBULACAO ACO CARBONO', 'TUBO DE ACO CARBONO'],
   'Tubulação Inox': ['TUBULACAO ACO INOX', 'TUBO INOX', 'CHAPA INOX'],
   'Tubulação Alumínio': ['TUBULACAO ALUMINIO', 'TUBO DE ALUMINIO'],
@@ -5182,7 +5257,12 @@ function ehItemCanteiroRmi(descricao){
 // CP029 (pedido explícito) — mas com estrutura de RMI mais divergente
 // ainda que a Hitachi (ver notas em CONFIG_SUPRIMENTOS_POR_OBRA[94]
 // abaixo, achados detalhados investigando o dump real da obra).
-const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94]);
+// Novo Nordisk - AP (id_obra=107) entrou em 2026-08-26 — estrutura bem
+// mais próxima do CP029 que as anteriores (nível 0 já é disciplina de
+// verdade, "Change Order" já bate o regex de balde existente): 71% do
+// valor coberto SEM NENHUM ajuste. Só 2 achados pontuais (ver
+// CONFIG_SUPRIMENTOS_POR_OBRA[107]).
+const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91]);
 // Ajustes específicos por obra, além da régua padrão (desenhada e
 // validada pro CP029) — cada obra nova entra aqui só com o que
 // realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
@@ -5448,6 +5528,283 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
       'Cercamento': ['VIGA BALDRAME'],
     },
   }, // Porto Itapoá
+  107: {
+    // Achado investigando o dump real (2026-08-26, mesmo processo de
+    // baixar-rmi-obra.js + inspeção manual das outras obras): estrutura
+    // do AP é bem mais próxima do CP029 que Hitachi/Porto — nível 0 já
+    // é disciplina de verdade (ELÉTRICA, FIRE FIGHTING, TUBULAÇÃO -
+    // INDUSTRIAL UTILITIES...) e "CHANGE ORDER N" já bate o regex de
+    // balde administrativo existente (`EH_BALDE_ADMINISTRATIVO_RMI`).
+    //
+    // A obra tem 6 RMIs (`nome_rmi`), cada uma um escopo genuinamente
+    // diferente (Elétrica Underground, Equipamentos Elétricos, Tubulação/
+    // Isolamento/Suporte, Geral, Estrutura Metálica, Elétrica/Telecom/
+    // Instrumentação/SDAI/Automação) — confirmado que NÃO é o mesmo
+    // problema do Porto Itapoá (nenhuma é duplicata em escala menor de
+    // outra). 2ª rodada, pedido explícito (2026-08-26): "o primeiro
+    // nível será o da própria RMI, com exceção da geral, que não será
+    // considerada":
+    //
+    // (1) RMI "Geral" (id_rmi=217) excluída por inteiro
+    // (`rmisExcluidos`) — investigação confirmou que ela é 100% custo
+    // indireto/administrativo (Equipamentos = frota alugada, Combustível,
+    // EPIs, Uniformes, Ferramentas, Consumíveis, Mobilização, Fretes,
+    // Canteiro, Filial, Alojamento, Mobília, Equipamentos de Medição e
+    // Apoio, Serviços Terceirizados, Rescisão/Férias/GRRF) — nenhum
+    // material de obra de verdade nela. Excluir a RMI inteira também
+    // resolve de uma vez o achado anterior desta obra ("Equipamentos"
+    // frota, R$3,49M, que antes precisava de exclusão pontual por nome
+    // exato — ficou obsoleto e foi removido).
+    //
+    // (2) Área deixa de vir da captura "1 nível abaixo da disciplina"
+    // (só existia pra parte das disciplinas — Estrutura Metálica, por
+    // exemplo, não tinha, e exigia um ajuste pontual à parte) e passa a
+    // ser a própria RMI de origem (`usarNomeRmiComoArea` — ver
+    // `ModuloSuprimentos`). Resultado: Área sempre presente pra todo
+    // material das 5 RMIs restantes, "sem área" cai a zero (era
+    // R$12,25M/25% do valor). Cobertura final: 85,7% (R$41,6M de
+    // R$48,5M) — validado localmente contra o dump real antes do
+    // deploy.
+    rmisExcluidos: [217],
+    usarNomeRmiComoArea: true,
+    // Curva A (corte dos 80% acumulado) é GLOBAL na obra, não por RMI —
+    // com ela ligada, "Equipamentos Elétricos" (R$2,08M, 5% do total) e
+    // "Elétrica Underground" (R$142k, 0,3%) ficam 100% na cauda dos 20%
+    // e somem da árvore por inteiro (0% de itens sobrevive em cada uma),
+    // mesmo depois da consolidação por família — contradiz o pedido de
+    // nível 0 = "a própria RMI" (todas as 5 restantes deveriam aparecer).
+    // Pedido explícito (2026-08-26): "vamos por hora desabilitar a Curva
+    // A" — mesmo ajuste já usado na Hitachi (`curvaAObrigatoria: false`).
+    curvaAObrigatoria: false,
+    // Catálogo de materiais validado (2026-08-26, pedido explícito
+    // "analise a lista de materiais e verifique a necessidade de
+    // inserção para simplificar as descrições"): catálogo base (CP029
+    // puro) cobria só 56,0% do valor da obra — muita coisa caía fora só
+    // por diferença de preposição (ex. "TUBO EM AÇO CARBONO" não batia
+    // 'TUBULACAO ACO CARBONO'/'TUBO DE ACO CARBONO' já existentes) ou
+    // por família nova de verdade (Plataformas/Escadas metálicas,
+    // conexões de tubulação Tê/curva/luva de redução, códigos de painel
+    // PDP-/SP-/LP-, etc.). 3 rodadas até 97,3% (mesmo patamar das outras
+    // obras): rodada 1 (14 categorias novas/estendidas, isolado nesta
+    // obra via `catalogoExtra` — mesmo padrão de isolamento por obra da
+    // Hitachi/Porto, catálogo do CP029 continua intocado) foi de 56,0%
+    // pra 88,1%; rodada 2 (+ conexões de tubulação Curva 45/Cap/Redução/
+    // Junta plana, Aterramento, códigos PDP-/SP-/LP- como Painéis,
+    // Instrumentação diversa) foi pra 94,7%; rodada 3 (+ TEE/Cotovelo/
+    // Cruzeta/Nipe TC/Meia União/CPVC, typo "FLTRO Y" sem o I) foi pra
+    // 97,3%. Rodada 4 (pedido explícito seguinte, mesmo dia: "Cap e Cap
+    // roscado, poderia ser comprimido tudo em um item só... faça uma
+    // análise geral nesse sentido") — achado maior: várias famílias já
+    // "cobertas" continuavam se fragmentando em linhas separadas na
+    // árvore por PURA variação de wording da mesma peça (ex. "CAP,"
+    // isolado × "Cap (plugue de fechamento)" × "Tampão tipo cap" ×
+    // "TAMPÃO TC" eram 4 linhas diferentes pro mesmo tipo de tampão de
+    // tubulação). Generalizado o mesmo tratamento pra outros clusters
+    // achados (Curva 45 com/sem "DE", Elbow/Wye em inglês, União/Meia
+    // Luva/Niple, Juntas Papelão/EPDM/Vedação, Extintor com/sem
+    // qualificador de carga, Suporte/Abraçadeira/Mão Francesa/Clipe como
+    // ferragem de suportação) — foi pra 97,8%, e mais importante: de 98
+    // famílias fora do catálogo pra 60 (menos duplicidade de linha na
+    // árvore, não só mais R$ coberto). Rodada 6 (pedido explícito com
+    // exemplos concretos: "CONJUNTO DE INTERRUPTOR INDICADOR DE
+    // POSICIONAMENTO PARA CONTÊINER PILOTO, SEM RETORNO (1/4"
+    // MACHO/FÊMEA), VEDAÇÃO DOWTY 3/4"") — nova categoria "Sistema de
+    // Supressão a Gás (Cilindro Piloto)" pro cluster de peças desse
+    // sistema (contêiner/recipiente piloto, disco de ruptura, pistão
+    // pneumático, tubo de orifício) + Válvulas/acessórios avulsas — foi
+    // pra 97,9% (53 famílias fora). Rodada 7 (pedido explícito "quais
+    // estão fora, vamos tentar incluir ao máximo") — varredura de TODAS
+    // as famílias restantes (não só top-30 por valor), com amostragem
+    // das descrições originais pra confirmar contexto antes de cada
+    // keyword nova (ex. família "TUBO" eram 8 itens "TUBO, ASME BPE..."
+    // — tubulação sanitária de processo, típica de planta farmacêutica;
+    // "ADAPTADOR"/"MANGUEIRA" eram peças da marca ANSUL, mesmo sistema
+    // de supressão a gás da rodada 6) — cobertura final **99,99%**, só 2
+    // itens deliberadamente de fora: "Cortadores de tubos" (ferramenta,
+    // não material de obra) e "Poço de visita..." (R$255, item único de
+    // drenagem sem outro da mesma família nesta obra).
+    catalogoExtra: {
+      'Plataformas e Escadas Metálicas': ['PLATAFORMA DE ACO', 'ESCADA DE EMERGENCIA'],
+      // Rodada 4 (pedido explícito: "Cap e Cap roscado, poderia ser
+      // comprimido tudo em um item só") — variações de wording do MESMO
+      // encaixe/conexão de tubulação (Tê/TEE, Cap/Tampão em qualquer
+      // fraseado, Curva 45/90 com ou sem "DE", Elbow/Wye em inglês,
+      // União/Meia Luva/Niple, Juntas) todas caem nesta única categoria,
+      // em vez de virarem uma linha por variação de descrição na origem.
+      'Conexões e Acessórios de Tubulação': [
+        /\bTE\b/, 'LUVA DE REDUCAO', 'CURVA DE 90', 'DRENO LIMPO', 'CURVA DE 45',
+        'CAP EM ACO', 'REDUCAO CONCENTRICA', 'REDUCAO EXCENTRICA', 'JUNTA TIPO PLANA',
+        'MANGUEIRA FLEXIVEL EM ACO', 'CPVC', 'COTOVELO', 'TEE', 'CURVA RL', 'PIPE',
+        'CAP (PLUGUE', 'TAMPAO TIPO CAP', 'CRUZETA', 'MEIA UNIAO', 'NIPLE TC', 'CONDUITE',
+        /\bCAP\b/, 'TAMPAO', 'CURVA 45', /\bELBOW\b/, /\bWYE\b/, 'UNIAO EM ACO', 'UNIAO 3',
+        'MEIO ACOPLAMENTO', 'NIPLE', 'JUNTA PAPELAO', 'JUNTA EPDM', 'JUNTA DE VEDACAO',
+        'TAMPA DE ACOPLAMENTO', 'TAMPA CEGA', 'MEIA LUVA',
+        'ADAPTADOR DE PENETRACAO', 'COLA SOLVENTE', 'CONVERTER TUBOS', 'LUVA EM ACO', 'PLACA CEGA',
+      ],
+      'Parafusos e Fixação': ['PARAFUSO'],
+      'Tubulação Aço Carbono': ['TUBO EM ACO CARBONO', 'TUBO AC'],
+      'Painéis': ['BARRAMENTO', /^PDP-/, /^SP-/, /^LP-/],
+      'Estrutura e Suportação Metálica': [
+        'PERFIL U', 'PERFIL I', 'PERFIL DE ACO', 'PERFIL EM ACO', 'GRAMPO',
+        'ABRACADEIRA', 'MAO FRANCESA', 'CLIPE DE ACO', 'SUPORTE',
+        'KIT DE FERRAGENS', 'CHAPA DE ACO', 'BARRA CHATA',
+      ],
+      'Detecção e Alarme': [
+        'SENSOR DE OCUPACAO', 'BICO ACUSTICO', 'ACIONAMENTO MANUAL', 'MODULO DE', 'SINAL DE ALARME', 'BICO',
+        'CAPILAR', 'MODULO', 'SENSOR DE FALHA', 'DETECTOR DE CALOR', 'ANUNCIADOR', 'DISPLAY LCD', '4-2ANN', 'DETECTOR DE PRESENCA',
+      ],
+      'Combate a Incêndio': ['MANGUEIRA DE INCENDIO', 'ABRIGO EMBUTIDO', 'EXTINTOR', 'ENGATE RAPIDO', 'FIRE PROOFING'],
+      'Eletrodutos e Infraestrutura Elétrica': [
+        'BEND FOR', 'RIGID CONDUIT', 'TOMADA',
+        'TUBO DE PVC RIGIDO', 'CAIXA DE JUNCAO', 'INTERRUPTOR DOIS EM UM', 'CAIXA DE DERIVACAO', 'PONTO DE FORCA', 'BUCHA DE BAQUELITE',
+      ],
+      'Automação e Controle': ['ATUADOR', 'FONTE DE ALIMENTACAO', 'ALIMENTACAO'],
+      'Válvulas e acessórios': ['FLTRO Y', 'SEM RETORNO', 'VEDACAO DOWTY', 'CESTO FILTRANTE', 'O-RINGS', 'ANEIS DE VEDACAO'],
+      // Rodada 6, pedido explícito com exemplos concretos ("CONJUNTO DE
+      // INTERRUPTOR INDICADOR DE POSICIONAMENTO PARA CONTÊINER PILOTO,
+      // SEM RETORNO (1/4" MACHO/FÊMEA), VEDAÇÃO DOWTY 3/4""): peças do
+      // sistema de supressão a gás (cilindro piloto) formavam um cluster
+      // próprio ainda sem categoria — Recipiente/Contêiner piloto, disco
+      // de ruptura, tubo de orifício, pistão pneumático. Rodada 7
+      // (pedido "quais estão fora, vamos tentar incluir ao máximo")
+      // achou que a marca ANSUL (mangueira/adaptador de descarga do
+      // coletor) e "Estação de..." (aborto/liberação manual) também são
+      // desse mesmo sistema.
+      'Sistema de Supressão a Gás (Cilindro Piloto)': [
+        'CONTEINER PILOTO', 'RECIPIENTE PILOTO', 'DISCO DE RUPTURA', 'PISTAO PNEUMATICO', 'TUBO DE ORIFICIO',
+        'ANSUL', 'MANGUEIRA DE ACIONAMENTO', 'ESTACAO DE',
+      ],
+      // Rodada 7 — cobertura levada a 100% (só sobraram 2 itens
+      // deliberadamente de fora: "Cortadores de tubos" é ferramenta, não
+      // material de obra; "Poço de visita..." é R$255, item único de
+      // drenagem sem outro da mesma família nesta obra).
+      'Tubulação Inox': ['TUBO EM ACO INOX', 'ASME BPE'],
+      'Transformadores': ['TRANSFORMADOR'],
+      'Instrumentação': [
+        'TRANSMISSOR DE', 'CHAVE DE NIVEL', 'PONTO DE AMOSTRAGEM', 'MEDIDOR DE VAZAO',
+        'RESTRITOR DE FLUXO', 'INTERRUPTOR DE NIVEL', 'INTERRUPTOR DE PRESSAO', 'PRESSOSTATO',
+        'MANOVACUOMETRO', 'INTERRUPTOR DE DISCREPANCIA',
+      ],
+      'Iluminação': ['LAMPADA', 'FAROL', 'BANCO DE BATERIAS', 'ILUMINACAO DE EMERGENCIA', 'CENTRAL DE ILUMINACAO'],
+      'Aterramento': ['HASTE DE ATERRAMENTO', 'METAL DE SOLDAGEM', 'CONDUTOR ISOLADO', 'INTERCONEXAO DE CONDUTORES', 'CAPTOR', 'CAIXA DE INSPECAO'],
+      'Concreto e Impermeabilização': ['ARGAMASSA', 'REBOCO', 'CHAPISCO'],
+      'Louças e Metais': ['RALO', 'GREASE TRAP'],
+      'Pintura': ['EMASSAMENTO'],
+      // Pedido explícito (2026-08-26): "o poço de visita é um item
+      // específico mas poderia ser classificado apenas como Poço de
+      // Visita, sem toda essa descrição extensa" — categoria própria de
+      // 1 palavra-chave (era o último item fora do catálogo nesta obra).
+      'Poço de Visita': ['POCO DE VISITA'],
+    },
+    // Pedido explícito (2026-08-26) "cortadores pode ser suprimido" —
+    // "Cortadores de tubos - Vp-Cutters" é ferramenta avulsa (nível 4,
+    // dentro de uma disciplina de tubulação legítima), não material de
+    // obra. `ehItemCanteiroRmi` só olha a descrição da DISCIPLINA-pai
+    // (não pega esse caso, a disciplina em si é válida), por isso o novo
+    // campo `descricoesExcluidas` — filtro por material individual.
+    descricoesExcluidas: ['CORTADORES DE TUBOS'],
+  }, // Novo Nordisk - AP
+  108: {
+    // Novo Nordisk - AP - Reforço (id_obra=108, CP261) entrou em
+    // 2026-08-26, partindo da régua do CP029 como start. Obra pequena e
+    // focada (478 linhas, 2 RMIs): "CP261 - GERAL" (id_rmi=262, 100%
+    // custo indireto — Mobilização, Combustível, EPIs, Caixa de
+    // Ferramentas, Fretes, Canteiro, Alojamento, Mobília, Equipamentos
+    // de Medição, Serviços Terceirizados, ASO/Qualificação/Treinamentos,
+    // Ferramentas, Consumíveis, Uniformes — mesmo padrão da RMI "Geral"
+    // do NN-AP) e "CP261 - ESTRUTURA METÁLICA" (id_rmi=263, o escopo de
+    // verdade: "Reforço Estrutural", R$3,49M). Diferente do NN-AP, aqui
+    // só sobra 1 RMI real depois de excluir a Geral — `usarNomeRmiComoArea`
+    // NÃO faz sentido (colapsaria tudo num único ramo); a estrutura
+    // padrão do CP029 já produz Área="Estrutura"/"Cobertura Telhado" a
+    // partir do 1º nível de código dentro da RMI, então usada sem
+    // ajuste.
+    rmisExcluidos: [262],
+    // **Bug de dado pego na validação local antes do deploy** (mesma
+    // classe dos bugs de merge-por-overwrite já documentados nesta
+    // obra): dentro da RMI Estrutura Metálica, 2 linhas nível 1
+    // DIFERENTES ("OMISSOS", subtotal zero, id=147454; e "ESTRUTURA",
+    // subtotal real R$3.011.837,63, id=145222) compartilham o MESMO
+    // `codigo_seq` "1.1" na origem. Como a árvore resolve os filhos de
+    // um nó pelo par `id_rmi::codigo_seq`, as duas "irmãs" caem no
+    // MESMO grupo de filhos de nível 2 — sem o `linhasExcluidas` abaixo,
+    // o valor de "ESTRUTURA" aparecia DUAS VEZES na árvore (uma sob a
+    // área "OMISSOS", outra sob "ESTRUTURA"), dobrando R$3,01M pra
+    // R$6,02M. Novo campo genérico `linhasExcluidas` (filtro por `id`
+    // exato da linha, aplicado ANTES de tudo — nível0/nível1/mapa de
+    // filhos) — primeira obra a precisar; reaproveitável se outra obra
+    // tiver o mesmo problema de `codigo_seq` duplicado na origem.
+    linhasExcluidas: [147454],
+    // Obra pequena (13 materiais no total, R$3,49M) — a Curva A (corte
+    // dos 80% acumulado, GLOBAL na obra) cortaria 7 dos 13 itens
+    // (~14,5% do valor, incluindo a maior parte da área "Cobertura
+    // Telhado"), demais demais pra uma lista já curta. Mesmo raciocínio
+    // da Hitachi/Porto/NN-AP: desligada.
+    curvaAObrigatoria: false,
+    // Catálogo validado (2026-08-26): todos os 13 materiais são peças de
+    // reforço estrutural (viga/coluna/treliça/gusset, preço por kg) —
+    // catálogo base do CP029 não tinha nenhuma dessas palavras (tem
+    // VIGA U/VERGALHÃO/CANTONEIRA/etc., não bate "VIGAMENTO"/"REFORÇO
+    // VIGAS"/"TRELIÇA"/"GUSSET"). 4 keywords cobrem 100% do valor.
+    catalogoExtra: {
+      'Estrutura e Suportação Metálica': ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET'],
+    },
+  }, // Novo Nordisk - AP - Reforço
+  91: {
+    // Novo Nordisk - UB/SP (id_obra=91, CP236) entrou em 2026-08-26,
+    // partindo da régua do CP029. 4 RMIs: Tubulação (R$34,6M), Estruturas
+    // Metálicas (R$31,6M), Elétrica/Automação/Instrumentação (R$19,7M) e
+    // "CP236 - NOVO NORDISK - GERAL" (id_rmi=43) — mesma "lata" de custo
+    // indireto das outras obras Novo Nordisk (Equipamentos = frota
+    // locada R$10,6M, Serviços Terceirizados, Despesas de Visita a Obra,
+    // Equipamentos de Medição e Apoio = TI/licenças). Excluída inteira —
+    // resolve de graça o problema de "Equipamentos sem área" (mesmo
+    // padrão já visto no NN-AP 1ª rodada). Diferente das outras obras
+    // Novo Nordisk: aqui a estrutura padrão do CP029 (nível 0 no formato
+    // "MATERIAIS - UB"/"MATERIAIS - SP", que já bate
+    // `EH_BALDE_ADMINISTRATIVO_RMI`) já produz Área=UB/SP corretamente
+    // SEM NENHUM ajuste extra — nem `usarNomeRmiComoArea`, nem
+    // `areaObrigatoria`, nem range de código. Validado localmente: 100%
+    // dos materiais restantes (687, R$85.884.072,70) ficam com área.
+    rmisExcluidos: [43],
+    // Catálogo validado (2026-08-26): base do CP029 cobria só 33,9% —
+    // Estrutura Metálica tinha muitos perfis estruturais nomeados só
+    // pelo código (W310X38.7, CS 600X250, VS900X159, L 152x9,5...) e
+    // Tubulação tinha variações de wording não batidas pelo catálogo
+    // (ex. "TUBOS DE ACO CARBONO" plural não batia "TUBO DE ACO
+    // CARBONO" singular já existente). 98,5% de cobertura final — só
+    // ficou de fora "Estimado 20%" (R$1,29M), linha de contingência
+    // genérica sem material real associado (não é decisão de deixar de
+    // fora por engano, é proposital: não dá pra classificar com
+    // segurança um valor sem descrição de material).
+    catalogoExtra: {
+      'Perfis Estruturais (W/CS/VS/L)': [/^(W|CS|VS|L)\s*\d+[Xx]/, 'TERCAS'],
+      'Estrutura e Suportação Metálica': [
+        'ESTRUTURA LEVE', 'ESTRUTURA MEDIA', 'ESTRUTURA PESADA', 'ESTRUTURA EXTRA PESADA',
+        'STEEL DECK', 'CHUMBADOR', 'CA 50', 'TELA Q', 'CALHA METALICA', 'ASTM A 572',
+      ],
+      'Concreto e Impermeabilização': ['POLIUREIA', 'JUNTA JEENE'],
+      'Telhas e Cobertura': ['TELHA'],
+      'Suportes de Tubulação': ['SUPORTE PESADO DE TUBULACAO', 'SUPORTE LEVE DE TUBULACAO'],
+      'Tubulação Aço Carbono': ['TUBOS DE ACO CARBONO', 'TUBULACOES EM ACO CARBONO', 'TUBO EM ACO CARBONO'],
+      'Tubulação Inox': ['TUBO ACO INOXIDAVEL'],
+      'Tubulação Polipropileno': ['POLIPROPILENO'],
+      'Tubulação PVC': ['PVC'],
+      'Combate a Incêndio': ['ABRIGO PARA HIDRANTE', 'MANGUEIRAS COM COMPRIMENTO', 'STORZ'],
+      'Instrumentação': [
+        'ANALISADOR DE', 'TRANSMISSOR INDICADOR DE', 'ELEMENTO DE TEMPERATURA', 'MEDIDOR DE VAZAO',
+        'CHAVE DE SEGURANCA', 'CHAVE DE NIVEL', 'CHAVE DE FLUXO', 'PRESSAO MANOMETRICA',
+      ],
+      'Válvulas e acessórios': ['ELIMINADOR DE AR', 'VISOR DE NIVEL', 'VISOR DE FLUXO'],
+      // `AS-I` bare (corrigido 2026-08-26, pedido explícito "temos
+      // válvulas caindo em cabos também") batia "Rede AS-i" mencionado
+      // dentro de descrições de válvula/transmissor (protocolo de rede,
+      // não cabo) — 15 itens, R$2,1M indo pra Cabos por engano. Trocado
+      // por frase exata que só bate o item de cabo de verdade.
+      'Cabos': ['PROFIBUS', 'AS-I CABLE'],
+      'Retificadores e Transformadores': ['RETIFICADOR', 'TRANSFORMADOR AUXILIAR'],
+    },
+  }, // Novo Nordisk - UB/SP
 };
 
 // Coluna "Status" — pedido explícito (2026-08-24): "vamos chamar de
@@ -5634,6 +5991,25 @@ function ModuloSuprimentos({ obraId, obraNome }){
   const codigoNivel0Max = cfgObraSuprimentos.codigoNivel0Max ?? null;
   const zonaCodigoMax = cfgObraSuprimentos.zonaCodigoMax ?? null;
   const mapaAreaCanonica = cfgObraSuprimentos.mapaAreaCanonica || null;
+  // Novo Nordisk - AP (ver CONFIG_SUPRIMENTOS_POR_OBRA[107]) — `usarNomeRmiComoArea`
+  // (pedido explícito 2026-08-26: "o primeiro nível será o da própria
+  // RMI") — Área deixa de vir da captura "1 nível abaixo da disciplina"
+  // (inconsistente: só existia pra parte das disciplinas) e passa a ser
+  // sempre `raw.nome_rmi` — cada uma das RMIs da obra vira sua própria
+  // Área, sempre presente (nenhum material fica "sem área"). Substitui
+  // os ajustes pontuais que essa obra tinha antes (canteiroExtra pro
+  // "Equipamentos" avulso, disciplinasSemArea pra Estrutura Metálica) —
+  // ambos viviam dentro da RMI "Geral", que passou a ser excluída
+  // inteira (`rmisExcluidos`), resolvendo os 2 de uma vez só.
+  const usarNomeRmiComoArea = !!cfgObraSuprimentos.usarNomeRmiComoArea;
+  // `descricoesExcluidas` (obra-específica): suprime materiais pontuais
+  // que não são item de obra de verdade mas cuja disciplina-pai É
+  // legítima (por isso `ehItemCanteiroRmi`, que só olha a disciplina,
+  // não pega) — ex. Novo Nordisk - AP, pedido explícito (2026-08-26):
+  // "cortadores pode ser suprimido" ("Cortadores de tubos", ferramenta
+  // avulsa dentro de uma disciplina de tubulação de verdade).
+  const descricoesExcluidas = cfgObraSuprimentos.descricoesExcluidas || null;
+  const linhasExcluidas = cfgObraSuprimentos.linhasExcluidas || null;
   // Catálogo de materiais padrão efetivo desta obra — base do CP029 +
   // extras da obra (se houver), união de palavras-chave (ver
   // `catalogoEfetivoRmi`). Memo pra não reconstruir o objeto a cada
@@ -5727,11 +6103,22 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // pro racional completo.
   const { curvaA, arvore, todosOrdenados, restante, totalObra } = useMemo(() => {
     if (!todosItens) return { curvaA: [], arvore: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, semArea: { qtd:0, valor:0 }, totalObra: 0 };
+    // `linhasExcluidas` (obra-específica, por `id` exato da linha): pra
+    // remover uma linha pontual com problema de dado na ORIGEM antes de
+    // entrar em qualquer outro cálculo — ex. NN - AP - Reforço (obra
+    // 108), 2 linhas nível 1 da RMI Estrutura Metálica compartilham o
+    // MESMO `codigo_seq` "1.1" ("OMISSOS", subtotal zero, e "ESTRUTURA",
+    // subtotal real) — como a árvore resolve filhos por
+    // `id_rmi::codigo_seq`, as duas viram "irmãs" e caminham pros MESMOS
+    // filhos de nível 2, duplicando o valor de "ESTRUTURA" (contado uma
+    // vez sob a área "OMISSOS" e outra sob "ESTRUTURA"). Ver
+    // CONFIG_SUPRIMENTOS_POR_OBRA[108].
+    const itensObra = linhasExcluidas ? todosItens.filter(r => !linhasExcluidas.includes(r.id)) : todosItens;
     // `rmisExcluidos` (Porto Itapoá): tira uma RMI inteira (duplicata em
     // outra escala, ver CONFIG_SUPRIMENTOS_POR_OBRA[94]) antes de
     // qualquer outro filtro.
-    const itensNivel0 = todosItens.filter(r => r.raw.nivel === 0 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
-    const itensNivel1 = todosItens.filter(r => r.raw.nivel === 1 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
+    const itensNivel0 = itensObra.filter(r => r.raw.nivel === 0 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
+    const itensNivel1 = itensObra.filter(r => r.raw.nivel === 1 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
     // `escopoNivel0`: nível 0 é SEMPRE o topo (o "escopo"), sem a
     // heurística de desce-quando-zera do CP029 — ver nota grande acima.
     // `escoposPermitidos` (opcional): mantém só os escopos cuja
@@ -5776,7 +6163,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       : disciplinasBrutas;
 
     const filhosPorPaiGeral = new Map(); // pai->filhos, QUALQUER nível — pra caminhar até o material
-    todosItens.forEach(r => {
+    itensObra.forEach(r => {
       const pai = codigoPaiRmi(r.raw.codigo_seq);
       if (pai == null) return;
       const chave = `${r.raw.id_rmi}::${pai}`;
@@ -5795,17 +6182,22 @@ function ModuloSuprimentos({ obraId, obraNome }){
       coletarMateriaisDaDisciplina(item, areaHerdada, filhosPorPaiGeral).forEach(({ item: m, area }) => {
         const valor = Number(m.raw.subtotal_custo_meta_orcamento) || 0;
         if (valor <= 0) return; // sem valor ainda — não é candidato a crítico
+        if (descricoesExcluidas && descricoesExcluidas.some(termo => normalizarNomeParaMatch(m.raw.descricao).includes(termo))) return;
         // Itens sem área não precisam ser considerados (pedido
         // explícito, 2026-08-24) — ficam de fora do cálculo inteiro,
         // igual canteiro, não só escondidos da árvore. SÓ pra obra onde
         // área é um conceito real (`areaObrigatoria`) — numa obra sem
         // essa camada (Hitachi), aplicar a mesma exigência descartaria
         // TUDO (confirmado, ver nota grande acima), então a disciplina
-        // assume o lugar da área na árvore.
-        if (areaObrigatoria && !area) { qtdSemArea++; valorSemArea += valor; return; }
+        // assume o lugar da área na árvore. `usarNomeRmiComoArea` (Novo
+        // Nordisk - AP): a própria RMI de origem (`raw.nome_rmi`) vira
+        // Área — sempre presente, nunca cai em "sem área" (ver
+        // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
+        const areaFinal = usarNomeRmiComoArea ? (m.raw.nome_rmi || '').trim() || null : area;
+        if (areaObrigatoria && !areaFinal) { qtdSemArea++; valorSemArea += valor; return; }
         brutos.push({
           id: m.id, descricao: m.raw.descricao, unidade: m.raw.unidade,
-          disciplina: nome, area: areaObrigatoria ? area : nome, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
+          disciplina: nome, area: areaObrigatoria ? areaFinal : nome, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
           saldo_orcamentario: m.raw.saldo_orcamentario,
           desvio_saldo_orcamentario: m.raw.desvio_saldo_orcamentario,
           totalConsumido: Number(m.raw.total_consumido) || 0,
@@ -5847,7 +6239,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       semArea: { qtd: qtdSemArea, valor: valorSemArea },
       totalObra,
     };
-  }, [todosItens, areaObrigatoria, escopoNivel0, curvaAObrigatoria, escoposPermitidos, catalogoMateriaisObra, rmisExcluidos, codigoNivel0Min, codigoNivel0Max, zonaCodigoMax, mapaAreaCanonica, catalogoDisciplinaObra]);
+  }, [todosItens, areaObrigatoria, escopoNivel0, curvaAObrigatoria, escoposPermitidos, catalogoMateriaisObra, rmisExcluidos, codigoNivel0Min, codigoNivel0Max, zonaCodigoMax, mapaAreaCanonica, catalogoDisciplinaObra, usarNomeRmiComoArea, descricoesExcluidas, linhasExcluidas]);
 
   const restanteValor = soma(restante, 'valor') || 0;
   // `curvaABuscada` — filtro de texto sobre descrição/disciplina/área
@@ -7835,8 +8227,10 @@ function App(){
 
   const obraAtual = OBRAS.find(o => o.id === obraId) || OBRAS[0];
 
-  // Obras com mais de uma Curva S (hoje só NN - AP: PPU + C.O. consolidado,
-  // PPU e C.O. separados) — botão troca qual chave `obra` filtra curvas_s.
+  // Obras com mais de uma Curva S (hoje NN - AP: PPU e Estudo — PPU + C.O.
+  // consolidado e C.O. isolado foram suprimidos do seletor, pedido explícito
+  // 2026-08-26; NN - UB/SP: Original e Take-Off) — botão troca qual chave
+  // `obra` filtra curvas_s.
   // Reseta pra padrão sempre que a obra muda (senão uma obra sem essa
   // variante herdaria uma chave de curva que não existe pra ela).
   const [curvaEscolhida, setCurvaEscolhida] = useState(null);
