@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- v20260825-1353 -->
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8" />
@@ -19,11 +20,16 @@
      cai num empilhamento simples — ver ModuloMedicoes. -->
 <script crossorigin src="https://unpkg.com/react-grid-layout@1.5.0/dist/react-grid-layout.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.25.9/babel.min.js"></script>
+<!-- OpenSeadragon — visualizador de imagem Deep Zoom (pirâmide de tiles),
+     usado na ortofoto do Porto Itapoá no lugar do Tour 360° pra essa obra
+     (pedido explícito, 2026-08-25: zoom "infinito" e navegável sem perder
+     qualidade nem carregar o JPEG de 93MB inteiro de uma vez). -->
+<script src="https://unpkg.com/openseadragon@4/build/openseadragon/openseadragon.min.js"></script>
 <style>
   :root{
     --bg:#e8eaee; --card:#fff; --line:#e4e7ec;
     --ink:#192231; --body:#4d5868; --mut:#98a1b0; --mut2:#aab2bf;
-    --blue:#2563eb; --green:#1f9d57; --amber:#d9911a; --red:#d23b3b;
+    --blue:#2563eb; --green:#4CAF7F; --amber:#D4941E; --red:#C94444;
   }
   * { box-sizing: border-box; }
   html, body, #root { height: 100%; margin: 0; padding: 0; }
@@ -228,9 +234,22 @@
     border-top: 3px solid var(--mut2); border-radius: 3px;
   }
   .tile-handle:active { cursor: grabbing; }
+  /* Badge de Status (Suprimentos) — passar o mouse troca o texto pra
+     fração "X/Y itens finalizados" DENTRO do próprio badge, em vez de
+     tooltip nativo (pedido explícito: "uma mudança no cartão do
+     status, não uma informação acima"). */
+  .status-badge-rmi-fracao { display: none; }
+  .status-badge-rmi:hover .status-badge-rmi-texto { display: none; }
+  .status-badge-rmi:hover .status-badge-rmi-fracao { display: inline; }
+  .farol-financeiro-rmi { transition: box-shadow 200ms ease-out; }
+  .farol-financeiro-rmi:hover { filter: brightness(1.1); }
+  .suprimentos-spine-farol { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-right: 12px; }
+  .suprimentos-linha-rmi { display: flex; align-items: center; }
   .toolbar-wrap { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; flex-shrink: 0; }
   .tour-360-frame { flex: 1; min-height: 0; padding: 0; overflow: hidden; }
   .tour-360-frame iframe { width: 100%; height: 100%; border: 0; display: block; min-height: 420px; }
+  .ortofoto-viewer { width: 100%; height: 100%; min-height: 420px; background: #12161f; }
+  .ortofoto-viewer .openseadragon-canvas:focus { outline: none; }
   .app-shell { display: flex; flex-direction: column; height: 100vh; }
   .app-main { flex: 1; min-height: 0; padding: 16px 0 24px; overflow-y: auto; display: flex; flex-direction: column; }
   .medicoes-row { display: flex; flex: 1; min-height: 0; overflow-x: auto; }
@@ -291,6 +310,7 @@
       flex: none !important;
     }
     .tour-360-frame iframe { min-height: 70vh; height: 100%; }
+    .ortofoto-viewer { min-height: 70vh; height: 100%; }
     .medicoes-row {
       flex-direction: column !important;
       overflow-x: hidden !important;
@@ -342,17 +362,28 @@ const OBRAS = [
   { id: 110, nome: 'Hitachi',                       curva: 'HITACHI',                   origemTV: 'HITACHI',                                                      origemCP: 'CP022' },
   { id: 94,  nome: 'Porto Itapoá',                  curva: 'PORTO',                     origemTV: 'PORTO ITAPOÁ',                                                 origemCP: 'CP002' },
   { id: 107, nome: 'Novo Nordisk - AP',              curva: 'NOVO NORDISK - AP',         origemTV: 'NN - AP - ELETROMECÂNICA',       origemPTS: 'Novo Nordisk AP', origemCP: 'CP273',
-    // NN - AP tem 3 curvas na mesma planilha (pedido 2026-08-14: "no NN AP
+    // NN - AP tinha 4 curvas na mesma planilha (pedido 2026-08-14: "no NN AP
     // temos mais de uma curva... botões na parte de baixo pra navegar entre
-    // elas"). `curva` acima continua sendo a chave PADRÃO (consolidada,
-    // igual sempre foi) — as demais só aparecem como opção de botão.
+    // elas"; Estudo somada em 2026-08-26). Pedido explícito (2026-08-26):
+    // "pode suprimir as curvas PPU+OC e CO do AP" — os botões "PPU + C.O."
+    // (consolidado) e "C.O." isolado saíram do seletor; só "PPU" e "Estudo"
+    // continuam. `curva` acima (chave PADRÃO usada fora do seletor) NÃO
+    // mudou — segue 'NOVO NORDISK - AP' (mantém o vínculo com o resto do
+    // painel); o 1º item de `curvas` (agora "PPU") vira o default só DENTRO
+    // do seletor de Curva S (`curvaChaveAtual` cai pro `curvas?.[0]?.chave`
+    // quando nada foi clicado ainda).
     curvas: [
-      { chave: 'NOVO NORDISK - AP',        label: 'PPU + C.O.' },
-      { chave: 'NOVO NORDISK - AP - PPU',  label: 'PPU' },
-      { chave: 'NOVO NORDISK - AP - C.O.', label: 'C.O.' },
+      { chave: 'NOVO NORDISK - AP - PPU',   label: 'PPU' },
+      { chave: 'NOVO NORDISK - AP - Estudo', label: 'Estudo' },
     ] },
   { id: 108, nome: 'Novo Nordisk - AP - Reforço',    curva: 'NOVO NORDISK - REFORÇO AP', origemTV: 'NN - REFORÇO EST. METÁLICAS',                                  origemCP: 'CP261' },
-  { id: 91,  nome: 'Novo Nordisk - UB/SP',           curva: 'NOVO NORDISK - UB SP',      origemTV: 'NN - UB/SP - ELETROMECÂNICA',    origemPTS: 'Novo Nordisk UB',  origemCP: 'CP236' },
+  { id: 91,  nome: 'Novo Nordisk - UB/SP',           curva: 'NOVO NORDISK - UB SP',      origemTV: 'NN - UB/SP - ELETROMECÂNICA',    origemPTS: 'Novo Nordisk UB',  origemCP: 'CP236',
+    // NN - UB/SP ganhou 2ª curva (Take-Off) em 2026-08-26, mesmo padrão do
+    // seletor de botões criado pro NN - AP. `curva` acima continua PADRÃO.
+    curvas: [
+      { chave: 'NOVO NORDISK - UB SP',           label: 'Original' },
+      { chave: 'NOVO NORDISK - UB SP - Take Off', label: 'Take-Off' },
+    ] },
 ];
 
 // Substituído em 2026-08-19 pelas tabelas reais `contratos_medicao` +
@@ -376,8 +407,13 @@ const SETORES = [
   { num: 1, slug: 'curva-s',               label: 'Curva S',                     estado: 'pronto' },
   { num: 2, slug: 'encarregados',           label: 'Encarregados',                estado: 'pronto' },
   { num: 3, slug: 'histograma',             label: 'Histograma',                  estado: 'pronto' },
-  { num: 4, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'placeholder',
-    desc: 'Cruzamento de prazo × impacto para apontar os itens de suprimentos que mais ameaçam a frente de trabalho. Falta fechar a regra de "crítico" antes de sair do placeholder.' },
+  // Saiu do placeholder em 2026-08-21 — "crítico" virou Curva A (itens
+  // macro cujo valor acumulado, em ordem decrescente, soma 80% do valor
+  // da obra), não mais o cruzamento de prazo×impacto do rascunho original
+  // (a API rmi_api até tem campo de prazo, mas veio vazio pra todas as
+  // obras carregadas até agora — sem dado, não dava pra usar). Ver
+  // ModuloSuprimentos.
+  { num: 4, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'pronto' },
   { num: 5, slug: 'oc-co',                  label: 'OC / CO',                     estado: 'pronto' },
   { num: 6, slug: 'desvios',                label: 'Desvios',                     estado: 'pronto' },
   { num: 7, slug: 'restricoes',             label: 'Restrições',                  estado: 'pronto' },
@@ -398,6 +434,22 @@ const OBRA_TOUR_360 = {
   // obra em vez de virar uma 2ª entrada).
   106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
 };
+
+// Ortofoto (pirâmide Deep Zoom, gerada por scripts/gerar-ortofoto-tiles.js
+// a partir de assets/images/ORTOFOTO.jpg) no lugar do Tour 360° — só a
+// Porto Itapoá (id 94) tem ortofoto cadastrada por ora. Checada ANTES de
+// `OBRA_TOUR_360` dentro de `ModuloTour360` (pedido explícito, 2026-08-25).
+const OBRA_ORTOFOTO = {
+  94: 'assets/ortofoto-porto/ortofoto.dzi',
+};
+
+// Nome da aba "Tour 360°" vira "Ortofoto" pra quem tem ortofoto cadastrada
+// (pedido explícito, 2026-08-25) — usado na aba (TabsSetores) e no título
+// da página; as demais obras/setores mantêm `setor.label` normal.
+function labelSetorObra(setor, obraId){
+  if (setor.slug === 'tour-360' && OBRA_ORTOFOTO[obraId]) return 'Ortofoto';
+  return setor.label;
+}
 
 const MESES_ABREV = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
 
@@ -735,7 +787,7 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
 }
 
 // ── Faixa de setores + navegação lateral ────────────────────────────────────
-function TabsSetores({ atual, onIr }){
+function TabsSetores({ atual, onIr, obraId }){
   const scrollRef = useRef(null);
   const irPara = (delta) => {
     const i = SETORES.findIndex(s => s.slug === atual.slug);
@@ -773,7 +825,7 @@ function TabsSetores({ atual, onIr }){
                 background: ativo ? 'rgba(255,255,255,0.25)' : '#eef0f3',
                 color: ativo ? '#fff' : T.mut, flexShrink:0, transition:'all .18s ease'
               }}>{s.num}</span>
-              <span style={{ fontSize:13, fontWeight:600, flex:1, minWidth:0, whiteSpace:'normal', lineHeight:1.25, textAlign:'left', overflowWrap:'break-word', wordBreak:'break-word', hyphens:'auto' }}>{s.label}</span>
+              <span style={{ fontSize:13, fontWeight:600, flex:1, minWidth:0, whiteSpace:'normal', lineHeight:1.25, textAlign:'left', overflowWrap:'break-word', wordBreak:'break-word', hyphens:'auto' }}>{labelSetorObra(s, obraId)}</span>
               {s.estado === 'placeholder' && (
                 <span style={{ marginLeft:'auto', width:6, height:6, borderRadius:'50%', background: ativo ? '#fff' : T.mut2, flexShrink:0 }} />
               )}
@@ -2960,7 +3012,9 @@ const GRAN_EFETIVO = [
 ];
 
 function ModuloEfetivo({ obraId, obraNome }){
-  const [granularidade, setGranularidade] = useState('mes');
+  // Pedido explícito (2026-08-26): "por padrão o histograma será aberto
+  // no semanal" — antes abria em 'mes'.
+  const [granularidade, setGranularidade] = useState('semana');
   const [moiModFiltro, setMoiModFiltro] = useState('TOTAL');
   const [filtroDataDe, setFiltroDataDe] = useState('');
   const [filtroDataAte, setFiltroDataAte] = useState('');
@@ -4131,6 +4185,23 @@ function corStatusRestricao(label){
   if (s.includes('abert')) return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
   return { cor:T.mut, bg:'#eef0f3' };
 }
+// Monitoramento — pedido explícito (2026-08-26): "coluna... calculada
+// com base na data limite de resolução e a data atual. Vencida =
+// Atrasado, falta 1 semana = Em risco, mais de 1 semana = No prazo".
+// Só calcula pra restrição ABERTA — uma concluída/cancelada já teve seu
+// desfecho, marcar "Atrasado" nela seria enganoso (mesmo racional do
+// balão "Abertas" já existente, que também isola por status). Retorna
+// `null` nesse caso, exibido como "—" na tabela.
+function monitoramentoRestricao(dataConclusao, statusLabel){
+  if (!(statusLabel || '').toLowerCase().includes('abert')) return null;
+  if (!dataConclusao) return null;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const limite = new Date(dataConclusao + 'T00:00:00');
+  const diasRestantes = Math.round((limite - hoje) / 86400000);
+  if (diasRestantes < 0) return { texto:'Atrasado', cor:T.red, bg:'rgba(210,59,59,0.13)', ordem:0 };
+  if (diasRestantes <= 7) return { texto:'Em risco', cor:T.amber, bg:'rgba(217,145,26,0.13)', ordem:1 };
+  return { texto:'No prazo', cor:T.green, bg:'rgba(31,157,87,0.13)', ordem:2 };
+}
 // `onClick`/`ativo` são opcionais — sem eles, continua o mesmo badge
 // estático de sempre (Restrições usa assim). Com `onClick`, vira um botão
 // disfarçado de badge (cursor pointer + anel de destaque quando `ativo`).
@@ -4156,16 +4227,49 @@ function nomeUsuarioCadastro(usuario){
 
 const RANK_CRITICIDADE = { alta: 0, média: 1, media: 1, baixa: 2 };
 const COLUNAS_RESTRICOES = [
-  { label:'Criticidade', campo:'criticidade' },
-  { label:'Status',      campo:'status' },
-  { label:'Tarefa',      campo:'tarefa' },
   { label:'Descrição',   campo:'descricao' },
   { label:'Tipo',        campo:'tipo' },
   { label:'Responsável', campo:'responsavel' },
   { label:'Cadastrado por', campo:'usuario' },
   { label:'Início',      campo:'inicio',    align:'right' },
   { label:'Conclusão',   campo:'conclusao', align:'right' },
+  { label:'Monitoramento', campo:'monitoramento' },
+  { label:'Criticidade', campo:'criticidade' },
+  { label:'Status',      campo:'status' },
 ];
+
+// IRC — Índice de Responsabilidade Contratual (pedido explícito,
+// 2026-08-26): "balão... que será uma barra, numa ponta MSE e na
+// outra cliente, exibindo com base nas restrições quantos % é de
+// responsabilidade da MSE e quantos % é do cliente". Mesmo visual de
+// cartão do `Balao`, mas o corpo é uma barra bipolar em vez de um
+// número — só considera restrições com `responsabilidade` reconhecida
+// (MSE/CLIENTE); as demais (em branco ou outro valor) não entram no
+// cálculo, não é tratado como 0%.
+function BalaoIRC({ pctMse, pctCliente, temDados }){
+  return (
+    <div className="card" style={{ borderRadius:16, background:'#fff', border:`1px solid ${T.line}`, padding:'10px 14px',
+      display:'flex', flexDirection:'column', height:'100%', minHeight:74, boxSizing:'border-box', gap:8 }}>
+      <span className="mono" style={{ fontSize:10, letterSpacing:'0.12em', color:T.mut, textTransform:'uppercase', fontWeight:600 }}>
+        IRC · Índice de Responsabilidade Contratual
+      </span>
+      {temDados ? (
+        <>
+          <div style={{ display:'flex', height:16, borderRadius:8, overflow:'hidden', border:`1px solid ${T.line}` }}>
+            <div style={{ width:`${pctMse}%`, background:T.blue, transition:'width 0.3s ease' }} title={`MSE: ${pctMse}%`} />
+            <div style={{ width:`${pctCliente}%`, background:T.amber, transition:'width 0.3s ease' }} title={`Cliente: ${pctCliente}%`} />
+          </div>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:12, fontWeight:700 }}>
+            <span style={{ color:T.blue }}>MSE {pctMse}%</span>
+            <span style={{ color:T.amber }}>Cliente {pctCliente}%</span>
+          </div>
+        </>
+      ) : (
+        <span style={{ fontSize:12, color:T.mut, alignSelf:'center', margin:'auto 0' }}>Sem restrições classificadas</span>
+      )}
+    </div>
+  );
+}
 
 function ModuloRestricoes({ obraId, obraNome }){
   const [dado, setDado] = useState(null);
@@ -4220,13 +4324,13 @@ function ModuloRestricoes({ obraId, obraNome }){
       switch (ordenarPor) {
         case 'criticidade': return rankCriticidade(r);
         case 'status': return rankStatusAberto(r);
-        case 'tarefa': return (r.nome_eap || '').toLowerCase();
         case 'descricao': return (r.descricao || '').toLowerCase();
         case 'tipo': return (r.nome_tipo_restricao || '').toLowerCase();
         case 'responsavel': return (r.responsabilidade || '').toLowerCase();
         case 'usuario': return (nomeUsuarioCadastro(r.usuario_cadastro) || '').toLowerCase();
         case 'inicio': return r.data_inicio || '';
         case 'conclusao': return r.data_conclusao || '';
+        case 'monitoramento': return monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label)?.ordem ?? 3;
         default: return 0;
       }
     };
@@ -4243,13 +4347,19 @@ function ModuloRestricoes({ obraId, obraNome }){
 
   const abertas = dado.filter(r => (r.status_cadastro_label || '').toLowerCase().includes('abert')).length;
   const altas = dado.filter(r => (r.criticidade || '').trim().toLowerCase() === 'alta').length;
+  const qtdMse = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'MSE').length;
+  const qtdCliente = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'CLIENTE').length;
+  const totalResp = qtdMse + qtdCliente;
+  const pctMse = totalResp ? Math.round((qtdMse / totalResp) * 100) : 0;
+  const pctCliente = totalResp ? 100 - pctMse : 0;
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
-      <div className="kpi-row cols-3">
+      <div className="kpi-row cols-4">
         <Balao titulo="Restrições" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={dado.length} />
         <Balao titulo="Abertas" cor={T.amber} bg="rgba(217,145,26,0.06)" borda="rgba(217,145,26,0.12)" valor={abertas} />
         <Balao titulo="Criticidade Alta" cor={T.red} bg="rgba(210,59,59,0.06)" borda="rgba(210,59,59,0.12)" valor={altas} />
+        <BalaoIRC pctMse={pctMse} pctCliente={pctCliente} temDados={totalResp > 0} />
       </div>
 
       <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
@@ -4284,17 +4394,18 @@ function ModuloRestricoes({ obraId, obraNome }){
               {restricoes.map(r => {
                 const cc = corCriticidade(r.criticidade);
                 const cs = corStatusRestricao(r.status_cadastro_label);
+                const cm = monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label);
                 return (
                   <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
-                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.criticidade} cor={cc.cor} bg={cc.bg} /></td>
-                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.status_cadastro_label} cor={cs.cor} bg={cs.bg} /></td>
-                    <td style={{ padding:'10px 14px', fontSize:12.5, color:T.body, maxWidth:220 }}>{r.nome_eap || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12.5, color:T.ink, maxWidth:380, lineHeight:1.4 }}>{r.descricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.nome_tipo_restricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.responsabilidade || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{nomeUsuarioCadastro(r.usuario_cadastro) || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_inicio_formatada || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_conclusao_formatada || '—'}</td>
+                    <td style={{ padding:'10px 14px' }}>{cm ? <BadgePill texto={cm.texto} cor={cm.cor} bg={cm.bg} /> : <span style={{ color:T.mut }}>—</span>}</td>
+                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.criticidade} cor={cc.cor} bg={cc.bg} /></td>
+                    <td style={{ padding:'10px 14px' }}><BadgePill texto={r.status_cadastro_label} cor={cs.cor} bg={cs.bg} /></td>
                   </tr>
                 );
               })}
@@ -4366,11 +4477,16 @@ function ModuloOcCo({ obraId, obraNome }){
   // "controle" é o próprio dado já visível na tabela, sem fileira extra.
   const [filtroStatus, setFiltroStatus] = useState(null);
   const toggleFiltroStatus = (status) => setFiltroStatus(prev => prev === status ? null : status);
+  // Mesmo padrão pro badge de Execução (pedido explícito, 2026-08-25:
+  // "permita filtrar clicando no status da tabela também") — filtro
+  // independente do de Status, os dois podem estar ativos juntos.
+  const [filtroExecucao, setFiltroExecucao] = useState(null);
+  const toggleFiltroExecucao = (exec) => setFiltroExecucao(prev => prev === exec ? null : exec);
 
   useEffect(() => {
     setDado(null); setResumo(null); setErro(false); setBusca('');
     setOrdenarPor('valor'); setOrdenarDir('desc'); setDetalhe(null); setAprovadoAberto(false);
-    setFiltroStatus(null);
+    setFiltroStatus(null); setFiltroExecucao(null);
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
     fetch(`${SUPABASE_URL}/rest/v1/orcamentos_complementares_obra?id_obra=eq.${obraId}&select=ocs,resumo,total,atualizado_em`, { headers })
       .then(r => r.ok ? r.json() : null)
@@ -4391,12 +4507,17 @@ function ModuloOcCo({ obraId, obraNome }){
     if (!dado) return null;
     const alvo = normalizarNomeParaMatch(busca);
     return dado.filter(oc => {
+      // Suprimir OCs com status "Cancelada"/"Cancelado" ou "Reprovada"/"Reprovado"
+      const statusNormalizado = (oc.status_oc || '').toLowerCase().trim();
+      if (statusNormalizado === 'cancelada' || statusNormalizado === 'cancelado') return false;
+      if (statusNormalizado === 'reprovada' || statusNormalizado === 'reprovado') return false;
       if (filtroStatus && (oc.status_oc || '—') !== filtroStatus) return false;
+      if (filtroExecucao && (oc.status_execucao || '—') !== filtroExecucao) return false;
       if (!alvo) return true;
       return [oc.descricao, oc.numero_oc_formatado, oc.responsavel_mse, oc.status_oc, oc.observacao]
         .some(campo => normalizarNomeParaMatch(campo).includes(alvo));
     });
-  }, [dado, busca, filtroStatus]);
+  }, [dado, busca, filtroStatus, filtroExecucao]);
 
   const ocsOrdenadas = useMemo(() => {
     if (!filtradas) return null;
@@ -4446,13 +4567,19 @@ function ModuloOcCo({ obraId, obraNome }){
         <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
           placeholder="Buscar por descrição, número, responsável, status..."
           style={{ flex:1, boxSizing:'border-box', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:12.5, padding:'9px 12px', border:'1px solid var(--line)', borderRadius:8, outline:'none', color:T.ink, background:'#fff' }} />
-        {(busca || filtroStatus) && (
+        {(busca || filtroStatus || filtroExecucao) && (
           <span className="mono" style={{ fontSize:11, color:T.mut, whiteSpace:'nowrap' }}>{ocsOrdenadas.length} de {dado.length}</span>
         )}
         {filtroStatus && (
           <button onClick={() => setFiltroStatus(null)} className="mono"
             style={{ fontSize:11, color:T.blue, background:'none', border:'none', cursor:'pointer', whiteSpace:'nowrap', padding:0 }}>
             Status: {filtroStatus} ✕
+          </button>
+        )}
+        {filtroExecucao && (
+          <button onClick={() => setFiltroExecucao(null)} className="mono"
+            style={{ fontSize:11, color:T.blue, background:'none', border:'none', cursor:'pointer', whiteSpace:'nowrap', padding:0 }}>
+            Execução: {filtroExecucao} ✕
           </button>
         )}
       </div>
@@ -4490,7 +4617,11 @@ function ModuloOcCo({ obraId, obraNome }){
                     </td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.ink, fontVariantNumeric:'tabular-nums' }}>{fmtReais(parseValNum(oc.valor_final))}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{oc.responsavel_mse || '—'}</td>
-                    <td style={{ padding:'10px 14px', fontSize:12, fontWeight:600, color: corExecucaoOc(oc.status_execucao).cor }}>{oc.status_execucao || '—'}</td>
+                    <td style={{ padding:'10px 14px' }}>
+                      <BadgePill texto={oc.status_execucao} cor={corExecucaoOc(oc.status_execucao).cor} bg={corExecucaoOc(oc.status_execucao).bg}
+                        ativo={filtroExecucao === (oc.status_execucao || '—')}
+                        onClick={e => { e.stopPropagation(); toggleFiltroExecucao(oc.status_execucao || '—'); }} />
+                    </td>
                   </tr>
                 );
               })}
@@ -4590,6 +4721,1833 @@ function ModuloOcCo({ obraId, obraNome }){
               <div className="mono" style={{ marginTop:12, fontSize:10.5, color:T.mut2 }}>
                 Cadastrado por {detalhe.usuario_cadastro || '—'} em {fmtDataOc(detalhe.data_cadastro)}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Setor 4 — Suprimentos, direto de `itens_rmi` (fonte: `rmi_api` do
+// PortalMSE, ver [[07 - Modelo de Dados]] e `n8n/rmi-suprimentos.README.md`)
+// — pedido explícito (2026-08-21): "a partir da table itens RMI iremos
+// basear a tela de suprimentos... a ideia é fazer um acompanhamento
+// gerencial dos itens críticos, os críticos serão, por hora, os itens
+// Curva A". Refinado no mesmo dia: "no CNPEM o item de custo com efetivo
+// não precisa aparecer... observe no nível de material, é isso que
+// precisamos exibir, os materiais críticos, orientados por área e
+// disciplina" — o crítico deixou de ser a DISCIPLINA inteira (Estrutura
+// Metálica, HVAC...) e passou a ser o MATERIAL (item-folha de verdade),
+// com disciplina/área como colunas de contexto, não mais o próprio grão
+// da Curva A.
+//
+// **Disciplina** — mesmo conceito de "item macro" já validado (ver
+// baixo): o ramo mais raso da árvore que já representa uma categoria de
+// verdade, resolvido por RAMO (não por nível fixo, varia por RMI).
+//
+// **Área** — física/zona (UB, SP, "Instalações Nível 614"...). Pedido
+// em 2026-08-21 (mesmo dia): "precisa estar organizado em níveis, Área
+// -> Disciplina -> Material" — área virou um CAMPO PRÓPRIO em todo
+// material (não mais sufixo no nome da disciplina, como na versão
+// anterior). Ela pode vir de 2 lugares na árvore, dependendo do RMI
+// (achado comparando obra 91 × CNPEM Faseado):
+//   - ABAIXO da disciplina (CNPEM: disciplina "HVAC", área "Instalações
+//     Nível 614") — pega o nome do nó exatamente 1 nível abaixo da
+//     disciplina, não importa quantas camadas existam depois disso
+//     (sistema/circuito etc.).
+//   - ACIMA da disciplina (obra 91: "MATERIAIS - UB"/"MATERIAIS - SP" é
+//     o nível que a resolução de disciplina descarta como "balde" pra
+//     achar a disciplina real) — extrai o texto depois de "MATERIAIS -"
+//     (`AREA_HERDADA_MATERIAIS_RMI`) como área herdada de todos os
+//     materiais daquele ramo.
+// Se nenhuma das duas existir, área fica `null` (material é filho
+// direto da disciplina, sem camada de zona identificável).
+//
+// **Material** — não é um nível fixo (varia até dentro do mesmo ramo,
+// ex. RMI 41/obra 91 tem material genuíno tanto em nível 3 quanto 4).
+// `ehMaterialRmi` usa 2 sinais, não nível:
+//   1. `unidade` populada e não é `SERV` (mão de obra) nem `VB`/`VERBA`
+//      (verba/lump-sum, geralmente RH) — cobre a maioria dos casos.
+//   2. Descrição não bate um item que É serviço/administrativo mas
+//      escapou do filtro de unidade (ex. "TESTES E MEDIÇÕES", "OMISSOS",
+//      "Comissionamento e testes" vêm com unidade "UN", igual material
+//      de verdade) — `PALAVRAS_NAO_MATERIAL_RMI`.
+// Evita contar 2x quando um nó com valor real (ex. "Estrutura média",
+// 2,46M) tem um filho-complemento zerado com a mesma unidade (visto na
+// obra 91): só desce pro filho se ELE também tiver valor > 0; senão o
+// próprio nó de valor real já é o material.
+//
+// **Consolidação** — pedido no mesmo dia: "necessidade de compilar
+// materiais similares em uma coisa só". A mesma descrição de material
+// pode aparecer em mais de 1 ramo dentro da MESMA área+disciplina (ex.
+// "Bullet AXIS P1465-LE" 3x no CNPEM, cada ocorrência uma câmera
+// física diferente do mesmo modelo). `consolidarMateriaisSemelhantes`
+// soma o valor (e saldo orçamentário) de materiais com a mesma
+// descrição normalizada DENTRO do mesmo par área+disciplina — não
+// consolida entre áreas/disciplinas diferentes (perderia a orientação
+// que é o objetivo da tela) nem tenta casar descrições parecidas-mas-
+// diferentes (ex. tubulação DN 14" e DN 12" continuam linhas
+// separadas — são especificações diferentes, não duplicata).
+//
+// Curva A = ordena os MATERIAIS (já consolidados) por valor decrescente,
+// acumula, marca crítico todo item até o acumulado (antes de somar
+// aquele item) ainda não ter cruzado 80% do total. A tabela exibe o
+// resultado agrupado em árvore Área → Disciplina → Material (não mais
+// lista plana) — cada nível ordenado pelo próprio valor total
+// decrescente, preservando a noção de "o que pesa mais primeiro"
+// mesmo dentro do agrupamento.
+const EH_BALDE_ADMINISTRATIVO_RMI = /^(MATERIAIS\s*-|CHANGE ORDER\b|OC\s*-|CO\s+\d)/;
+const AREA_HERDADA_MATERIAIS_RMI = /^MATERIAIS\s*-\s*(.+)$/;
+const PALAVRAS_NAO_MATERIAL_RMI = [
+  'TESTES', 'COMISSIONAMENTO', 'OMISSOS', 'ENSAIO', 'GERENCIAMENTO',
+  'SUPERVISAO', 'ADMINISTRACAO', 'TREINAMENTO',
+];
+function codigoPaiRmi(codigoSeq){
+  if (!codigoSeq) return null;
+  const partes = String(codigoSeq).split('.');
+  if (partes.length < 2) return null; // já é raiz, sem pai
+  return partes.slice(0, -1).join('.');
+}
+// Resolve a disciplina de cada ramo (nível 0 ou nível 1, ver comentário
+// acima) e devolve também a área HERDADA de cima, quando o pai
+// descartado como "balde" for reconhecidamente um código de área
+// (`MATERIAIS - X`) — outros baldes (CHANGE ORDER, OC -, CO N) não
+// carregam informação de área, ficam sem área herdada mesmo.
+function resolverDisciplinasRmi(itensNivel0, itensNivel1){
+  const porChaveNivel0 = new Map();
+  itensNivel0.forEach(r => porChaveNivel0.set(`${r.raw.id_rmi}::${r.raw.codigo_seq}`, r));
+
+  const filhosPorPai = new Map(); // chave pai -> [itens de nível 1]
+  itensNivel1.forEach(r => {
+    const pai = codigoPaiRmi(r.raw.codigo_seq);
+    if (pai == null) return;
+    const chave = `${r.raw.id_rmi}::${pai}`;
+    if (!filhosPorPai.has(chave)) filhosPorPai.set(chave, []);
+    filhosPorPai.get(chave).push(r);
+  });
+
+  const disciplinas = []; // { item, nome, areaHerdada }
+  const nivel0Resolvidos = new Set();
+
+  filhosPorPai.forEach((filhos, chave) => {
+    const pai = porChaveNivel0.get(chave);
+    const somaFilhos = filhos.reduce((s, f) => s + (Number(f.raw.subtotal_custo_meta_orcamento) || 0), 0);
+    if (!pai) { filhos.forEach(f => disciplinas.push({ item: f, nome: (f.raw.descricao || '').trim(), areaHerdada: null })); return; } // órfão
+    nivel0Resolvidos.add(chave);
+    const subtotalProprio = Number(pai.raw.subtotal_custo_meta_orcamento) || 0;
+    const ehBalde = EH_BALDE_ADMINISTRATIVO_RMI.test(normalizarNomeParaMatch(pai.raw.descricao) || '');
+    const desce = ehBalde || (subtotalProprio === 0 && somaFilhos > 0);
+    const bateArea = ehBalde ? AREA_HERDADA_MATERIAIS_RMI.exec(normalizarNomeParaMatch(pai.raw.descricao) || '') : null;
+    const areaHerdada = bateArea ? bateArea[1].trim() : null;
+    if (desce) filhos.forEach(f => disciplinas.push({ item: f, nome: (f.raw.descricao || '').trim(), areaHerdada }));
+    else disciplinas.push({ item: pai, nome: (pai.raw.descricao || '').trim(), areaHerdada: null });
+  });
+
+  itensNivel0.forEach(r => {
+    const chave = `${r.raw.id_rmi}::${r.raw.codigo_seq}`;
+    // `.trim()` — descrições de disciplina com espaço sobrando geravam
+    // grupos duplicados na árvore (achado validando a Hitachi,
+    // 2026-08-25: "VÁLVULAS E ACESSÓRIOS" × "VÁLVULAS E ACESSÓRIOS ").
+    if (!nivel0Resolvidos.has(chave)) disciplinas.push({ item: r, nome: (r.raw.descricao || '').trim(), areaHerdada: null }); // nível 0 sem filho — fica ele mesmo
+  });
+
+  return disciplinas;
+}
+// Porto Itapoá (id_obra=94, achado 2026-08-26, ver CONFIG_SUPRIMENTOS_POR_OBRA):
+// nível 0 mistura ZONA física da obra (Pátio G1/G2, Gate, Acesso...) com
+// disciplina de verdade (Válvulas e Registros, PPR...) — o INVERSO do
+// CP029 (lá, área é herdada de BAIXO da disciplina; aqui a área está em
+// CIMA). `zonaCodigoMax` separa os 2 casos dentro do range já filtrado
+// por `codigoNivel0Min/Max`: código <= zonaCodigoMax é zona (nível 0 vira
+// Área, CADA filho de nível 1 vira sua própria Disciplina — inclusive
+// quando esse filho já É o material de verdade, ehMaterialRmi resolve
+// isso sozinho, mesma lógica de sempre); código > zonaCodigoMax já é
+// disciplina real no próprio nível 0 (sem forçar descida — mesma regra
+// do CP029, área fica null e o item cai fora por "sem área", igual lá).
+// `mapaAreaCanonica` (opcional, por obra): várias zonas de nível 0 são a
+// MESMA macroárea física com nome levemente diferente na origem (ex.
+// Porto Itapoá: "OBRAS COMPLEMENTARES - PÁTIO G1" e "PÁTIO G1" são as
+// duas o Pátio G1) — sem isso, cada texto distinto vira uma linha de
+// Área separada na árvore, fragmentando o que devia estar junto.
+// Comprime pelo nome NORMALIZADO (chave já em maiúsculas/sem acento,
+// ver `normalizarNomeParaMatch`) pro nome canônico escolhido — pedido
+// explícito (2026-08-26): "vamos comprimir os agrupamentos, note que
+// vários fazem referência a mesma macroárea".
+function resolverAreaAcimaDisciplinaRmi(itensNivel0Permitidos, itensNivel1Permitidos, zonaCodigoMax, mapaAreaCanonica){
+  const filhosPorPai = new Map();
+  itensNivel1Permitidos.forEach(r => {
+    const pai = codigoPaiRmi(r.raw.codigo_seq);
+    if (pai == null) return;
+    const chave = `${r.raw.id_rmi}::${pai}`;
+    if (!filhosPorPai.has(chave)) filhosPorPai.set(chave, []);
+    filhosPorPai.get(chave).push(r);
+  });
+  const canonizar = (nome) => (mapaAreaCanonica && mapaAreaCanonica[normalizarNomeParaMatch(nome)]) || nome;
+  const disciplinas = [];
+  itensNivel0Permitidos.forEach(item0 => {
+    const ehZona = Number(item0.raw.codigo_seq) <= zonaCodigoMax;
+    const nomeItem0 = canonizar((item0.raw.descricao || '').trim());
+    if (!ehZona) { disciplinas.push({ item: item0, nome: nomeItem0, areaHerdada: null }); return; }
+    const filhos = filhosPorPai.get(`${item0.raw.id_rmi}::${item0.raw.codigo_seq}`) || [];
+    if (!filhos.length) { disciplinas.push({ item: item0, nome: nomeItem0, areaHerdada: null }); return; } // zona sem filho nível 1 — vira sua própria disciplina, sem área (raro)
+    filhos.forEach(f => disciplinas.push({ item: f, nome: (f.raw.descricao || '').trim(), areaHerdada: nomeItem0 }));
+  });
+  return disciplinas;
+}
+function ehMaterialRmi(item, filhosPorPaiGeral){
+  const un = String(item.raw.unidade || '').trim().toUpperCase();
+  if (!un || un === 'SERV' || un === 'VB' || un === 'VERBA') return false;
+  const d = normalizarNomeParaMatch(item.raw.descricao) || '';
+  if (PALAVRAS_NAO_MATERIAL_RMI.some(p => d.includes(p))) return false;
+  const filhos = filhosPorPaiGeral.get(`${item.raw.id_rmi}::${item.raw.codigo_seq}`) || [];
+  const filhoComValorReal = filhos.some(f => ehMaterialRmi(f, filhosPorPaiGeral) && (Number(f.raw.subtotal_custo_meta_orcamento) || 0) > 0);
+  return !filhoComValorReal; // se o filho já carrega o valor de verdade, o pai não é o material (evita contar 2x)
+}
+// Caminha da disciplina até os materiais de verdade, marcando a "área"
+// como o nome do nó exatamente 1 nível abaixo da disciplina (não
+// importa quantas camadas existam depois disso) — ou, na ausência
+// dessa camada, a área HERDADA de cima (ver `resolverDisciplinasRmi`).
+function coletarMateriaisDaDisciplina(disciplinaItem, areaHerdada, filhosPorPaiGeral){
+  const materiais = [];
+  function caminhar(item, area, profundidade){
+    if (ehMaterialRmi(item, filhosPorPaiGeral)) { materiais.push({ item, area }); return; }
+    const filhos = filhosPorPaiGeral.get(`${item.raw.id_rmi}::${item.raw.codigo_seq}`) || [];
+    filhos.forEach(f => {
+      // Só captura a área do nível logo abaixo quando: (a) NÃO já existe
+      // área herdada de cima (obra 91 — senão sobrescreveria UB/SP com o
+      // primeiro sub-agrupamento, bug real pego na validação) e (b) o
+      // filho NÃO é ele mesmo o material (senão a área ficaria idêntica
+      // ao nome do material, quando o material é filho direto da
+      // disciplina sem camada de área — visto em "Equipamentos"/obra 91).
+      const areaParaFilho = (profundidade === 0 && area == null && !ehMaterialRmi(f, filhosPorPaiGeral)) ? f.raw.descricao : area;
+      caminhar(f, areaParaFilho, profundidade + 1);
+    });
+  }
+  caminhar(disciplinaItem, areaHerdada, 0);
+  return materiais;
+}
+// Catálogo de itens padrão — pedido explícito (2026-08-24): "criar um
+// banco de itens padrão, a descrição deverá ter match com um daqueles
+// itens... Chiller, válvulas e acessórios, elevadores, isolamento
+// térmico, tubulação Aço Carbono, tubulação Inox, Cabos, Painéis".
+// Levantado analisando os 1.133 materiais reais do CP029 (script
+// descartável, não faz parte do repo) — cobre 97,6% do VALOR (60% da
+// CONTAGEM; o resto é cauda longa de itens únicos de baixo valor, que
+// caem no fallback por separador abaixo). Confirmado com o usuário: (1)
+// "RMTAC"/"RMG " são molas antivibratórias — vinham como maior bloco
+// não classificado, tipo "RMTAC-F2 1.0Y1 (dutos)"; (2) mantém
+// categorias de acabamento civil (Pisos, Elevadores, Divisórias...)
+// junto das de MEP, não só os exemplos dados.
+//
+// ORDEM IMPORTA — `classificarMaterialRmi` usa a PRIMEIRA categoria que
+// bate. "Válvulas e acessórios" fica por ÚLTIMO de propósito: palavras
+// curtas e genéricas (VALVULA, FLANGE, CURVA 90) colidiam com itens de
+// outra natureza quando checadas cedo demais — pego na revisão manual
+// antes de subir:
+//   - "Válvula para Mictório/Lavatório/Tanque", "Valvula de Descarga
+//     PNE" são registro de LOUÇA (acabamento), não válvula de processo
+//     — por isso "Louças e Metais" vem antes.
+//   - "Flange ligação perf fze", "Curva 90° leito horizontal..." são
+//     acessório de BANDEJA/LEITO elétrico, não de tubulação — por isso
+//     "Eletrodutos e Infraestrutura Elétrica" vem antes.
+const CATALOGO_MATERIAIS_RMI = {
+  // "Molas" vem ANTES de "Chiller" de propósito: "RMG 1.606F4-26
+  // (chillers e ventiladores)" é mola/suporte antivibratório (confirmado
+  // com o usuário), mas o texto entre parênteses contém literalmente
+  // "chillers" — pego na revisão de teste (Playwright acusou um Chiller
+  // com valor R$68 mil a mais do que o real, exatamente o valor dessa
+  // mola contaminando a categoria por checar "CHILLER" primeiro).
+  'Molas': ['RMTAC', 'RMG ', 'BASES INERCIAIS'],
+  'Chiller': ['CHILLER'],
+  'Elevadores': ['ELEVADOR'],
+  // `ISOLAMENTO` bare (removido 2026-08-26, pedido explícito: "os cabos
+  // estão caindo em isolamento térmico") batia qualquer descrição de
+  // CABO ELÉTRICO, já que "isolamento" é termo padrão de especificação
+  // elétrica ("Cabo 0,6/1kV... isolamento de HEPR 90°...") — como esta
+  // categoria é checada antes de `Cabos`, R$9,24M de cabos reais na
+  // obra UB/SP (e R$3,04M na NN-AP, já deployada) caíam aqui por
+  // engano. Trocado por frases compostas que só batem isolamento
+  // mecânico de verdade (tubo/conexão/válvula/flange), confirmado
+  // contra os itens reais de várias obras sem nenhuma perda de
+  // cobertura genuína (valor>0) fora do UB/SP e NN-AP.
+  'Isolamento térmico': [
+    'ALUCLAD', 'MANTA SUPERLON', 'TUBO SUPERLON', 'LA DE VIDRO', 'PLACAS DE LA', 'LENCOL DE BORRACHA',
+    'ISOLAMENTO DE TUBO', 'ISOLAMENTO DE CONEX', 'ISOLAMENTO DE VALVULA', 'ISOLAMENTO DE FLANGE', 'ISOLAMENTO TERMICO', 'ISOLAMENTO DE FILTRO',
+  ],
+  'Tubulação Aço Carbono': ['TUBULACAO ACO CARBONO', 'TUBO DE ACO CARBONO'],
+  'Tubulação Inox': ['TUBULACAO ACO INOX', 'TUBO INOX', 'CHAPA INOX'],
+  'Tubulação Alumínio': ['TUBULACAO ALUMINIO', 'TUBO DE ALUMINIO'],
+  'Cabos': ['CABO', 'COND CU FLEX', 'CORDAO OPTICO', 'FIBRA OTICA', 'CABO OPTICO', 'PIGTAIL', 'TERMINAL DE COMPESSAO'],
+  'Painéis': ['PAINEL', 'PAINEIS', 'QUADRO ELETRICO', 'QEE'],
+  'Fancoils e Fancoletes': ['FANCOLETE', 'FANCOIL'],
+  'Ventiladores e Exaustores': ['VENTILADOR', 'EXAUSTAO'],
+  'Difusores e Grelhas': ['DIFUSOR', 'GRELHA DE RETORNO', /^DI-\d/, /^GR-\d/],
+  'Bombas': ['BOMBA'],
+  'Instrumentação': ['TERMOMETRO', 'MANOMETRO'],
+  'Detecção e Alarme': ['DETECTOR DE FUMACA', 'BASE PARA DETECTOR', 'SENSOR DE PRESENCA', 'LEITORA DE CARTAO'],
+  'Combate a Incêndio': ['SPK ', 'SPRINKLER', 'MANGUEIRA FLEXIVEL PARA SPRINKLERS'],
+  'Ventilação e Dutos': ['DUTO FLEXIVEL', 'DUTO SUPORTADO', 'CHAPA GALVANIZADA', 'CANTO TDC'],
+  'Automação e Controle': ['AUTOMACAO', 'CONTROLADORA', 'INVERSOR'],
+  'Rede/Cabeamento Estruturado': ['PATCH PANEL', 'PATCH CORD', 'CONECTOR', 'RACK', 'DIO CASSETE'],
+  'CFTV (câmeras)': ['ILLUSTRA', 'BULLET', 'DOME'],
+  'Iluminação': ['LUMINARIA'],
+  'Eletrodutos e Infraestrutura Elétrica': ['CANALETA', 'CONDULETE', 'BANDEJA', 'LEITO ', 'LUVA ARREMATE', 'PERFILADO', 'ELETRODUTO', 'ELETROCALHA', 'CURVA VERTICAL', 'PERF FZE'],
+  'Estrutura e Suportação Metálica': ['VIGA U', 'VERGALHAO', 'CHAPA ACO', 'CANTONEIRA', 'ACO CA-50', 'ACO CA-60'],
+  'Concreto e Impermeabilização': ['CONCRETO', 'REATERRO', 'VIAPLUS', 'PLANISEAL'],
+  'Pisos': ['PISO DE BORRACHA', 'PISO PORCELANATO', 'PREPARACAO DO PISO'],
+  'Rodapés e Acabamentos': ['RODAPE'],
+  'Divisórias': ['DIVISORIA'],
+  'Esquadrias (janelas)': ['CAIXILHO', 'ESQUADRIA'],
+  'Portas': ['PORTA MADEIRA', 'PORTA DE MADEIRA'],
+  'Pintura': ['PINTURA'],
+  'Forros e Drywall': ['FORRO', 'DRYWALL', 'SANCA'],
+  'Louças e Metais': ['CUBA', 'TORNEIRA', 'ESPELHO CRISTAL', 'BACIA', 'SIFAO', 'BARRA DE ACESSIBILIDADE', 'CAIXA ACOPLADA', 'CAIXA DE DESCARGA', 'MICTORIO', 'LAVATORIO', 'VALVULA DE DESCARGA', 'VALVULA PARA TANQUE'],
+  'Marcenaria e Mobiliário': ['ARMARIO'],
+  'Revestimentos': ['PASTILHA', 'FRONTAO EM GRANITO', 'TAMPO EM GRANITO'],
+  'Válvulas e acessórios': ['VALVULA', 'FILTRO Y', 'FLANGE', 'JUNTA FLEXIVEL', 'CURVA 90'],
+};
+// `catalogo` é opcional — default é o `CATALOGO_MATERIAIS_RMI` puro (CP029,
+// intocado). Categorias extras por obra (`catalogoExtraRmi`) entram só na
+// hora de montar o catálogo EFETIVO daquela obra (ver `ModuloSuprimentos`)
+// — pedido explícito (2026-08-25): "é possível separar as categorias por
+// id_obra? Para evitar a contaminação". Uma obra sem catálogo extra usa
+// exatamente o mesmo catálogo de sempre, sem risco nenhum.
+function classificarMaterialRmi(descNorm, catalogo = CATALOGO_MATERIAIS_RMI){
+  for (const [categoria, palavras] of Object.entries(catalogo)) {
+    if (palavras.some(p => p instanceof RegExp ? p.test(descNorm) : descNorm.includes(p))) return categoria;
+  }
+  return null;
+}
+// Mescla o catálogo base com as categorias extras de UMA obra — chaves
+// repetidas somam as palavras (união), nunca substituem, então nada do
+// catálogo base se perde nem pra quem tem extra.
+function catalogoEfetivoRmi(catalogoExtra){
+  if (!catalogoExtra) return CATALOGO_MATERIAIS_RMI;
+  const combinado = { ...CATALOGO_MATERIAIS_RMI };
+  Object.entries(catalogoExtra).forEach(([categoria, palavras]) => {
+    combinado[categoria] = combinado[categoria] ? [...combinado[categoria], ...palavras] : palavras;
+  });
+  return combinado;
+}
+// Extrai a "família" de um material a partir da descrição — 1ª tentativa
+// é bater no catálogo padrão acima; sem match, cai no corte por
+// separador (fallback anterior, pra itens fora do catálogo ainda
+// ganharem uma descrição mais curta em vez da ficha técnica inteira).
+//
+// Corte no PRIMEIRO separador entre 2 candidatos, o que vier antes:
+//   1. `" - "` (espaço-traço-espaço) — nome-base × especificação
+//      (diâmetro/capacidade/material), ex. "Chiller - Turbo Trans
+//      Air-Colled: TTA-450..." (esse caso específico já cai no catálogo
+//      acima, mas o corte continua valendo pra quem não bate).
+//   2. `,` que NÃO esteja colada a dígito nos 2 lados — nome-base ×
+//      resto da ficha técnica, ex. "Elevador Linha 3300 Atlas
+//      Schindler, com capacidade..." → "Elevador Linha 3300 Atlas
+//      Schindler". A ressalva do dígito existe porque vírgula também é
+//      separador DECIMAL em pt-BR dentro dessas descrições (ex. "Cabo
+//      0,6/1kV" não pode virar "Cabo 0" — a vírgula ali está colada em
+//      dígito dos 2 lados, não bate o padrão, fica intacta).
+// Deliberadamente não tenta reconhecer DN/Ø/Btu/h/mm² um por um: hífen
+// SEM espaço ao redor (`380-220V`, `CS 600X250`, `W310X38.7`) e vírgula
+// decimal nunca batem — ficam intactos, o comportamento seguro quando
+// não dá pra separar nome-base de especificação com confiança.
+function familiaMaterialRmi(descricao, catalogo = CATALOGO_MATERIAIS_RMI){
+  if (!descricao) return descricao;
+  const categoria = classificarMaterialRmi(normalizarNomeParaMatch(descricao), catalogo);
+  if (categoria) return categoria;
+  const idxTraco = descricao.indexOf(' - ');
+  const bateVirgula = /(?<!\d),(?!\d)/.exec(descricao);
+  const idxVirgula = bateVirgula ? bateVirgula.index : -1;
+  const candidatos = [idxTraco, idxVirgula].filter(i => i !== -1);
+  if (!candidatos.length) return descricao.trim();
+  return descricao.slice(0, Math.min(...candidatos)).trim();
+}
+// Soma materiais da mesma família (ver `familiaMaterialRmi`) DENTRO do
+// mesmo par área+disciplina (nunca entre grupos diferentes, pra não
+// perder a orientação que é o objetivo da tela). A descrição exibida
+// sempre vira o nome da família — mesmo em item único, sem duplicata
+// pra consolidar (é simplificação de leitura, não só desduplicação).
+function consolidarMateriaisSemelhantes(materiais, catalogo = CATALOGO_MATERIAIS_RMI){
+  const porChave = new Map();
+  materiais.forEach(m => {
+    const familia = familiaMaterialRmi(m.descricao, catalogo);
+    const chave = `${m.area || ''}::${m.disciplina}::${normalizarNomeParaMatch(familia)}`;
+    const existente = porChave.get(chave);
+    if (!existente) { porChave.set(chave, { ...m, descricao: familia, _qtd: 1, _qtdFinalizados: m.finalizado ? 1 : 0, _itens: [m] }); return; }
+    existente.valor += m.valor;
+    existente.totalConsumido = (existente.totalConsumido || 0) + (m.totalConsumido || 0);
+    if (m.saldo_orcamentario != null) existente.saldo_orcamentario = (existente.saldo_orcamentario || 0) + m.saldo_orcamentario;
+    existente._qtd += 1;
+    if (m.finalizado) existente._qtdFinalizados += 1;
+    existente._itens.push(m);
+  });
+  // `_itens` guarda os itens ORIGINAIS (pré-consolidação, descrição
+  // completa) por trás de cada linha — pedido explícito (2026-08-24):
+  // "pop-up que permita verificar quais são os itens que estão
+  // aninhados, ao clicar na linha de resumo dele".
+  //
+  // Data da necessidade/prazo de entrega/material em obra são atributos
+  // POR ITEM (cada peça tem seu próprio prazo de compra). Numa linha
+  // que funde vários itens, a 1ª versão deixava essas colunas em
+  // branco (sem inventar agregação); pedido explícito de correção no
+  // mesmo dia: "vamos considerar sempre o pior caso: menor necessidade
+  // de compra, menor prazo e menor data limite em obra". Necessidade de
+  // compra e material em obra pegam o MENOR valor entre os itens
+  // fundidos que realmente têm aquele dado (item sem data não entra na
+  // conta); "material em obra" usa o MENOR resultado já calculado por
+  // item (não a soma dos outros 2 mínimos, que poderiam vir de itens
+  // diferentes e gerar uma data que nenhum item real tem). Pra item
+  // único (`_qtd === 1`), o mínimo de 1 elemento é o próprio valor —
+  // mesmo resultado de antes, sem precisar de caso especial.
+  //
+  // Prazo de entrega do resumo NÃO é mais um 3º mínimo independente
+  // (pedido explícito 2026-08-26): agora é calculado como o intervalo
+  // real, em dias, entre a necessidade de compra e o material em obra
+  // já escolhidos acima — garante que as 3 colunas do resumo sejam
+  // sempre coerentes entre si (antes o prazo podia vir do item errado
+  // e não bater com a diferença mostrada nas outras duas datas).
+  return Array.from(porChave.values()).map(({ _qtd, _qtdFinalizados, _itens, ...m }) => {
+    const datasNecessidade = _itens.map(x => x.dataNecessidadeCompra).filter(Boolean);
+    const materiaisEmObra = _itens.map(x => calcularMaterialEmObra(x.dataNecessidadeCompra, x.prazoEntregaDias)).filter(Boolean);
+    const menor = (lista) => lista.length ? lista.reduce((a, b) => (a < b ? a : b)) : null;
+    const dataNecessidadeCompraResumo = menor(datasNecessidade);
+    const materialEmObraResumo = menor(materiaisEmObra);
+    const dtNecessidadeResumo = dataNecessidadeCompraResumo ? parseDataFlexivel(dataNecessidadeCompraResumo) : null;
+    return {
+      ...m, qtdConsolidada: _qtd, qtdFinalizados: _qtdFinalizados,
+      // `desvio_saldo_orcamentario` que sobra do spread é só do 1º item
+      // fundido — a origem não calcula "desvio da soma" (não existe RMI
+      // consolidada lá). Achado via teste do Farol Financeiro
+      // (2026-08-24): sem recalcular, o ponto saía verde com o saldo
+      // agregado (mostrado no card do farol) negativo — "Cabos" e
+      // "Tubulação Inox" reais tinham esse descompasso. Pelo sinal, não
+      // é um limiar novo (ADR-005): mesma regra que a origem já usa por
+      // item (saldo<0 → negativo), só aplicada à soma quando há fusão.
+      desvio_saldo_orcamentario: (_qtd > 1 && m.saldo_orcamentario != null) ? (m.saldo_orcamentario < 0 ? 'negativo' : 'positivo') : m.desvio_saldo_orcamentario,
+      dataNecessidadeCompra: dataNecessidadeCompraResumo,
+      // Pedido explícito (2026-08-26): prazo de entrega do resumo deixa de
+      // ser um 3º mínimo independente (podia vir de um item diferente dos
+      // que definiram necessidade/limite acima, ficando incoerente com as
+      // outras 2 colunas) e passa a ser o intervalo real entre elas.
+      prazoEntregaDias: (dtNecessidadeResumo && materialEmObraResumo) ? Math.round((materialEmObraResumo - dtNecessidadeResumo) / 86400000) : null,
+      materialEmObra: materialEmObraResumo,
+      itensOriginais: _itens.sort((a, b) => b.valor - a.valor),
+    };
+  });
+}
+// Monta a árvore Área → Disciplina → Material a partir da lista plana
+// (já filtrada pra Curva A) — cada nível ordenado pelo próprio valor
+// total decrescente, preservando "o que pesa mais primeiro" dentro do
+// agrupamento (pedido: "precisa estar organizado em níveis, Área ->
+// Disciplina -> Material"). `m.area` nunca vem vazio aqui — item sem
+// área é excluído antes, na coleta (pedido explícito 2026-08-24: "itens
+// sem área não precisam ser considerados").
+// Farol Financeiro nas linhas de resumo (Área/Disciplina) — pedido
+// explícito (2026-08-24): "os resumos também deverão ser farol, não
+// valor". Mesma regra de cor já usada nos materiais (soma do saldo
+// orçamentário, sinal decide positivo/negativo — nada de limiar novo),
+// só que agregando TODOS os materiais daquela área/disciplina, não só
+// os de uma família. `totalConsumido`/`saldoOrcamentario`/`desvio`
+// aqui alimentam o mesmo `FarolFinanceiroRmi` que os materiais usam.
+function farolAgregado(materiais){
+  const totalConsumido = soma(materiais, 'totalConsumido') || 0;
+  const saldoOrcamentario = soma(materiais, 'saldo_orcamentario');
+  const desvio = saldoOrcamentario == null ? null : (saldoOrcamentario < 0 ? 'negativo' : 'positivo');
+  return { totalConsumido, saldoOrcamentario, desvio };
+}
+function agruparPorAreaDisciplina(materiaisCriticos){
+  const porArea = new Map();
+  materiaisCriticos.forEach(m => {
+    if (!porArea.has(m.area)) porArea.set(m.area, new Map());
+    const porDisciplina = porArea.get(m.area);
+    if (!porDisciplina.has(m.disciplina)) porDisciplina.set(m.disciplina, []);
+    porDisciplina.get(m.disciplina).push(m);
+  });
+  const areas = Array.from(porArea.entries()).map(([area, porDisciplina]) => {
+    const disciplinas = Array.from(porDisciplina.entries()).map(([disciplina, materiais]) => {
+      const materiaisOrdenados = [...materiais].sort((a, b) => b.valor - a.valor);
+      return { disciplina, valor: soma(materiaisOrdenados, 'valor') || 0, ...farolAgregado(materiaisOrdenados), materiais: materiaisOrdenados };
+    }).sort((a, b) => b.valor - a.valor);
+    const valorArea = disciplinas.reduce((s, d) => s + d.valor, 0);
+    const todosMateriaisArea = disciplinas.flatMap(d => d.materiais);
+    return { area, valor: valorArea, ...farolAgregado(todosMateriaisArea), disciplinas };
+  }).sort((a, b) => b.valor - a.valor);
+  return areas;
+}
+const PALAVRAS_CANTEIRO_RMI = [
+  'CANTEIRO DE OBRAS', 'ALOJAMENTO', 'FILIAL', 'CONSUMI', 'UNIFORME',
+  'FRETE', 'COMBUSTIVEL', 'DIESEL', 'MOBILIZA', 'FERRAMENTA', 'SEGURO',
+  'ONIBUS', 'ESCAVADEIRA', 'MOTONIVELADORA', 'ROLO COMPACTADOR',
+  'CAMINHAO BASCULANTE', 'PLATAFORMA DE LANCA ARTICULADA',
+  'RETROESCAVADEIRA', 'GUINDASTE', 'MUNCK',
+];
+// ASO/EPI(S) curtas demais pra checar por "contém" sem risco de bater
+// dentro de outra palavra (ex. "EPI" solto colidiria); por isso via
+// `\b` (fronteira de palavra) em vez de `.includes()`.
+const REGEX_CANTEIRO_RMI = /\b(ASO|EPIS?|QUALIFICACAO DE SOLDADORES|TREINAMENTO)\b/;
+// Itens de canteiro/indireto (alojamento, EPI, combustível, equipamento
+// alugado etc.) NÃO entram na Curva A — pedido explícito, são custo de
+// logística/apoio, não de execução da obra. "Serviços Terceirizados" e
+// "Equipamentos de Medição e Apoio" ficam de FORA desta lista de
+// propósito (decisão explícita: contam como item de obra).
+//
+// Como a descrição é texto livre (2.975 descrições distintas nas 6
+// obras já carregadas, sem taxonomia fixa — RMI nova pode trazer
+// qualquer nome), a exclusão é por PALAVRA-CHAVE, não lista fechada de
+// nomes. Categoria nova que não bater nenhuma palavra-chave entra como
+// item de obra por padrão (decisão explícita do usuário: melhor
+// arriscar incluir um item de canteiro raro do que esconder um item de
+// obra real por engano de classificação).
+function ehItemCanteiroRmi(descricao){
+  // `normalizarNomeParaMatch` já existe pro módulo de Encarregados
+  // (trim+maiúsculas+sem acento) — mesma normalização serve aqui, texto
+  // é texto.
+  const d = normalizarNomeParaMatch(descricao);
+  if (!d) return false;
+  if (PALAVRAS_CANTEIRO_RMI.some(p => d.includes(p))) return true;
+  return REGEX_CANTEIRO_RMI.test(d);
+}
+
+// Suprimentos validado pro CP029 (CNPEM - Faseado, id_obra=106 — ver
+// SETORES/origemCP) desde 2026-08-24. Pedido explícito nessa data: "Pela
+// diversidade na forma como estão cadastradas as RMIs as mudanças terão
+// de ser específicas para cada obra, vamos considerar que as feitas até
+// o momento são válidas apenas para o cp029." Toda a régua de disciplina/
+// área/material/canteiro/família foi desenhada e testada comparando
+// CP029 × obra 91 (Novo Nordisk UB/SP) — os 2 RESULTADOS fizeram sentido
+// nos testes, mas a convenção de RMI de cada obra é registrada por gente
+// diferente, sem padrão único (já rendeu achados estruturais divergentes
+// entre obras) — aplicar a régua numa obra nova sem checar RMI por RMI
+// arrisca "crítico" errado silencioso, o tipo de erro mais caro numa
+// tela gerencial.
+//
+// Hitachi (id_obra=110) entrou em 2026-08-25 como 2ª obra, PARTINDO da
+// régua do CP029 (pedido explícito) — mas a estrutura de RMI dela já
+// diverge de forma visível: 3 RMIs distintas (264/286/275) sem NENHUM
+// nível 0 no formato "balde administrativo" (`EH_BALDE_ADMINISTRATIVO_RMI`
+// não bate em nenhum), então a `área` nunca é herdada por esse caminho
+// aqui — fica sempre dependendo de haver uma camada de zona física real
+// entre disciplina e material (que pode não existir pra RMI 264, cujo
+// nível 0 mistura categorias de material de verdade — "ISOLADOR",
+// "CONECTOR", "CABOS ELÉTRICOS DE ALTA TENSÃO" — com claramente
+// administrativas/canteiro que passam pelas palavras-chave existentes
+// ("EPI", "FRETE COMPLEMENTAR", "SEGURO...") e outras que talvez NÃO
+// passem ("SOLICITAÇÃO ADM", "DESMOBILIZAÇÃO", "IPI COMPLEMENTAR",
+// "MENSALIDADE PONTO", "LOCAÇÃO DE EQUIPAMENTOS") — a validar olhando a
+// árvore renderizada de verdade, ajustando conforme achados específicos
+// desta obra (mesmo espírito da nota acima, obra por obra).
+//
+// CONFIRMADO (2026-08-25, simulação da régua contra o dump real da
+// Hitachi): NENHUM material da Hitachi tem área — a régua "sem área não
+// conta" (decisão do CP029) descartava os 236 materiais válidos (R$
+// 7.333.703,10) por inteiro, tela ficava vazia. Causa: no CP029 quase
+// todo material tem uma camada de zona física entre disciplina e
+// material; na Hitachi o material é filho DIRETO da disciplina (ex.
+// "CONECTORES" → material), sem essa camada em nenhum RMI. Decisão
+// explícita do usuário: pra obra sem essa camada, não exigir área.
+//
+// SEGUNDO AJUSTE (2026-08-25, mesma sessão): pedido explícito "o
+// primeiro nível será essencialmente os escopos, códigos sequenciais 1,
+// 2, 3 e 4" — ou seja, pra Hitachi o nível 0 da RMI (o "escopo", raiz de
+// cada ramo, codigo_seq sequencial dentro de cada RMI) é SEMPRE o topo
+// da árvore, ignorando a heurística de "desce pro nível 1 quando o pai
+// zera" que `resolverDisciplinasRmi` usa pro CP029 (lá, o nível 0 é só
+// um wrapper às vezes; aqui, não — é o próprio escopo).
+// Porto Itapoá (id_obra=94) entrou em 2026-08-26, PARTINDO da régua do
+// CP029 (pedido explícito) — mas com estrutura de RMI mais divergente
+// ainda que a Hitachi (ver notas em CONFIG_SUPRIMENTOS_POR_OBRA[94]
+// abaixo, achados detalhados investigando o dump real da obra).
+// Novo Nordisk - AP (id_obra=107) entrou em 2026-08-26 — estrutura bem
+// mais próxima do CP029 que as anteriores (nível 0 já é disciplina de
+// verdade, "Change Order" já bate o regex de balde existente): 71% do
+// valor coberto SEM NENHUM ajuste. Só 2 achados pontuais (ver
+// CONFIG_SUPRIMENTOS_POR_OBRA[107]).
+const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91]);
+// Ajustes específicos por obra, além da régua padrão (desenhada e
+// validada pro CP029) — cada obra nova entra aqui só com o que
+// realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
+// na memória do projeto pro histórico de cada achado).
+const CONFIG_SUPRIMENTOS_POR_OBRA = {
+  110: {
+    areaObrigatoria: false, escopoNivel0: true, rotulo: 'Escopo', curvaAObrigatoria: false,
+    // Pedido explícito (2026-08-25): "vamos manter os macros com cp281,
+    // cp001 e co0006 [cp006]. Os demais macros e suas filhas podem ser
+    // suprimidos" — só escopos (nível 0) cuja descrição bate um desses
+    // códigos entram na árvore; o resto (RMI 264 inteira, RMI 286
+    // inteira, e os escopos de RMI 275 sem código) fica de fora.
+    escoposPermitidos: ['cp281', 'cp001', 'cp006'],
+    // Categorias específicas da Hitachi pro catálogo de materiais
+    // padrão (ver `catalogoEfetivoRmi`/`CATALOGO_MATERIAIS_RMI`) —
+    // validado contra os 202 materiais dos 4 escopos permitidos
+    // (2026-08-25): cobertura do catálogo base foi de 79% pro 96% do
+    // valor com essas 6 entradas. Isoladas nesta obra por pedido
+    // explícito ("é possível separar as categorias por id_obra? Para
+    // evitar a contaminação") — o CP029 nunca vê essas palavras-chave.
+    catalogoExtra: {
+      'Isoladores': ['ISOL. CERAM', 'ISOLADOR CERAMICO', 'ISOLADOR EPOXI', 'ISOLADOR SUPORTE'],
+      'Barramentos (AT)': ['TUBO AL EXTRUD', 'BARRA PERF. AL', 'BARRA CIRCULAR', 'BARRA RETANGULAR DE COBRE', 'BARRA CHATA DE ALUMINIO'],
+      // Fonte usa pontuação inconsistente pro mesmo termo ("CONEC. SUP"
+      // × "CONEC SUP" sem ponto) — as duas variantes de cada palavra
+      // entram de propósito, achado testando (2026-08-25).
+      'Conectores e Ferragens de Linha (AT)': ['CONEC. SUP', 'CONEC SUP', 'CONECT. SUP', 'CONECT SUP', 'CONECT. TERM', 'CONECT TERM', 'CONEC TERMINAL', 'CONECT. EMENDA', 'CONECT EMENDA', 'CONEC. EMENDA', 'CONEC EMENDA'],
+      // Categorias novas (2ª rodada de validação, 2026-08-25 — "ainda
+      // tem vários itens caindo em item específico, fora do catálogo").
+      'Controle de Acesso': ['LEITOR BIOMETRICO', 'FECHADURA ELETROMAGNETICA', 'SENSOR MAGNETICO', 'BOTOEIRA'],
+      // "PARARAFUSO" (typo de origem p/ "PARAFUSO") e "PORCA SEX"
+      // (abreviação de "sextavada") entram como variantes de propósito.
+      'Parafusos e Fixação': ['PARAFUSO', 'PARARAFUSO', 'CHUMBADOR', 'ARRUELA', 'PORCA QUADRADA', 'PORCA SEXTAVADA', 'PORCA SEX'],
+      'Equipamentos de TI': ['NOTEBOOK'],
+      // Extensões de categorias já existentes no catálogo base — a
+      // união (`catalogoEfetivoRmi`) soma às palavras-chave do CP029,
+      // não substitui, e só vale dentro do catálogo efetivo da Hitachi.
+      // `SUPORTE` bare só é seguro aqui PORQUE é isolado por obra — no
+      // catálogo base (CP029) isso teria o mesmo risco de contaminação
+      // genérica do caso Chiller/Mola, por isso nunca vai pra lá.
+      // `SUPORTE` sozinho já cobre "SUPORTE METALICO", "SUPORTE
+      // FIXAÇÃO ISOLADORES" etc. (substring) — sem repetir as variantes
+      // específicas de propósito.
+      'Estrutura e Suportação Metálica': ['SUPORTE', 'PERFIL U EM ACO', 'PERFIL Z', 'CHAPA EM ACO GALVANIZADO'],
+      'Tubulação Aço Carbono': ['TUBO ACO PTO NBR', 'RED CONC PTO', 'TE 90º ACO PRETO', 'ACO PRETO A-234', 'CAP ACO CARBONO'],
+      'Acoplamentos e Conexões Ranhuradas': ['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO', 'GRAMPO U', 'CRUZETA EM ACO', 'CAP RANHURADO'],
+      'Automação e Controle': ['CORTINA DE LUZ'],
+      'Combate a Incêndio': ['WATER SPRAY', 'PROJETOR DE ALTA VAZAO'],
+      'Cabos': ['COND COBRE NU', 'TERMINAL COMPRESSAO'],
+      'Rede/Cabeamento Estruturado': ['KIT DE ANCORAGEM', 'PARA DIO'],
+      'Eletrodutos e Infraestrutura Elétrica': ['PERF FGF', 'PARALEITO'],
+    },
+  }, // Hitachi
+  94: {
+    // Achado investigando o dump real (2026-08-26, script descartável
+    // baixar-rmi-obra.js + inspeção manual, não fica no repo):
+    //
+    // (1) Duas RMIs — 48 "CP002 - PORTO ITAPOÁ" (dado real, R$ 412M) e
+    // 182 "CP002 - PORTO ITAPOÁ - GERAL" (mesmos codigo_seq/descrição da
+    // 48, item a item, mas com subtotal ~1000x menor E `finalizado`
+    // divergente pro mesmo item — não é RMI adicional válida, parece
+    // rascunho/duplicata em escala errada). Excluída por completo.
+    rmisExcluidos: [182],
+    // (2) Nível 0 (82 itens na RMI 48) mistura 3 coisas — ao contrário
+    // do CP029, onde nível 0/1 já é a disciplina limpa: rubrica de
+    // gerenciamento (código 1), zona física + disciplina real de obra
+    // (códigos 2-29) e rubrica administrativa/canteiro (códigos 30-48:
+    // Equipamentos, Combustível, EPIs, Uniformes, Canteiro, Alojamento,
+    // Seguros, Serviços Terceirizados...). Só 2-29 entra na tela —
+    // listagem completa e critério revisados com o usuário em
+    // 2026-08-26 (ver [[painel-mse-suprimentos]] na memória do
+    // projeto). Itens de nível 0 com subtotal=0 (código 49+, "sobras" de
+    // catálogo sem valor lançado) já saem sozinhos pelo filtro de
+    // valor>0 do pipeline — não precisam de tratamento aqui.
+    //
+    // PENDÊNCIA CONHECIDA (não é decisão final, revisitar se pedirem):
+    // dentro de 30-48, "Serviços Terceirizados" (R$25.175.431,99,
+    // código 48) e "Equipamentos de Medição e Apoio" (R$166.124,80,
+    // código 44) NÃO são canteiro/administrativo de verdade — o próprio
+    // `ehItemCanteiroRmi` já documenta essa exceção pro CP029/Hitachi
+    // ("ficam de FORA desta lista de propósito... contam como item de
+    // obra"). Conferido aqui: "Serviços Terceirizados" tem 166 filhos
+    // que são serviço de execução real (Instalação de Drenos R$3,8M,
+    // Base de Pavimentação R$5,8M, Instalação de Geogrelha R$2M...), não
+    // gerenciamento. Ficaram de fora mesmo assim (2026-08-26, decisão
+    // explícita do usuário: "deixar de fora por ora") porque nenhum dos
+    // dois tem zona física associada — incluir exigiria decidir uma
+    // pseudo-Área pra eles (ex.: o próprio nome do balde vira Área, cada
+    // serviço interno vira Disciplina), ainda não implementado.
+    codigoNivel0Min: 2,
+    codigoNivel0Max: 29,
+    // (3) Dentro de 2-29, área e disciplina estão na ordem INVERSA do
+    // CP029: 2-24 são ZONA física (Pátio G1/G2, Gate, Acesso, Pré-
+    // Portal, Vistoria...) com a disciplina de verdade (Terraplanagem,
+    // Pavimentação, Drenagem, Elétrica/Dados...) um nível ABAIXO; 25-29
+    // (Válvulas e Registros, PPR - Tubos e Conexões, Esgoto Sanitário,
+    // Suportação e Pintura, Complementares) já são disciplina de
+    // verdade no próprio nível 0, sem zona — aí a regra do CP029
+    // (`resolverDisciplinasRmi`) se aplica sem ajuste. `zonaCodigoMax`
+    // marca essa fronteira pra `resolverAreaAcimaDisciplinaRmi` (ver
+    // função, comentário completo do racional lá).
+    zonaCodigoMax: 24,
+    // (4b) Compressão de macroárea (pedido explícito 2026-08-26: "vamos
+    // comprimir os agrupamentos, note que vários fazem referência a
+    // mesma macroárea") — dentro dos 28 códigos de zona/disciplina
+    // permitidos, vários nomes distintos na origem são a MESMA zona
+    // física: "OBRAS COMPLEMENTARES - PÁTIO G1" é Pátio G1 (obra
+    // complementar DAQUELE pátio); "OBRAS COMPLEMENTARES - PÁTIO G2" e
+    // "PÁTIO G2 - 60.000 m²" são Pátio G2; "GATE ACESSO AO PÁTIO G" e
+    // "ACESSO PÁTIO G" são a mesma coisa que "ACESSO AO PÁTIO G" com
+    // texto levemente diferente. "PÁTIO G1 + PÁTIO G2" (código 2) NÃO
+    // funde com nenhum dos dois — é escopo genuinamente conjunto dos 2
+    // pátios, não dá pra atribuir só a um sem inventar dado, fica com
+    // nome próprio.
+    //
+    // IMPORTANTE: mapeia TODA zona (2-24), não só as que precisam
+    // fundir — bug pego na validação local (2026-08-26): mapear só as
+    // variantes e deixar "PÁTIO G1"/"PÁTIO G2" crus criava DOIS grupos
+    // ("PÁTIO G1" maiúsculo cru × "Pátio G1" bonito do mapa) em vez de
+    // fundir num só, porque a comparação de área na árvore é sensível a
+    // maiúsculas/minúsculas. Com TODA zona passando pelo mesmo mapa,
+    // não existe mais variante crua sobrando pra divergir.
+    //
+    // Chaves já normalizadas (maiúsculas, sem acento) pra bater com
+    // `normalizarNomeParaMatch` em `resolverAreaAcimaDisciplinaRmi`.
+    mapaAreaCanonica: {
+      'PATIO G1 + PATIO G2': 'Pátio G1 + Pátio G2',
+      'PATIO G1': 'Pátio G1',
+      'OBRAS COMPLEMENTARES - PATIO G1': 'Pátio G1',
+      'PATIO G2': 'Pátio G2',
+      'OBRAS COMPLEMENTARES - PATIO G2': 'Pátio G2',
+      'PATIO G2 - 60.000 M²': 'Pátio G2',
+      'ACESSO AO PATIO G': 'Acesso ao Pátio G',
+      'GATE ACESSO AO PATIO G': 'Acesso ao Pátio G',
+      'ACESSO PATIO G': 'Acesso ao Pátio G',
+      'ACESSO NOROESTE': 'Acesso Noroeste',
+      'AREA DE RECUO - (MANOBRA CAMINHOES)': 'Área de Recuo (Manobra de Caminhões)',
+      'GATE DE ENTRADA': 'Gate de Entrada',
+      'PRE-PORTAL': 'Pré-Portal',
+      'VISTORIA': 'Vistoria',
+      'RELOCACOES': 'Relocações',
+      'APOIO CIVIL': 'Apoio Civil',
+      'OBRAS COMPLEMENTARES': 'Obras Complementares',
+    },
+    // (4) `data_necessidade_compra` preenchida em só 17 de 2.164 linhas
+    // com valor (0,8%) — as colunas Necessidade de Compra/Prazo de
+    // Entrega/Limite em Obra vão sair vazias (—) pra quase toda a
+    // tabela nesta obra; só a lista de materiais críticos por valor
+    // (Curva A) funciona de verdade. Não é bug, é o dado de origem —
+    // nada a fazer aqui além de documentar a expectativa.
+    //
+    // (5) Corte de 80% (Curva A) suprimido por pedido explícito
+    // (2026-08-26, "vamos tirar a restrição da Curva A, por hora") —
+    // mesmo ajuste já usado na Hitachi (`curvaAObrigatoria: false`).
+    // Mostra todos os 877 materiais válidos (R$106.135.034,85, 67,9% do
+    // total real da obra), não só os 25 que somavam 80% do valor
+    // acumulado.
+    curvaAObrigatoria: false,
+    // (6) Catálogo de materiais padrão pra esta obra (pedido explícito
+    // 2026-08-26: "monte a partir dos materiais a lista padrão... pra
+    // agrupar e simplificar as descrições") — mesmo processo já usado na
+    // Hitachi: medir cobertura do catálogo base (`CATALOGO_MATERIAIS_RMI`,
+    // desenhado pro CP029/eletromecânica) contra os 877 materiais válidos
+    // desta obra, listar o que sobra sem categoria (maior valor primeiro),
+    // desenhar categoria nova ou estender uma existente. Porto Itapoá é
+    // obra de terraplanagem/pavimentação/civil pesado — perfil bem
+    // diferente do MEP do CP029/Hitachi, por isso cobertura inicial (só
+    // catálogo base, sem ajuste) foi baixa: 17,5% do valor. 2 rodadas:
+    //   rodada 1 (12 categorias novas + 3 extensões de categoria
+    //   existente): 17,5% → 95,3%.
+    //   rodada 2 (+ Drenagem tubos/acessórios, + Agregados, + extensão
+    //   Concreto/Impermeabilização): 95,3% → 97,6% — mesmo patamar que o
+    //   catálogo original do CP029 (97,6% também, coincidência real, não
+    //   forçada).
+    //   rodada 3 (pedido explícito 2026-08-26: "ainda tem descrições
+    //   muito longas, com especificação, simplifique ao máximo" —
+    //   + Geradores, Transformadores, Aterramento, Parafusos e Fixação,
+    //   + extensão Iluminação/Estrutura e Suportação Metálica): 97,6% →
+    //   98,0%. Ganho principal não foi %, foi ELIMINAR os piores casos de
+    //   descrição longa: de 19 macros com 40+ caracteres pra só 9, e de
+    //   R$529.121 nelas pra R$60.876 — o pior caso ("Parafuso estojo
+    //   (barra cilíndrica rosqueada UNC...)", 148 caracteres) e o 2º pior
+    //   (Grupo gerador diesel, R$335.665) saíram da lista.
+    //   Parado aqui — resto é cauda longa de baixo valor individual (PMT
+    //   R$626.813 é exceção alta, mas fica de fora por segurança: sigla
+    //   sem significado confirmado, melhor não categorizar errado do que
+    //   arriscar um chute).
+    catalogoExtra: {
+      // Categorias NOVAS (perfil terraplanagem/pavimentação/civil, sem
+      // equivalente no catálogo base do CP029):
+      'Terraplanagem e Movimentação de Terra': ['ATERRO', 'FORNECIMENTO DE MATERIAL IMPORTADO', 'BOTA-FORA', 'BOTA FORA', 'PROTECAO DE TALUDE', 'EMPRESTIMO DE MATERIAL'],
+      'Geossintéticos': ['GEOGRELHA', 'GEOTEXTIL'],
+      'Drenos Especiais': ['DRENOS FIBROQUIMICOS', 'DRENO FIBROQUIMICO'],
+      'Pavimentação (camadas e revestimento)': ['APLICACAO DA CAMADA', 'CBUQ', 'INTERTRAVADO', 'AREIA DE ASSENTAMENTO DO PAVER'],
+      'Fundações e Estacas': ['ESTACA'],
+      'Balanças e Pesagem': ['BALANCA'],
+      'Cercamento': ['CERCAS E PORTOES', 'CERCA E PORTAO'],
+      // Fôrma/escoramento (madeirite, sarrafo, arame recozido,
+      // desmoldante) se repete em DEZENAS de ramos diferentes — maior
+      // ganho de "simplificar a descrição" do catálogo inteiro (143
+      // itens de baixo valor individual viram 1 categoria só).
+      'Fôrmas e Escoramento': ['MADEIRITE', 'SARRAFO DE', 'DESMOLDANTE', 'ARAME RECOZIDO'],
+      // `\b` (fronteira de palavra) em ETA/ETE — sigla curta demais pra
+      // checar por "contém" sem risco de bater dentro de outra palavra
+      // (mesmo cuidado já usado em ASO/EPI no `ehItemCanteiroRmi`).
+      'Estações de Tratamento (ETA/ETE)': [/\bETA\b/, /\bETE\b/],
+      'Contêineres e Instalações Provisórias': ['CONTAINER'],
+      'Drenagem (tubos e acessórios)': ['TUBO PEAD', 'BOCA DE LOBO', 'POCO DE VISITA', 'CAIXA PRE-MOLDADA', 'TAMPA EM FERRO FUNDIDO', 'COMPORTA METALICA'],
+      // `AREIA` exata (regex `^$`) — não `.includes()` — pra não
+      // arrastar junto variantes com especificação própria tipo "AREIA
+      // GROSSA"/"AREIA LAVADA" (ficam de fora de propósito, cauda longa
+      // de valor zero na prática).
+      'Agregados (Areia/Brita)': [/^AREIA$/],
+      // rodada 3 — categorias novas:
+      'Geradores': ['GRUPO GERADOR', 'GERADOR DIESEL'],
+      'Transformadores': ['TRANSFORMADOR'],
+      'Aterramento': ['ATERRAMENTO'],
+      'Parafusos e Fixação': ['PARAFUSO', 'ESTOJO'],
+      // Extensões de categoria já existente no catálogo base (união de
+      // palavras-chave, nunca substituição — mesmo padrão da Hitachi):
+      'Estrutura e Suportação Metálica': ['ESTRUTURA METALICA', 'TELHA METALICA', 'CORRIMAO', 'GUARDA-CORPO'],
+      'Iluminação': ['ILUMINACAO', 'EVERLED', 'CITYLED'],
+      'Painéis': ['ELETROCENTRO'],
+      'Concreto e Impermeabilização': ['ARGAMASSA POLIMERICA'],
+    },
+    // (7) Simplificação da DISCIPLINA (2º nível) — pedido explícito
+    // (2026-08-26: "podemos trabalhar uma lógica similar para
+    // simplificar as descrições do segundo nível?"). Mesmo mecanismo dos
+    // materiais (`familiaMaterialRmi`: catálogo primeiro, corte por
+    // separador como último recurso), aplicado ao nome da disciplina —
+    // faz sentido porque boa parte das disciplinas longas SÃO o próprio
+    // material (ramo sem camada de disciplina própria acima herda o
+    // nome do material — ex. "Valvula Gaveta Haste Asce 6\" - UL/FM"),
+    // então o catálogo de materiais já resolve as duas coisas de graça
+    // (`catalogoDisciplinaObra` = `catalogoMateriaisObra` + este extra).
+    // Resultado medido (dump real, 2026-08-26): 69 → 48 disciplinas
+    // distintas; nomes com 30+ caracteres, 41 → 14.
+    catalogoDisciplinaExtra: {
+      // Duas disciplinas fazendo referência à MESMA coisa com texto
+      // diferente na origem (mesmo espírito do `mapaAreaCanonica` acima,
+      // só que a nível de catálogo em vez de mapa 1:1):
+      'Caixas e Eletrodutos': ['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS'],
+      'Sistema de Combate a Incêndio': ['SISTEMA DE COMBATE A INCEND', 'SISTEMAS DE COMBATE A INCEND'],
+      // Conceitos de disciplina que não são "material pra comprar" (por
+      // isso ficam aqui, não no catálogo de materiais) — "Blocos e
+      // Pilares de Fundação" agrupa variantes de dimensão (32+11+11+9
+      // itens, cada bloco com dimensão própria na descrição de origem),
+      // não faz sentido como categoria de COMPRA (não se compra "bloco
+      // 2,50x1,62x1,05m" como SKU), mas faz total sentido como
+      // agrupamento de disciplina/frente de trabalho.
+      'Blocos e Pilares de Fundação': ['BLOCOS', 'BLOCO EM CONCRETO SOBRE SUBMARINOS'],
+      'Caixa Hidrante': ['CAIXA HIDRANTE'],
+      'Caixa de Passagem/Manobra': ['CAIXA DE PASSAGEM'],
+      'Vala para Tubulação': ['VALA PARA PASSAGEM'],
+      'Portão de Acesso': ['PORTAO'],
+      'Piso de Contenção': ['PISO DE CONTENCAO'],
+      'Edificação e Obras Complementares': ['EDIFICACAO E OBRAS COMPLEMENTARES'],
+      'Sinalização': ['SINALIZACAO'],
+      'Esgoto Sanitário': ['ESGOTO SANITARIO'],
+      'Cancela': ['CANCELA'],
+      // Extensão de categoria já existente no catálogo de MATERIAIS
+      // desta obra (união, mesmo padrão de sempre):
+      'Cercamento': ['VIGA BALDRAME'],
+    },
+  }, // Porto Itapoá
+  107: {
+    // Achado investigando o dump real (2026-08-26, mesmo processo de
+    // baixar-rmi-obra.js + inspeção manual das outras obras): estrutura
+    // do AP é bem mais próxima do CP029 que Hitachi/Porto — nível 0 já
+    // é disciplina de verdade (ELÉTRICA, FIRE FIGHTING, TUBULAÇÃO -
+    // INDUSTRIAL UTILITIES...) e "CHANGE ORDER N" já bate o regex de
+    // balde administrativo existente (`EH_BALDE_ADMINISTRATIVO_RMI`).
+    //
+    // A obra tem 6 RMIs (`nome_rmi`), cada uma um escopo genuinamente
+    // diferente (Elétrica Underground, Equipamentos Elétricos, Tubulação/
+    // Isolamento/Suporte, Geral, Estrutura Metálica, Elétrica/Telecom/
+    // Instrumentação/SDAI/Automação) — confirmado que NÃO é o mesmo
+    // problema do Porto Itapoá (nenhuma é duplicata em escala menor de
+    // outra). 2ª rodada, pedido explícito (2026-08-26): "o primeiro
+    // nível será o da própria RMI, com exceção da geral, que não será
+    // considerada":
+    //
+    // (1) RMI "Geral" (id_rmi=217) excluída por inteiro
+    // (`rmisExcluidos`) — investigação confirmou que ela é 100% custo
+    // indireto/administrativo (Equipamentos = frota alugada, Combustível,
+    // EPIs, Uniformes, Ferramentas, Consumíveis, Mobilização, Fretes,
+    // Canteiro, Filial, Alojamento, Mobília, Equipamentos de Medição e
+    // Apoio, Serviços Terceirizados, Rescisão/Férias/GRRF) — nenhum
+    // material de obra de verdade nela. Excluir a RMI inteira também
+    // resolve de uma vez o achado anterior desta obra ("Equipamentos"
+    // frota, R$3,49M, que antes precisava de exclusão pontual por nome
+    // exato — ficou obsoleto e foi removido).
+    //
+    // (2) Área deixa de vir da captura "1 nível abaixo da disciplina"
+    // (só existia pra parte das disciplinas — Estrutura Metálica, por
+    // exemplo, não tinha, e exigia um ajuste pontual à parte) e passa a
+    // ser a própria RMI de origem (`usarNomeRmiComoArea` — ver
+    // `ModuloSuprimentos`). Resultado: Área sempre presente pra todo
+    // material das 5 RMIs restantes, "sem área" cai a zero (era
+    // R$12,25M/25% do valor). Cobertura final: 85,7% (R$41,6M de
+    // R$48,5M) — validado localmente contra o dump real antes do
+    // deploy.
+    rmisExcluidos: [217],
+    usarNomeRmiComoArea: true,
+    // Curva A (corte dos 80% acumulado) é GLOBAL na obra, não por RMI —
+    // com ela ligada, "Equipamentos Elétricos" (R$2,08M, 5% do total) e
+    // "Elétrica Underground" (R$142k, 0,3%) ficam 100% na cauda dos 20%
+    // e somem da árvore por inteiro (0% de itens sobrevive em cada uma),
+    // mesmo depois da consolidação por família — contradiz o pedido de
+    // nível 0 = "a própria RMI" (todas as 5 restantes deveriam aparecer).
+    // Pedido explícito (2026-08-26): "vamos por hora desabilitar a Curva
+    // A" — mesmo ajuste já usado na Hitachi (`curvaAObrigatoria: false`).
+    curvaAObrigatoria: false,
+    // Catálogo de materiais validado (2026-08-26, pedido explícito
+    // "analise a lista de materiais e verifique a necessidade de
+    // inserção para simplificar as descrições"): catálogo base (CP029
+    // puro) cobria só 56,0% do valor da obra — muita coisa caía fora só
+    // por diferença de preposição (ex. "TUBO EM AÇO CARBONO" não batia
+    // 'TUBULACAO ACO CARBONO'/'TUBO DE ACO CARBONO' já existentes) ou
+    // por família nova de verdade (Plataformas/Escadas metálicas,
+    // conexões de tubulação Tê/curva/luva de redução, códigos de painel
+    // PDP-/SP-/LP-, etc.). 3 rodadas até 97,3% (mesmo patamar das outras
+    // obras): rodada 1 (14 categorias novas/estendidas, isolado nesta
+    // obra via `catalogoExtra` — mesmo padrão de isolamento por obra da
+    // Hitachi/Porto, catálogo do CP029 continua intocado) foi de 56,0%
+    // pra 88,1%; rodada 2 (+ conexões de tubulação Curva 45/Cap/Redução/
+    // Junta plana, Aterramento, códigos PDP-/SP-/LP- como Painéis,
+    // Instrumentação diversa) foi pra 94,7%; rodada 3 (+ TEE/Cotovelo/
+    // Cruzeta/Nipe TC/Meia União/CPVC, typo "FLTRO Y" sem o I) foi pra
+    // 97,3%. Rodada 4 (pedido explícito seguinte, mesmo dia: "Cap e Cap
+    // roscado, poderia ser comprimido tudo em um item só... faça uma
+    // análise geral nesse sentido") — achado maior: várias famílias já
+    // "cobertas" continuavam se fragmentando em linhas separadas na
+    // árvore por PURA variação de wording da mesma peça (ex. "CAP,"
+    // isolado × "Cap (plugue de fechamento)" × "Tampão tipo cap" ×
+    // "TAMPÃO TC" eram 4 linhas diferentes pro mesmo tipo de tampão de
+    // tubulação). Generalizado o mesmo tratamento pra outros clusters
+    // achados (Curva 45 com/sem "DE", Elbow/Wye em inglês, União/Meia
+    // Luva/Niple, Juntas Papelão/EPDM/Vedação, Extintor com/sem
+    // qualificador de carga, Suporte/Abraçadeira/Mão Francesa/Clipe como
+    // ferragem de suportação) — foi pra 97,8%, e mais importante: de 98
+    // famílias fora do catálogo pra 60 (menos duplicidade de linha na
+    // árvore, não só mais R$ coberto). Rodada 6 (pedido explícito com
+    // exemplos concretos: "CONJUNTO DE INTERRUPTOR INDICADOR DE
+    // POSICIONAMENTO PARA CONTÊINER PILOTO, SEM RETORNO (1/4"
+    // MACHO/FÊMEA), VEDAÇÃO DOWTY 3/4"") — nova categoria "Sistema de
+    // Supressão a Gás (Cilindro Piloto)" pro cluster de peças desse
+    // sistema (contêiner/recipiente piloto, disco de ruptura, pistão
+    // pneumático, tubo de orifício) + Válvulas/acessórios avulsas — foi
+    // pra 97,9% (53 famílias fora). Rodada 7 (pedido explícito "quais
+    // estão fora, vamos tentar incluir ao máximo") — varredura de TODAS
+    // as famílias restantes (não só top-30 por valor), com amostragem
+    // das descrições originais pra confirmar contexto antes de cada
+    // keyword nova (ex. família "TUBO" eram 8 itens "TUBO, ASME BPE..."
+    // — tubulação sanitária de processo, típica de planta farmacêutica;
+    // "ADAPTADOR"/"MANGUEIRA" eram peças da marca ANSUL, mesmo sistema
+    // de supressão a gás da rodada 6) — cobertura final **99,99%**, só 2
+    // itens deliberadamente de fora: "Cortadores de tubos" (ferramenta,
+    // não material de obra) e "Poço de visita..." (R$255, item único de
+    // drenagem sem outro da mesma família nesta obra).
+    catalogoExtra: {
+      'Plataformas e Escadas Metálicas': ['PLATAFORMA DE ACO', 'ESCADA DE EMERGENCIA'],
+      // Rodada 4 (pedido explícito: "Cap e Cap roscado, poderia ser
+      // comprimido tudo em um item só") — variações de wording do MESMO
+      // encaixe/conexão de tubulação (Tê/TEE, Cap/Tampão em qualquer
+      // fraseado, Curva 45/90 com ou sem "DE", Elbow/Wye em inglês,
+      // União/Meia Luva/Niple, Juntas) todas caem nesta única categoria,
+      // em vez de virarem uma linha por variação de descrição na origem.
+      'Conexões e Acessórios de Tubulação': [
+        /\bTE\b/, 'LUVA DE REDUCAO', 'CURVA DE 90', 'DRENO LIMPO', 'CURVA DE 45',
+        'CAP EM ACO', 'REDUCAO CONCENTRICA', 'REDUCAO EXCENTRICA', 'JUNTA TIPO PLANA',
+        'MANGUEIRA FLEXIVEL EM ACO', 'CPVC', 'COTOVELO', 'TEE', 'CURVA RL', 'PIPE',
+        'CAP (PLUGUE', 'TAMPAO TIPO CAP', 'CRUZETA', 'MEIA UNIAO', 'NIPLE TC', 'CONDUITE',
+        /\bCAP\b/, 'TAMPAO', 'CURVA 45', /\bELBOW\b/, /\bWYE\b/, 'UNIAO EM ACO', 'UNIAO 3',
+        'MEIO ACOPLAMENTO', 'NIPLE', 'JUNTA PAPELAO', 'JUNTA EPDM', 'JUNTA DE VEDACAO',
+        'TAMPA DE ACOPLAMENTO', 'TAMPA CEGA', 'MEIA LUVA',
+        'ADAPTADOR DE PENETRACAO', 'COLA SOLVENTE', 'CONVERTER TUBOS', 'LUVA EM ACO', 'PLACA CEGA',
+      ],
+      'Parafusos e Fixação': ['PARAFUSO'],
+      'Tubulação Aço Carbono': ['TUBO EM ACO CARBONO', 'TUBO AC'],
+      'Painéis': ['BARRAMENTO', /^PDP-/, /^SP-/, /^LP-/],
+      'Estrutura e Suportação Metálica': [
+        'PERFIL U', 'PERFIL I', 'PERFIL DE ACO', 'PERFIL EM ACO', 'GRAMPO',
+        'ABRACADEIRA', 'MAO FRANCESA', 'CLIPE DE ACO', 'SUPORTE',
+        'KIT DE FERRAGENS', 'CHAPA DE ACO', 'BARRA CHATA',
+      ],
+      'Detecção e Alarme': [
+        'SENSOR DE OCUPACAO', 'BICO ACUSTICO', 'ACIONAMENTO MANUAL', 'MODULO DE', 'SINAL DE ALARME', 'BICO',
+        'CAPILAR', 'MODULO', 'SENSOR DE FALHA', 'DETECTOR DE CALOR', 'ANUNCIADOR', 'DISPLAY LCD', '4-2ANN', 'DETECTOR DE PRESENCA',
+      ],
+      'Combate a Incêndio': ['MANGUEIRA DE INCENDIO', 'ABRIGO EMBUTIDO', 'EXTINTOR', 'ENGATE RAPIDO', 'FIRE PROOFING'],
+      'Eletrodutos e Infraestrutura Elétrica': [
+        'BEND FOR', 'RIGID CONDUIT', 'TOMADA',
+        'TUBO DE PVC RIGIDO', 'CAIXA DE JUNCAO', 'INTERRUPTOR DOIS EM UM', 'CAIXA DE DERIVACAO', 'PONTO DE FORCA', 'BUCHA DE BAQUELITE',
+      ],
+      'Automação e Controle': ['ATUADOR', 'FONTE DE ALIMENTACAO', 'ALIMENTACAO'],
+      'Válvulas e acessórios': ['FLTRO Y', 'SEM RETORNO', 'VEDACAO DOWTY', 'CESTO FILTRANTE', 'O-RINGS', 'ANEIS DE VEDACAO'],
+      // Rodada 6, pedido explícito com exemplos concretos ("CONJUNTO DE
+      // INTERRUPTOR INDICADOR DE POSICIONAMENTO PARA CONTÊINER PILOTO,
+      // SEM RETORNO (1/4" MACHO/FÊMEA), VEDAÇÃO DOWTY 3/4""): peças do
+      // sistema de supressão a gás (cilindro piloto) formavam um cluster
+      // próprio ainda sem categoria — Recipiente/Contêiner piloto, disco
+      // de ruptura, tubo de orifício, pistão pneumático. Rodada 7
+      // (pedido "quais estão fora, vamos tentar incluir ao máximo")
+      // achou que a marca ANSUL (mangueira/adaptador de descarga do
+      // coletor) e "Estação de..." (aborto/liberação manual) também são
+      // desse mesmo sistema.
+      'Sistema de Supressão a Gás (Cilindro Piloto)': [
+        'CONTEINER PILOTO', 'RECIPIENTE PILOTO', 'DISCO DE RUPTURA', 'PISTAO PNEUMATICO', 'TUBO DE ORIFICIO',
+        'ANSUL', 'MANGUEIRA DE ACIONAMENTO', 'ESTACAO DE',
+      ],
+      // Rodada 7 — cobertura levada a 100% (só sobraram 2 itens
+      // deliberadamente de fora: "Cortadores de tubos" é ferramenta, não
+      // material de obra; "Poço de visita..." é R$255, item único de
+      // drenagem sem outro da mesma família nesta obra).
+      'Tubulação Inox': ['TUBO EM ACO INOX', 'ASME BPE'],
+      'Transformadores': ['TRANSFORMADOR'],
+      'Instrumentação': [
+        'TRANSMISSOR DE', 'CHAVE DE NIVEL', 'PONTO DE AMOSTRAGEM', 'MEDIDOR DE VAZAO',
+        'RESTRITOR DE FLUXO', 'INTERRUPTOR DE NIVEL', 'INTERRUPTOR DE PRESSAO', 'PRESSOSTATO',
+        'MANOVACUOMETRO', 'INTERRUPTOR DE DISCREPANCIA',
+      ],
+      'Iluminação': ['LAMPADA', 'FAROL', 'BANCO DE BATERIAS', 'ILUMINACAO DE EMERGENCIA', 'CENTRAL DE ILUMINACAO'],
+      'Aterramento': ['HASTE DE ATERRAMENTO', 'METAL DE SOLDAGEM', 'CONDUTOR ISOLADO', 'INTERCONEXAO DE CONDUTORES', 'CAPTOR', 'CAIXA DE INSPECAO'],
+      'Concreto e Impermeabilização': ['ARGAMASSA', 'REBOCO', 'CHAPISCO'],
+      'Louças e Metais': ['RALO', 'GREASE TRAP'],
+      'Pintura': ['EMASSAMENTO'],
+      // Pedido explícito (2026-08-26): "o poço de visita é um item
+      // específico mas poderia ser classificado apenas como Poço de
+      // Visita, sem toda essa descrição extensa" — categoria própria de
+      // 1 palavra-chave (era o último item fora do catálogo nesta obra).
+      'Poço de Visita': ['POCO DE VISITA'],
+    },
+    // Pedido explícito (2026-08-26) "cortadores pode ser suprimido" —
+    // "Cortadores de tubos - Vp-Cutters" é ferramenta avulsa (nível 4,
+    // dentro de uma disciplina de tubulação legítima), não material de
+    // obra. `ehItemCanteiroRmi` só olha a descrição da DISCIPLINA-pai
+    // (não pega esse caso, a disciplina em si é válida), por isso o novo
+    // campo `descricoesExcluidas` — filtro por material individual.
+    descricoesExcluidas: ['CORTADORES DE TUBOS'],
+  }, // Novo Nordisk - AP
+  108: {
+    // Novo Nordisk - AP - Reforço (id_obra=108, CP261) entrou em
+    // 2026-08-26, partindo da régua do CP029 como start. Obra pequena e
+    // focada (478 linhas, 2 RMIs): "CP261 - GERAL" (id_rmi=262, 100%
+    // custo indireto — Mobilização, Combustível, EPIs, Caixa de
+    // Ferramentas, Fretes, Canteiro, Alojamento, Mobília, Equipamentos
+    // de Medição, Serviços Terceirizados, ASO/Qualificação/Treinamentos,
+    // Ferramentas, Consumíveis, Uniformes — mesmo padrão da RMI "Geral"
+    // do NN-AP) e "CP261 - ESTRUTURA METÁLICA" (id_rmi=263, o escopo de
+    // verdade: "Reforço Estrutural", R$3,49M). Diferente do NN-AP, aqui
+    // só sobra 1 RMI real depois de excluir a Geral — `usarNomeRmiComoArea`
+    // NÃO faz sentido (colapsaria tudo num único ramo); a estrutura
+    // padrão do CP029 já produz Área="Estrutura"/"Cobertura Telhado" a
+    // partir do 1º nível de código dentro da RMI, então usada sem
+    // ajuste.
+    rmisExcluidos: [262],
+    // **Bug de dado pego na validação local antes do deploy** (mesma
+    // classe dos bugs de merge-por-overwrite já documentados nesta
+    // obra): dentro da RMI Estrutura Metálica, 2 linhas nível 1
+    // DIFERENTES ("OMISSOS", subtotal zero, id=147454; e "ESTRUTURA",
+    // subtotal real R$3.011.837,63, id=145222) compartilham o MESMO
+    // `codigo_seq` "1.1" na origem. Como a árvore resolve os filhos de
+    // um nó pelo par `id_rmi::codigo_seq`, as duas "irmãs" caem no
+    // MESMO grupo de filhos de nível 2 — sem o `linhasExcluidas` abaixo,
+    // o valor de "ESTRUTURA" aparecia DUAS VEZES na árvore (uma sob a
+    // área "OMISSOS", outra sob "ESTRUTURA"), dobrando R$3,01M pra
+    // R$6,02M. Novo campo genérico `linhasExcluidas` (filtro por `id`
+    // exato da linha, aplicado ANTES de tudo — nível0/nível1/mapa de
+    // filhos) — primeira obra a precisar; reaproveitável se outra obra
+    // tiver o mesmo problema de `codigo_seq` duplicado na origem.
+    linhasExcluidas: [147454],
+    // Obra pequena (13 materiais no total, R$3,49M) — a Curva A (corte
+    // dos 80% acumulado, GLOBAL na obra) cortaria 7 dos 13 itens
+    // (~14,5% do valor, incluindo a maior parte da área "Cobertura
+    // Telhado"), demais demais pra uma lista já curta. Mesmo raciocínio
+    // da Hitachi/Porto/NN-AP: desligada.
+    curvaAObrigatoria: false,
+    // Catálogo validado (2026-08-26): todos os 13 materiais são peças de
+    // reforço estrutural (viga/coluna/treliça/gusset, preço por kg) —
+    // catálogo base do CP029 não tinha nenhuma dessas palavras (tem
+    // VIGA U/VERGALHÃO/CANTONEIRA/etc., não bate "VIGAMENTO"/"REFORÇO
+    // VIGAS"/"TRELIÇA"/"GUSSET"). 4 keywords cobrem 100% do valor.
+    catalogoExtra: {
+      'Estrutura e Suportação Metálica': ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET'],
+    },
+  }, // Novo Nordisk - AP - Reforço
+  91: {
+    // Novo Nordisk - UB/SP (id_obra=91, CP236) entrou em 2026-08-26,
+    // partindo da régua do CP029. 4 RMIs: Tubulação (R$34,6M), Estruturas
+    // Metálicas (R$31,6M), Elétrica/Automação/Instrumentação (R$19,7M) e
+    // "CP236 - NOVO NORDISK - GERAL" (id_rmi=43) — mesma "lata" de custo
+    // indireto das outras obras Novo Nordisk (Equipamentos = frota
+    // locada R$10,6M, Serviços Terceirizados, Despesas de Visita a Obra,
+    // Equipamentos de Medição e Apoio = TI/licenças). Excluída inteira —
+    // resolve de graça o problema de "Equipamentos sem área" (mesmo
+    // padrão já visto no NN-AP 1ª rodada). Diferente das outras obras
+    // Novo Nordisk: aqui a estrutura padrão do CP029 (nível 0 no formato
+    // "MATERIAIS - UB"/"MATERIAIS - SP", que já bate
+    // `EH_BALDE_ADMINISTRATIVO_RMI`) já produz Área=UB/SP corretamente
+    // SEM NENHUM ajuste extra — nem `usarNomeRmiComoArea`, nem
+    // `areaObrigatoria`, nem range de código. Validado localmente: 100%
+    // dos materiais restantes (687, R$85.884.072,70) ficam com área.
+    rmisExcluidos: [43],
+    // Catálogo validado (2026-08-26): base do CP029 cobria só 33,9% —
+    // Estrutura Metálica tinha muitos perfis estruturais nomeados só
+    // pelo código (W310X38.7, CS 600X250, VS900X159, L 152x9,5...) e
+    // Tubulação tinha variações de wording não batidas pelo catálogo
+    // (ex. "TUBOS DE ACO CARBONO" plural não batia "TUBO DE ACO
+    // CARBONO" singular já existente). 98,5% de cobertura final — só
+    // ficou de fora "Estimado 20%" (R$1,29M), linha de contingência
+    // genérica sem material real associado (não é decisão de deixar de
+    // fora por engano, é proposital: não dá pra classificar com
+    // segurança um valor sem descrição de material).
+    catalogoExtra: {
+      'Perfis Estruturais (W/CS/VS/L)': [/^(W|CS|VS|L)\s*\d+[Xx]/, 'TERCAS'],
+      'Estrutura e Suportação Metálica': [
+        'ESTRUTURA LEVE', 'ESTRUTURA MEDIA', 'ESTRUTURA PESADA', 'ESTRUTURA EXTRA PESADA',
+        'STEEL DECK', 'CHUMBADOR', 'CA 50', 'TELA Q', 'CALHA METALICA', 'ASTM A 572',
+      ],
+      'Concreto e Impermeabilização': ['POLIUREIA', 'JUNTA JEENE'],
+      'Telhas e Cobertura': ['TELHA'],
+      'Suportes de Tubulação': ['SUPORTE PESADO DE TUBULACAO', 'SUPORTE LEVE DE TUBULACAO'],
+      'Tubulação Aço Carbono': ['TUBOS DE ACO CARBONO', 'TUBULACOES EM ACO CARBONO', 'TUBO EM ACO CARBONO'],
+      'Tubulação Inox': ['TUBO ACO INOXIDAVEL'],
+      'Tubulação Polipropileno': ['POLIPROPILENO'],
+      'Tubulação PVC': ['PVC'],
+      'Combate a Incêndio': ['ABRIGO PARA HIDRANTE', 'MANGUEIRAS COM COMPRIMENTO', 'STORZ'],
+      'Instrumentação': [
+        'ANALISADOR DE', 'TRANSMISSOR INDICADOR DE', 'ELEMENTO DE TEMPERATURA', 'MEDIDOR DE VAZAO',
+        'CHAVE DE SEGURANCA', 'CHAVE DE NIVEL', 'CHAVE DE FLUXO', 'PRESSAO MANOMETRICA',
+      ],
+      'Válvulas e acessórios': ['ELIMINADOR DE AR', 'VISOR DE NIVEL', 'VISOR DE FLUXO'],
+      // `AS-I` bare (corrigido 2026-08-26, pedido explícito "temos
+      // válvulas caindo em cabos também") batia "Rede AS-i" mencionado
+      // dentro de descrições de válvula/transmissor (protocolo de rede,
+      // não cabo) — 15 itens, R$2,1M indo pra Cabos por engano. Trocado
+      // por frase exata que só bate o item de cabo de verdade.
+      'Cabos': ['PROFIBUS', 'AS-I CABLE'],
+      'Retificadores e Transformadores': ['RETIFICADOR', 'TRANSFORMADOR AUXILIAR'],
+    },
+  }, // Novo Nordisk - UB/SP
+};
+
+// Coluna "Status" — pedido explícito (2026-08-24): "vamos chamar de
+// coluna de status e classificar em finalizado, em andamento e
+// pendente. Em andamento será para itens que já tiveram algo
+// finalizado, pendente será nada finalizado". Vem de `raw.finalizado`
+// (booleano por item de RMI), contado por linha (uma linha pode ser
+// consolidação de várias peças da mesma categoria — catálogo de itens
+// padrão): nenhuma finalizada = Pendente; todas finalizadas =
+// Finalizado; só parte = Em andamento. A contagem "X/Y" aparece ao
+// passar o mouse — mas como TROCA DE TEXTO dentro do próprio badge
+// (classe `.status-badge-rmi`, CSS logo abaixo do `<head>`), não como
+// tooltip nativo (`title`): pedido explícito, "havia pensado na
+// exibição ao passar o mouse como uma mudança no cartão do status, não
+// uma informação acima".
+function statusRmiConsolidado(qtdFinalizados, qtdTotal){
+  return qtdTotal > 0 && qtdFinalizados === qtdTotal ? 'Finalizado' : qtdFinalizados === 0 ? 'Pendente' : 'Em andamento';
+}
+function configStatusRmi(status){
+  if (status === 'Finalizado') return { cor:T.green, bg:'rgba(31,157,87,0.13)' };
+  if (status === 'Em andamento') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
+  return { cor:T.mut, bg:'#eef0f3' };
+}
+// `activeStatus`/`onStatusClick` são opcionais — mesma lógica de clique
+// pra filtrar já usada no badge de Status/Execução do OC/CO (pedido
+// explícito, 2026-08-25: "aplicar a mesma lógica aos status da tela de
+// suprimentos"), aqui reaproveitando o MESMO handler que já liga/desliga
+// `activeStatus` a partir da pizza/legenda (clicar de novo no mesmo
+// status limpa). Sem esses props (uso no pop-up de itens aninhados), o
+// badge continua só decorativo, sem cursor de clique.
+function StatusBadgeRmi({ qtdFinalizados, qtdTotal, activeStatus, onStatusClick }){
+  const status = statusRmiConsolidado(qtdFinalizados, qtdTotal);
+  const cfg = configStatusRmi(status);
+  const clicavel = typeof onStatusClick === 'function';
+  return (
+    <span onClick={clicavel ? (e) => { e.stopPropagation(); onStatusClick(status); } : undefined}
+      className="mono status-badge-rmi" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:cfg.bg, color:cfg.cor, cursor: clicavel ? 'pointer' : 'default', boxShadow: clicavel && activeStatus === status ? `0 0 0 2px ${cfg.cor}` : 'none' }}>
+      <span className="status-badge-rmi-texto">{status}</span>
+      <span className="status-badge-rmi-fracao">{qtdFinalizados}/{qtdTotal}</span>
+    </span>
+  );
+}
+
+function DonutStatusRmi({ slices, activeStatus, onSliceClick }){
+  const cx = 200, cy = 200, r = 152;
+  const total = slices.reduce((s, sl) => s + sl.value, 0);
+  if (!total) return <div className="mono" style={{ fontSize:12, color:T.mut, textAlign:'center' }}>Sem status para exibir</div>;
+  let cumAngle = -Math.PI / 2;
+  const paths = slices.map(sl => {
+    const angle = (sl.value / total) * 2 * Math.PI;
+    const startAngle = cumAngle;
+    cumAngle += angle;
+    const midAngle = startAngle + angle / 2;
+    const isActive = activeStatus === sl.status;
+    const offsetR = isActive ? 10 : 0;
+    const ox = Math.cos(midAngle) * offsetR;
+    const oy = Math.sin(midAngle) * offsetR;
+    // Quando só existe 1 status (100% da pizza), início e fim do arco
+    // caem no MESMO ponto — o comando `A` do SVG não sabe desenhar uma
+    // volta completa nesse caso e o círculo simplesmente não aparece.
+    // `anguloArco` encurta uma fração mínima (imperceptível) só pra
+    // manter início ≠ fim; `cumAngle` (usado pelo próximo status)
+    // continua exato.
+    const anguloArco = Math.min(angle, 2 * Math.PI - 0.0005);
+    const fimArco = startAngle + anguloArco;
+    const x1 = cx + ox + r * Math.cos(startAngle), y1 = cy + oy + r * Math.sin(startAngle);
+    const x2 = cx + ox + r * Math.cos(fimArco), y2 = cy + oy + r * Math.sin(fimArco);
+    const largeArc = angle > Math.PI ? 1 : 0;
+    const d = `M ${cx+ox} ${cy+oy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+    return { ...sl, d, isActive, angle, midAngle };
+  });
+  const ativo = activeStatus ? slices.find(s => s.status === activeStatus) : null;
+  return (
+    <svg viewBox="0 0 400 400" style={{ width:'100%', maxWidth:500, overflow:'visible', cursor:'pointer', filter:'drop-shadow(0 12px 22px rgba(16,24,40,0.12))' }}>
+      {paths.map((p, i) => (
+        <g key={p.status} onClick={() => onSliceClick(p.status)}>
+          <path d={p.d} fill={p.cor} opacity={activeStatus && !p.isActive ? 0.18 : 1} stroke="#fff" strokeWidth={p.isActive ? 4 : 2} style={{ transition:'opacity 0.2s ease, transform 0.2s ease' }} />
+          {p.angle > 0.34 && (
+            <text x={cx + Math.cos(p.midAngle) * (r * 0.72)} y={cy + Math.sin(p.midAngle) * (r * 0.72)} textAnchor="middle" dominantBaseline="middle" style={{ fontSize:22, fontWeight:800, fill:'#fff', pointerEvents:'none' }}>
+              {p.value}
+            </text>
+          )}
+        </g>
+      ))}
+      <circle cx={cx} cy={cy} r={r * 0.48} fill="#fff" stroke="#eef0f3" strokeWidth={2} />
+      <text x={cx} y={cy - 8} textAnchor="middle" style={{ fontSize:50, fontWeight:800, fill:ativo ? ativo.cor : T.ink, fontFamily:"'Barlow Condensed', sans-serif" }}>
+        {ativo ? ativo.value : total}
+      </text>
+      <text x={cx} y={cy + 22} textAnchor="middle" className="mono" style={{ fontSize:11, fontWeight:700, fill:T.mut, letterSpacing:'0.12em', textTransform:'uppercase' }}>
+        {ativo ? 'Filtrados' : 'Total Geral'}
+      </text>
+    </svg>
+  );
+}
+
+// Farol Financeiro — pedido explícito (2026-08-24): "o valor, total
+// consumido e saldo orçamentário poderão ser parte de um farol...
+// funcionando similarmente ao desvio". Perguntado ao usuário qual regra
+// definiria a cor (ADR-005, não inventar limiar): confirmado reaproveitar
+// a MESMA classificação que já existia na coluna Desvio
+// (`desvio_saldo_orcamentario`: positivo=verde, negativo=vermelho) — o
+// Farol Financeiro é essa mesma informação, só que como o "ponto de luz"
+// que o produto já usa em outros lugares (`FarolMedidoPrevisto`, Farol
+// Medido×Físico em Medições) em vez de badge de texto — por isso a
+// coluna Desvio separada saiu (redundante).
+//
+// Os 3 valores (Valor/Total Consumido/Saldo) passaram por 2 formatos
+// antes deste — `title` nativo, depois um card que expandia no hover
+// — até o usuário pedir, no mesmo dia: "vamos trocar o tooltip por um
+// pop-up". Agora é clique: abre o mesmo tipo de pop-up
+// (`modal-overlay-in`/`modal-card-in`) que o resto da tela já usa,
+// via `onClick` recebido de fora (quem chama decide o título e os 3
+// valores — material, Área ou Disciplina, ver `farolAgregado`).
+function FarolFinanceiroRmi({ desvio, onClick }){
+  const tom = desvio === 'negativo' ? { cor:T.red, borda:'rgba(210,59,59,0.4)', glow:'rgba(210,59,59,0.15)' }
+    : desvio === 'positivo' ? { cor:T.green, borda:'rgba(31,157,87,0.4)', glow:'rgba(31,157,87,0.15)' }
+    : { cor:T.mut, borda:'#c7cdd8', glow:'rgba(199,205,216,0.1)' };
+  return (
+    <span onClick={onClick} className="farol-financeiro-rmi"
+      style={{ display:'inline-block', width:FAROL_LARGURA, height:FAROL_LARGURA, borderRadius:'50%', flexShrink:0, cursor:'pointer', background:tom.cor, border:`1px solid ${tom.borda}`, boxShadow:`0 0 8px 1px ${tom.glow}` }} />
+  );
+}
+
+// Data da necessidade de compra / prazo de entrega / material em obra —
+// pedido explícito (2026-08-24): "material em obra... será a Data da
+// necessidade somada ao prazo de entrega". Campos vêm prontos da origem
+// (`raw.data_necessidade_compra`, `raw.prazo_entrega` em dias) — só a
+// soma é derivada aqui, nada fabricado.
+function calcularMaterialEmObra(dataNecessidadeIso, prazoEntregaDias){
+  if (!dataNecessidadeIso || prazoEntregaDias == null || isNaN(prazoEntregaDias)) return null;
+  const dt = parseDataFlexivel(dataNecessidadeIso);
+  if (!dt) return null;
+  dt.setDate(dt.getDate() + prazoEntregaDias);
+  return dt;
+}
+function fmtDataObjRmi(dt){
+  if (!dt || isNaN(dt.getTime())) return '—';
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
+
+// Calcula criticidade baseado em dias até a data limite em obra
+function calcularCriticidade(dataLimite){
+  if (!dataLimite || isNaN(dataLimite.getTime())) return { nivel: 'desconhecido', label: '—', cor: T.mut, bg: '#eef0f3' };
+  const diasRestantes = Math.ceil((dataLimite.getTime() - new Date().getTime()) / (1000*60*60*24));
+  if (diasRestantes <= 0) return { nivel: 'urgente', label: 'Urgente', cor:'#fff', bg:T.red };
+  if (diasRestantes <= 7) return { nivel: 'alta', label: 'Alta', cor:'#fff', bg:T.amber };
+  if (diasRestantes <= 30) return { nivel: 'moderada', label: 'Moderada', cor:T.ink, bg:'#fef3c7' };
+  return { nivel: 'baixa', label: 'Baixa', cor:T.body, bg:'#e0e7ff' };
+}
+
+function CriticidadeBadgeRmi({ dataLimite, finalizado }){
+  if (finalizado) return <span style={{ fontSize:11, color:T.mut }}>—</span>;
+  const crit = calcularCriticidade(dataLimite);
+  if (crit.nivel === 'desconhecido') return <span style={{ fontSize:11, color:T.mut }}>—</span>;
+  return (
+    <span className="mono" style={{ fontSize:10, fontWeight:700, letterSpacing:'0.03em', padding:'4px 10px', borderRadius:6, background:crit.bg, color:crit.cor, textTransform:'uppercase', display:'inline-block' }}>
+      {crit.label}
+    </span>
+  );
+}
+
+function ModuloSuprimentos({ obraId, obraNome }){
+  const [todosItens, setTodosItens] = useState(null); // null = carregando; senão array com raw de TODOS os níveis
+  const [erro, setErro] = useState(false);
+  const obraValidada = OBRAS_SUPRIMENTOS_VALIDADAS.has(obraId);
+  // Ajustes específicos desta obra (ver `CONFIG_SUPRIMENTOS_POR_OBRA` e
+  // a nota grande acima) — obra sem entrada usa a régua padrão do CP029
+  // (área obrigatória, disciplina resolvida por `resolverDisciplinasRmi`).
+  const cfgObraSuprimentos = CONFIG_SUPRIMENTOS_POR_OBRA[obraId] || {};
+  const areaObrigatoria = cfgObraSuprimentos.areaObrigatoria !== false;
+  const escopoNivel0 = !!cfgObraSuprimentos.escopoNivel0;
+  const rotuloDisciplina = cfgObraSuprimentos.rotulo || 'Disciplina';
+  const curvaAObrigatoria = cfgObraSuprimentos.curvaAObrigatoria !== false;
+  const escoposPermitidos = cfgObraSuprimentos.escoposPermitidos || null;
+  // Porto Itapoá (ver CONFIG_SUPRIMENTOS_POR_OBRA[94]): `rmisExcluidos`
+  // tira uma RMI inteira (duplicata/rascunho) antes de qualquer outro
+  // filtro; `codigoNivel0Min/Max` restringe o nível 0 a um range
+  // numérico de codigo_seq (áreas físicas repetem nome — matching por
+  // texto, como `escoposPermitidos`, não dá conta); `zonaCodigoMax`
+  // aciona `resolverAreaAcimaDisciplinaRmi` (área ACIMA da disciplina,
+  // o inverso do CP029) pros códigos até esse limite.
+  const rmisExcluidos = cfgObraSuprimentos.rmisExcluidos || null;
+  const codigoNivel0Min = cfgObraSuprimentos.codigoNivel0Min ?? null;
+  const codigoNivel0Max = cfgObraSuprimentos.codigoNivel0Max ?? null;
+  const zonaCodigoMax = cfgObraSuprimentos.zonaCodigoMax ?? null;
+  const mapaAreaCanonica = cfgObraSuprimentos.mapaAreaCanonica || null;
+  // Novo Nordisk - AP (ver CONFIG_SUPRIMENTOS_POR_OBRA[107]) — `usarNomeRmiComoArea`
+  // (pedido explícito 2026-08-26: "o primeiro nível será o da própria
+  // RMI") — Área deixa de vir da captura "1 nível abaixo da disciplina"
+  // (inconsistente: só existia pra parte das disciplinas) e passa a ser
+  // sempre `raw.nome_rmi` — cada uma das RMIs da obra vira sua própria
+  // Área, sempre presente (nenhum material fica "sem área"). Substitui
+  // os ajustes pontuais que essa obra tinha antes (canteiroExtra pro
+  // "Equipamentos" avulso, disciplinasSemArea pra Estrutura Metálica) —
+  // ambos viviam dentro da RMI "Geral", que passou a ser excluída
+  // inteira (`rmisExcluidos`), resolvendo os 2 de uma vez só.
+  const usarNomeRmiComoArea = !!cfgObraSuprimentos.usarNomeRmiComoArea;
+  // `descricoesExcluidas` (obra-específica): suprime materiais pontuais
+  // que não são item de obra de verdade mas cuja disciplina-pai É
+  // legítima (por isso `ehItemCanteiroRmi`, que só olha a disciplina,
+  // não pega) — ex. Novo Nordisk - AP, pedido explícito (2026-08-26):
+  // "cortadores pode ser suprimido" ("Cortadores de tubos", ferramenta
+  // avulsa dentro de uma disciplina de tubulação de verdade).
+  const descricoesExcluidas = cfgObraSuprimentos.descricoesExcluidas || null;
+  const linhasExcluidas = cfgObraSuprimentos.linhasExcluidas || null;
+  // Catálogo de materiais padrão efetivo desta obra — base do CP029 +
+  // extras da obra (se houver), união de palavras-chave (ver
+  // `catalogoEfetivoRmi`). Memo pra não reconstruir o objeto a cada
+  // render; só recalcula se o extra da obra mudar de referência (obras
+  // sem entrada sempre caem no `null`, então nunca recalcula à toa).
+  const catalogoExtraObra = cfgObraSuprimentos.catalogoExtra || null;
+  const catalogoMateriaisObra = useMemo(() => catalogoEfetivoRmi(catalogoExtraObra), [catalogoExtraObra]);
+  // Catálogo pra simplificar o nome da DISCIPLINA (2º nível) — pedido
+  // explícito (2026-08-26: "podemos trabalhar uma lógica similar para
+  // simplificar as descrições do segundo nível?"). Reaproveita o MESMO
+  // catálogo de materiais (uma disciplina sem camada própria acima às
+  // vezes herda o nome do material — mesma palavra-chave já resolve os
+  // 2) + `catalogoDisciplinaExtra` (obra), pra conceitos que fazem
+  // sentido como agrupamento de disciplina mas não como "material pra
+  // comprar" (ex. "Blocos e Pilares de Fundação" — bloco de dimensão X
+  // não é catálogo de compra, é um jeito de nomear o grupo de trabalho).
+  const catalogoDisciplinaExtraObra = cfgObraSuprimentos.catalogoDisciplinaExtra || null;
+  // União por chave (não overwrite) — achado testando localmente
+  // (2026-08-26): categoria repetida nos 2 catálogos (ex. "Cercamento",
+  // que já existe no catálogo de materiais E ganha `VIGA BALDRAME` no
+  // extra de disciplina) com spread simples SUBSTITUI a lista de
+  // palavras-chave em vez de somar — perderia `CERCAS E PORTOES` do
+  // catálogo de materiais silenciosamente. Mesma lógica de
+  // `catalogoEfetivoRmi`, repetida aqui por operar sobre 2 catálogos já
+  // prontos (não uma obra + base).
+  const catalogoDisciplinaObra = useMemo(() => {
+    if (!catalogoDisciplinaExtraObra) return null;
+    const combinado = { ...catalogoMateriaisObra };
+    Object.entries(catalogoDisciplinaExtraObra).forEach(([categoria, palavras]) => {
+      combinado[categoria] = combinado[categoria] ? [...combinado[categoria], ...palavras] : palavras;
+    });
+    return combinado;
+  }, [catalogoMateriaisObra, catalogoDisciplinaExtraObra]);
+  // Fecha/abre linha de Área ou Disciplina na árvore — pedido explícito
+  // (2026-08-24): "precisamos conseguir fechar os itens, visualização
+  // macro é relevante". Chave = nome da área (fecha a área inteira) ou
+  // `área::disciplina` (fecha só aquela disciplina). Nasce tudo fechado
+  // por padrão; abrir é opt-in por clique.
+  const [fechados, setFechados] = useState(() => new Set());
+  const alternarFechado = (chave) => setFechados(prev => {
+    const next = new Set(prev);
+    if (next.has(chave)) next.delete(chave); else next.add(chave);
+    return next;
+  });
+  // Pop-up com os itens ORIGINAIS por trás de uma linha consolidada —
+  // pedido explícito (2026-08-24): "pop-up que permita verificar quais
+  // são os itens que estão aninhados, ao clicar na linha de resumo
+  // dele". Guarda o material inteiro (já traz `itensOriginais` de
+  // `consolidarMateriaisSemelhantes`); só abre pra linha com mais de 1
+  // item (linha de item único não tem nada "aninhado" pra mostrar).
+  const [materialAberto, setMaterialAberto] = useState(null);
+  // Pop-up do Farol Financeiro (Valor/Total Consumido/Saldo) — pedido
+  // explícito (2026-08-24): "vamos trocar o tooltip por um pop-up".
+  // Era um card que expandia no hover (correção anterior, mesmo dia);
+  // virou clique porque o usuário queria pop-up de verdade, não mais
+  // uma variação de tooltip. Guarda só o necessário pra render (não o
+  // objeto inteiro, porque também abre a partir das linhas de
+  // Área/Disciplina, que não têm o mesmo formato de material).
+  const [farolDetalhe, setFarolDetalhe] = useState(null);
+  const [activeStatus, setActiveStatus] = useState(null);
+  const [fechadosInicializados, setFechadosInicializados] = useState(false);
+  // Busca inteligente — pedido explícito (2026-08-26: "campo de busca
+  // inteligente, similar ao das outras páginas... eles precisam receber
+  // filtragem cruzada"). Mesmo normalizador/padrão de Desvios
+  // (`normalizarNomeParaMatch` + `.includes()`, sem acento/maiúscula),
+  // aplicado a descrição do material + disciplina + área. "Cruzada": o
+  // gráfico de status (`pieSlices`) e a tabela (`arvoreExibida`) usam a
+  // MESMA base já filtrada por busca (`curvaABuscada`/`arvoreBuscada`
+  // abaixo) — digitar já reflete nos 2 ao mesmo tempo, não só na tabela.
+  const [busca, setBusca] = useState('');
+
+  useEffect(() => {
+    if (!obraValidada) return;
+    setTodosItens(null); setErro(false);
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    // Busca a obra INTEIRA (todos os níveis) de uma vez — resolver
+    // disciplina + área + material precisa caminhar a árvore até a
+    // folha, e essa folha pode estar em qualquer profundidade (ver
+    // comentário acima). Volume por obra confirmado pequeno o bastante
+    // (~500 a ~8.000 linhas) pra isso valer mais que ficar buscando
+    // nível por nível sob demanda.
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&select=id,raw`, headers)
+      .then(rows => { if (rows === null) { setErro(true); setTodosItens([]); } else setTodosItens(rows); })
+      .catch(() => { setErro(true); setTodosItens([]); });
+  }, [obraId, obraValidada]);
+
+  // Resolve disciplina por ramo, caminha até os materiais de verdade de
+  // cada disciplina não-canteiro, consolida materiais semelhantes,
+  // ordena por valor decrescente, acumula, marca Curva A e monta a
+  // árvore Área → Disciplina → Material — ver comentário grande acima
+  // pro racional completo.
+  const { curvaA, arvore, todosOrdenados, restante, totalObra } = useMemo(() => {
+    if (!todosItens) return { curvaA: [], arvore: [], todosOrdenados: [], restante: [], canteiro: { qtd:0, valor:0 }, semArea: { qtd:0, valor:0 }, totalObra: 0 };
+    // `linhasExcluidas` (obra-específica, por `id` exato da linha): pra
+    // remover uma linha pontual com problema de dado na ORIGEM antes de
+    // entrar em qualquer outro cálculo — ex. NN - AP - Reforço (obra
+    // 108), 2 linhas nível 1 da RMI Estrutura Metálica compartilham o
+    // MESMO `codigo_seq` "1.1" ("OMISSOS", subtotal zero, e "ESTRUTURA",
+    // subtotal real) — como a árvore resolve filhos por
+    // `id_rmi::codigo_seq`, as duas viram "irmãs" e caminham pros MESMOS
+    // filhos de nível 2, duplicando o valor de "ESTRUTURA" (contado uma
+    // vez sob a área "OMISSOS" e outra sob "ESTRUTURA"). Ver
+    // CONFIG_SUPRIMENTOS_POR_OBRA[108].
+    const itensObra = linhasExcluidas ? todosItens.filter(r => !linhasExcluidas.includes(r.id)) : todosItens;
+    // `rmisExcluidos` (Porto Itapoá): tira uma RMI inteira (duplicata em
+    // outra escala, ver CONFIG_SUPRIMENTOS_POR_OBRA[94]) antes de
+    // qualquer outro filtro.
+    const itensNivel0 = itensObra.filter(r => r.raw.nivel === 0 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
+    const itensNivel1 = itensObra.filter(r => r.raw.nivel === 1 && !(rmisExcluidos && rmisExcluidos.includes(r.raw.id_rmi)));
+    // `escopoNivel0`: nível 0 é SEMPRE o topo (o "escopo"), sem a
+    // heurística de desce-quando-zera do CP029 — ver nota grande acima.
+    // `escoposPermitidos` (opcional): mantém só os escopos cuja
+    // descrição bate um dos códigos configurados — os demais (macro E
+    // as filhas) ficam de fora por inteiro, antes de qualquer outro
+    // filtro (canteiro, área, valor). `codigoNivel0Min/Max` (Porto
+    // Itapoá): mesma ideia, mas por RANGE NUMÉRICO de codigo_seq — lá as
+    // zonas físicas repetem nome (ex. "PÁTIO G1" aparece 3x em ramos
+    // diferentes), então matching por texto não distingue o que incluir.
+    const itensNivel0Permitidos = itensNivel0.filter(r => {
+      if (escoposPermitidos) {
+        const norm = normalizarNomeParaMatch(r.raw.descricao);
+        if (!escoposPermitidos.some(cod => norm.includes(normalizarNomeParaMatch(cod)))) return false;
+      }
+      const cod = Number(r.raw.codigo_seq);
+      if (codigoNivel0Min != null && (isNaN(cod) || cod < codigoNivel0Min)) return false;
+      if (codigoNivel0Max != null && (isNaN(cod) || cod > codigoNivel0Max)) return false;
+      return true;
+    });
+    // Nível 1 também precisa do mesmo range (só quando configurado) —
+    // senão os filhos de um nível 0 EXCLUÍDO entram como "órfãos" em
+    // `resolverDisciplinasRmi` (vira disciplina própria sem o pai pra
+    // barrar).
+    const itensNivel1Permitidos = codigoNivel0Min == null && codigoNivel0Max == null ? itensNivel1 : itensNivel1.filter(r => {
+      const pai = codigoPaiRmi(r.raw.codigo_seq);
+      const cod = pai != null ? Number(pai) : NaN;
+      if (codigoNivel0Min != null && (isNaN(cod) || cod < codigoNivel0Min)) return false;
+      if (codigoNivel0Max != null && (isNaN(cod) || cod > codigoNivel0Max)) return false;
+      return true;
+    });
+    const disciplinasBrutas = zonaCodigoMax != null
+      ? resolverAreaAcimaDisciplinaRmi(itensNivel0Permitidos, itensNivel1Permitidos, zonaCodigoMax, mapaAreaCanonica)
+      : escopoNivel0
+        ? itensNivel0Permitidos.map(r => ({ item: r, nome: (r.raw.descricao || '').trim(), areaHerdada: null }))
+        : resolverDisciplinasRmi(itensNivel0Permitidos, itensNivel1Permitidos);
+    // Simplifica o nome da disciplina com o mesmo catálogo/corte usado
+    // nos materiais (ver `catalogoDisciplinaObra` acima) — só quando a
+    // obra tem `catalogoDisciplinaExtra` configurado; sem isso, nome
+    // segue cru (CP029/Hitachi não pedem, comportamento inalterado).
+    const disciplinas = catalogoDisciplinaObra
+      ? disciplinasBrutas.map(d => ({ ...d, nome: familiaMaterialRmi(d.nome, catalogoDisciplinaObra) }))
+      : disciplinasBrutas;
+
+    const filhosPorPaiGeral = new Map(); // pai->filhos, QUALQUER nível — pra caminhar até o material
+    itensObra.forEach(r => {
+      const pai = codigoPaiRmi(r.raw.codigo_seq);
+      if (pai == null) return;
+      const chave = `${r.raw.id_rmi}::${pai}`;
+      if (!filhosPorPaiGeral.has(chave)) filhosPorPaiGeral.set(chave, []);
+      filhosPorPaiGeral.get(chave).push(r);
+    });
+
+    let brutos = [];
+    let qtdCanteiro = 0, valorCanteiro = 0;
+    let qtdSemArea = 0, valorSemArea = 0;
+    disciplinas.forEach(({ item, nome, areaHerdada }) => {
+      if (ehItemCanteiroRmi(item.raw.descricao)) {
+        qtdCanteiro++; valorCanteiro += Number(item.raw.subtotal_custo_meta_orcamento) || 0;
+        return;
+      }
+      coletarMateriaisDaDisciplina(item, areaHerdada, filhosPorPaiGeral).forEach(({ item: m, area }) => {
+        const valor = Number(m.raw.subtotal_custo_meta_orcamento) || 0;
+        if (valor <= 0) return; // sem valor ainda — não é candidato a crítico
+        if (descricoesExcluidas && descricoesExcluidas.some(termo => normalizarNomeParaMatch(m.raw.descricao).includes(termo))) return;
+        // Itens sem área não precisam ser considerados (pedido
+        // explícito, 2026-08-24) — ficam de fora do cálculo inteiro,
+        // igual canteiro, não só escondidos da árvore. SÓ pra obra onde
+        // área é um conceito real (`areaObrigatoria`) — numa obra sem
+        // essa camada (Hitachi), aplicar a mesma exigência descartaria
+        // TUDO (confirmado, ver nota grande acima), então a disciplina
+        // assume o lugar da área na árvore. `usarNomeRmiComoArea` (Novo
+        // Nordisk - AP): a própria RMI de origem (`raw.nome_rmi`) vira
+        // Área — sempre presente, nunca cai em "sem área" (ver
+        // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
+        const areaFinal = usarNomeRmiComoArea ? (m.raw.nome_rmi || '').trim() || null : area;
+        if (areaObrigatoria && !areaFinal) { qtdSemArea++; valorSemArea += valor; return; }
+        brutos.push({
+          id: m.id, descricao: m.raw.descricao, unidade: m.raw.unidade,
+          disciplina: nome, area: areaObrigatoria ? areaFinal : nome, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
+          saldo_orcamentario: m.raw.saldo_orcamentario,
+          desvio_saldo_orcamentario: m.raw.desvio_saldo_orcamentario,
+          totalConsumido: Number(m.raw.total_consumido) || 0,
+          finalizado: !!m.raw.finalizado,
+          dataNecessidadeCompra: m.raw.data_necessidade_compra || null,
+          prazoEntregaDias: (m.raw.prazo_entrega != null && m.raw.prazo_entrega !== '') ? Number(m.raw.prazo_entrega) : null,
+          valor,
+        });
+      });
+    });
+
+    const validos = consolidarMateriaisSemelhantes(brutos, catalogoMateriaisObra);
+    validos.sort((a, b) => b.valor - a.valor);
+    const totalObra = validos.reduce((s, v) => s + v.valor, 0);
+    let acumulado = 0;
+    const todosOrdenados = validos.map(v => {
+      const antes = acumulado;
+      acumulado += v.valor;
+      return {
+        ...v,
+        pctIndividual: totalObra ? (v.valor / totalObra) * 100 : 0,
+        pctAcumulado: totalObra ? (acumulado / totalObra) * 100 : 0,
+        curvaA: totalObra ? (antes / totalObra) < 0.8 : false,
+      };
+    });
+    // `curvaAObrigatoria` (config por obra, default true): quando false,
+    // mostra TODOS os materiais com valor lançado, não só os que somam
+    // 80% do valor acumulado — pedido explícito (2026-08-25): "vamos
+    // suprimir [a regra dos 80%]. Manteremos apenas os escopos, mas sem
+    // a regra dos 80%". `v.curvaA` (booleano por item) continua calculado
+    // do mesmo jeito, só não filtra mais quando a régua está desligada.
+    const materiaisExibidos = curvaAObrigatoria ? todosOrdenados.filter(v => v.curvaA) : todosOrdenados;
+    return {
+      curvaA: materiaisExibidos,
+      arvore: agruparPorAreaDisciplina(materiaisExibidos),
+      todosOrdenados,
+      restante: curvaAObrigatoria ? todosOrdenados.filter(v => !v.curvaA) : [],
+      canteiro: { qtd: qtdCanteiro, valor: valorCanteiro },
+      semArea: { qtd: qtdSemArea, valor: valorSemArea },
+      totalObra,
+    };
+  }, [todosItens, areaObrigatoria, escopoNivel0, curvaAObrigatoria, escoposPermitidos, catalogoMateriaisObra, rmisExcluidos, codigoNivel0Min, codigoNivel0Max, zonaCodigoMax, mapaAreaCanonica, catalogoDisciplinaObra, usarNomeRmiComoArea, descricoesExcluidas, linhasExcluidas]);
+
+  const restanteValor = soma(restante, 'valor') || 0;
+  // `curvaABuscada` — filtro de texto sobre descrição/disciplina/área
+  // (mesmo normalizador de Desvios/Encarregados). Separado do useMemo
+  // grande acima de propósito: `busca` muda a cada tecla, e recalcular
+  // consolidação/catálogo/Curva A inteiros a cada tecla seria caro à
+  // toa — aqui só filtra o array já pronto.
+  const curvaABuscada = useMemo(() => {
+    if (!busca) return curvaA;
+    const alvo = normalizarNomeParaMatch(busca);
+    // Status entra na busca também (pedido explícito 2026-08-26) — digitar
+    // "pendente"/"finalizado"/"andamento" bate o mesmo texto do badge
+    // (`statusRmiConsolidado`), não só material/disciplina/área.
+    return curvaA.filter(it => [it.descricao, it.disciplina, it.area, statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada)]
+      .some(c => c && normalizarNomeParaMatch(c).includes(alvo)));
+  }, [curvaA, busca]);
+  // Filtragem CRUZADA (pedido explícito) — gráfico e tabela partem da
+  // MESMA base já filtrada por busca: `pieSlices` conta status só dos
+  // itens buscados, `arvoreBuscada` monta a árvore só com eles. Clicar
+  // numa fatia do gráfico (`activeStatus`) continua filtrando a tabela
+  // por cima disso — as 2 filtragens combinam, não se substituem.
+  const pieSlices = useMemo(() => {
+    const counts = {};
+    curvaABuscada.forEach(it => {
+      const status = statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada);
+      counts[status] = (counts[status] || 0) + 1;
+    });
+    return ['Pendente', 'Em andamento', 'Finalizado']
+      .filter(status => counts[status])
+      .map(status => {
+        const cfg = configStatusRmi(status);
+        return { status, label: status, value: counts[status], cor: cfg.cor };
+      });
+  }, [curvaABuscada]);
+  const arvoreBuscada = useMemo(() => busca ? agruparPorAreaDisciplina(curvaABuscada) : arvore, [arvore, curvaABuscada, busca]);
+  const arvoreExibida = useMemo(() => {
+    if (!activeStatus) return arvoreBuscada;
+    return arvoreBuscada.map(grupoArea => {
+      const disciplinas = grupoArea.disciplinas.map(grupoDisc => {
+        const materiais = grupoDisc.materiais.filter(it => statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada) === activeStatus);
+        return { ...grupoDisc, materiais, valor: soma(materiais, 'valor') || 0, ...farolAgregado(materiais) };
+      }).filter(grupoDisc => grupoDisc.materiais.length);
+      const materiaisArea = disciplinas.flatMap(d => d.materiais);
+      return { ...grupoArea, disciplinas, valor: soma(materiaisArea, 'valor') || 0, ...farolAgregado(materiaisArea) };
+    }).filter(grupoArea => grupoArea.disciplinas.length);
+  }, [arvoreBuscada, activeStatus]);
+
+  useEffect(() => {
+    if (fechadosInicializados || !arvore.length) return;
+    const todosFechados = new Set();
+    arvore.forEach(grupoArea => {
+      todosFechados.add(grupoArea.area);
+      grupoArea.disciplinas.forEach(grupoDisc => todosFechados.add(`${grupoArea.area}::${grupoDisc.disciplina}`));
+    });
+    setFechados(todosFechados);
+    setFechadosInicializados(true);
+  }, [arvore, fechadosInicializados]);
+
+  if (!obraValidada) return <CartaoEstado texto="🔨 Em desenvolvimento — Suprimentos está sendo validado para esta obra" maxHeight={620} />;
+  if (todosItens === null) return <CartaoEstado texto="Carregando itens de RMI…" maxHeight={620} />;
+  if (erro) return <CartaoEstado texto="Erro ao carregar itens_rmi" maxHeight={620} tom={T.red} />;
+  if (todosOrdenados.length === 0) return <CartaoEstado texto="Nenhum material com valor lançado para esta obra" maxHeight={620} />;
+
+  // Botões "Nível 1/2/3" — mesmo padrão do setor Desvios (`abrirNivel`):
+  // ação em lote, não é toggle persistente. Nível 1 = tudo fechado (só
+  // Área); 2 = Área aberta + Disciplina fechada; 3 = tudo aberto. Atua
+  // sobre `arvoreExibida` (já filtrada por status), igual Desvios atua
+  // sobre `grupos` já filtrado pela busca.
+  const abrirNivelSuprimentos = (nivel) => {
+    if (nivel === 3) { setFechados(new Set()); return; }
+    const todasDisciplinas = new Set(arvoreExibida.flatMap(g => g.disciplinas.map(d => `${g.area}::${d.disciplina}`)));
+    if (nivel === 2) { setFechados(todasDisciplinas); return; }
+    const todasAreas = new Set(arvoreExibida.map(g => g.area));
+    setFechados(new Set([...todasAreas, ...todasDisciplinas]));
+  };
+
+  return (
+    <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14, overflow:'hidden' }}>
+      {/* Balões de resumo do topo saíram por pedido explícito
+          (2026-08-24: "vamos retirar os balões superiores") — a
+          contagem/valor de canteiro e sem área que eles mostravam
+          continua calculada (`canteiro`/`semArea`) e disponível se
+          precisar voltar, só não é mais exibida. */}
+      {/* flex:1 (em vez de altura fixa em vh) pra ocupar exatamente o
+          espaço que o .app-main sobra — evita a página rolar junto;
+          quem rola é só o cartão da tabela, via .table-scroll-x abaixo
+          (pedido explícito, 2026-08-25: "limitar a tabela, rolagem
+          dentro do cartão dela, independente da página"). */}
+      <div style={{ display:'flex', gap:14, flex:'1 1 auto', minHeight:0, maxHeight:760, alignItems:'stretch', flexWrap:'wrap', overflow:'hidden' }}>
+        {/* Gráfico encolhe primeiro — pedido explícito (2026-08-26): "se
+            precisar de mais espaço para a tabela, sacrifique o tamanho
+            do gráfico". `flex-basis`/`minWidth` bem menores que antes
+            (era 560/460): a tabela (abaixo, `flex:'3 1 ...'`) tem
+            prioridade de crescimento, e o SVG do donut já é responsivo
+            (`width:100%` no viewBox), então encolhe o card e o desenho
+            junto — sem precisar de lógica extra. */}
+        <div className="card" style={{ flex:'1 1 300px', minWidth:220, minHeight:0, height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:16 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8 }}>
+            <div>
+              <div className="mono" style={{ fontSize:10, letterSpacing:'0.14em', textTransform:'uppercase', color:T.mut2, fontWeight:700 }}>Status dos Materiais</div>
+              <div style={{ fontSize:13, color:T.body, marginTop:3 }}>Clique em uma fatia para filtrar a tabela</div>
+            </div>
+            {activeStatus && (
+              <button onClick={() => setActiveStatus(null)} className="mono" style={{ border:'1px solid var(--line)', background:'#fff', borderRadius:8, padding:'6px 9px', fontSize:10, color:T.mut, cursor:'pointer' }}>Limpar</button>
+            )}
+          </div>
+          <div style={{ flex:1, minHeight:330, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <DonutStatusRmi slices={pieSlices} activeStatus={activeStatus} onSliceClick={status => setActiveStatus(prev => prev === status ? null : status)} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(130px, 1fr))', gap:8, marginTop:10 }}>
+            {pieSlices.map(sl => (
+              <button key={sl.status} onClick={() => setActiveStatus(prev => prev === sl.status ? null : sl.status)}
+                style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:8, padding:'8px 10px', borderRadius:10, border:`1px solid ${activeStatus === sl.status ? sl.cor : 'var(--line)'}`, background:activeStatus === sl.status ? `${sl.cor}14` : '#fff', cursor:'pointer' }}>
+                <span style={{ display:'flex', alignItems:'center', gap:7, minWidth:0 }}>
+                  <span style={{ width:9, height:9, borderRadius:'50%', background:sl.cor, flexShrink:0 }} />
+                  <span style={{ fontSize:12, fontWeight:700, color:T.ink, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{sl.label}</span>
+                </span>
+                <span className="mono" style={{ fontSize:12, fontWeight:800, color:sl.cor }}>{sl.value}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="card" style={{ flex:'3 1 680px', minWidth:280, minHeight:0, height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+          {/* Busca inteligente — pedido explícito (2026-08-26: "a barra
+              de busca deve ficar acima da tabela, apenas. O gráfico não
+              terá nada acima dele") — mora DENTRO do cartão da tabela
+              (não numa barra compartilhada acima dos 2 cartões), mesmo
+              padrão/normalizador do campo de Desvios. "Abrir até o
+              nível" também é controle só da tabela, então migrou pra cá
+              junto (nada do que tinha ali dizia respeito ao gráfico). */}
+          <div className="toolbar-wrap" style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, padding:'14px 16px 0' }}>
+            <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
+              placeholder="Buscar por material, disciplina ou área..."
+              style={{ flex:1, boxSizing:'border-box', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:12.5, padding:'9px 12px', border:'1px solid var(--line)', borderRadius:8, outline:'none', color:T.ink, background:'#fff' }} />
+            {busca && (
+              <span className="mono" style={{ fontSize:11, color:T.mut, whiteSpace:'nowrap' }}>{curvaABuscada.length} de {curvaA.length}</span>
+            )}
+            <span className="mono" style={{ fontSize:11, letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase', whiteSpace:'nowrap' }}>Abrir até o nível</span>
+            <div style={{ display:'flex', gap:6, flexShrink:0 }}>
+              {[1, 2, 3].map(n => (
+                <button key={n} className="btn-nivel" onClick={() => abrirNivelSuprimentos(n)}
+                  title={areaObrigatoria ? `Abrir Área${n >= 2 ? ' + Disciplina' : ''}${n >= 3 ? ' + Material' : ''}` : `Abrir ${rotuloDisciplina}${n >= 2 ? ' + Material' : ''}`}
+                  style={{ background:'#eef0f3', border:'none', color:T.body, padding:'6px 14px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:600 }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="table-scroll-x" style={{ overflow:'auto', flex:1 }}>
+            {/* `tableLayout:fixed` + `colgroup` em %, sem `minWidth`/
+                `whiteSpace:nowrap` no root — pedido explícito
+                (2026-08-26: "é necessário eliminar a rolagem horizontal
+                da tabela... adaptável"). Mesmo padrão já usado em
+                `COLUNAS_DESVIOS`: a tabela nunca fica mais larga que o
+                cartão, cabeçalho longo ("Data da Necessidade de
+                Compra") quebra em 2 linhas em vez de forçar coluna
+                larga. Colunas somam 100%. */}
+            {arvoreExibida.length === 0 ? (
+              <div style={{ padding:'40px 20px', textAlign:'center', color:T.mut, fontSize:13 }}>
+                {busca ? `Nenhum material encontrado para "${busca}"` : 'Nenhum material para este status'}
+              </div>
+            ) : (
+            <table style={{ width:'100%', tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse' }}>
+              <colgroup>
+                <col style={{ width:'34%' }} />
+                <col style={{ width:'12%' }} />
+                <col style={{ width:'16%' }} />
+                <col style={{ width:'12%' }} />
+                <col style={{ width:'16%' }} />
+                <col style={{ width:'10%' }} />
+              </colgroup>
+              <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
+                <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600, overflowWrap:'anywhere' }}>
+                  <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>{areaObrigatoria ? 'Área / Disciplina / Material' : `${rotuloDisciplina} / Material`}</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Farol Financeiro</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data da Necessidade de Compra</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Prazo de Entrega</th>
+                  <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data Limite em Obra</th>
+                  <th style={{ padding:'10px 14px', textAlign:'center', borderBottom:'2px solid var(--line)' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {arvoreExibida.map(grupoArea => {
+                  const areaFechada = fechados.has(grupoArea.area);
+                  return (
+                  <React.Fragment key={grupoArea.area}>
+                    <tr className="hoverable" onClick={() => alternarFechado(grupoArea.area)} style={{ background:'#eef2f8', borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
+                      <td className="mono" style={{ padding:'8px 14px', fontSize:11.5, fontWeight:700, color:T.ink, textTransform:'uppercase', letterSpacing:'0.03em', overflowWrap:'anywhere' }}>
+                        <span style={{ display:'inline-block', width:14, color:T.blue }}>{areaFechada ? '▸' : '▾'}</span>
+                        {grupoArea.area}
+                      </td>
+                      <td style={{ padding:'8px 14px', textAlign:'right' }}>
+                        <FarolFinanceiroRmi desvio={grupoArea.desvio} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: grupoArea.area, valor: grupoArea.valor, totalConsumido: grupoArea.totalConsumido, saldo: grupoArea.saldoOrcamentario, desvio: grupoArea.desvio }); }} />
+                      </td>
+                      <td colSpan={4}></td>
+                    </tr>
+                    {!areaFechada && grupoArea.disciplinas.map(grupoDisc => {
+                      const chaveDisc = `${grupoArea.area}::${grupoDisc.disciplina}`;
+                      const discFechada = fechados.has(chaveDisc);
+                      return (
+                      <React.Fragment key={chaveDisc}>
+                        {/* Sem camada de Área na RMI (`!areaObrigatoria`,
+                            ver AREA_OPCIONAL_SUPRIMENTOS): a linha de
+                            Área acima JÁ é a disciplina (mesmo nome) —
+                            essa 2ª linha idêntica ficaria redundante, só
+                            renderiza pra obra com área de verdade. */}
+                        {areaObrigatoria && (
+                        <tr className="hoverable" onClick={() => alternarFechado(chaveDisc)} style={{ background:'#f7f8fa', borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
+                          <td className="mono" style={{ padding:'7px 14px 7px 30px', fontSize:11, fontWeight:600, color:T.body, overflowWrap:'anywhere' }}>
+                            <span style={{ display:'inline-block', width:14, color:T.blue }}>{discFechada ? '▸' : '▾'}</span>
+                            {grupoDisc.disciplina}
+                          </td>
+                          <td style={{ padding:'7px 14px', textAlign:'right' }}>
+                            <FarolFinanceiroRmi desvio={grupoDisc.desvio} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: grupoDisc.disciplina, valor: grupoDisc.valor, totalConsumido: grupoDisc.totalConsumido, saldo: grupoDisc.saldoOrcamentario, desvio: grupoDisc.desvio }); }} />
+                          </td>
+                          <td colSpan={4}></td>
+                        </tr>
+                        )}
+                        {(!areaObrigatoria || !discFechada) && grupoDisc.materiais.map(it => {
+                          const temAninhados = it.qtdConsolidada > 1;
+                          return (
+                            <tr key={it.id} className="hoverable" onClick={temAninhados ? () => setMaterialAberto(it) : undefined}
+                              style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
+                              <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, whiteSpace:'normal', lineHeight:1.35, wordBreak:'break-word' }}>
+                                {it.descricao || '—'}
+                                {temAninhados && <span style={{ marginLeft:6, fontSize:11, color:T.mut, fontWeight:400 }}>›</span>}
+                              </td>
+                              <td style={{ padding:'9px 14px', textAlign:'right' }}>
+                                <FarolFinanceiroRmi desvio={it.desvio_saldo_orcamentario} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: it.descricao, valor: it.valor, totalConsumido: it.totalConsumido, saldo: it.saldo_orcamentario, desvio: it.desvio_saldo_orcamentario }); }} />
+                              </td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums', overflowWrap:'anywhere' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums', overflowWrap:'anywhere' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
+                              <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums', overflowWrap:'anywhere' }}>{fmtDataObjRmi(it.materialEmObra)}</td>
+                              <td style={{ padding:'9px 14px', textAlign:'center' }}>
+                                <StatusBadgeRmi qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada}
+                                  activeStatus={activeStatus} onStatusClick={status => setActiveStatus(prev => prev === status ? null : status)} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
+                      );
+                    })}
+                  </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {materialAberto && (
+        <div onClick={() => setMaterialAberto(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:640, maxHeight:'78vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>{areaObrigatoria ? `${materialAberto.area} — ${materialAberto.disciplina}` : materialAberto.disciplina}</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{materialAberto.descricao} <span className="mono" style={{ fontSize:11, fontWeight:600, color:T.mut }}>({materialAberto.qtdConsolidada} itens)</span></div>
+              </div>
+              <button onClick={() => setMaterialAberto(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                <tbody>
+                  {(materialAberto.itensOriginais || []).map((it, i) => {
+                    const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
+                    return (
+                    <tr key={it.id || i} style={{ borderBottom:'1px solid #eef0f3' }}>
+                      <td style={{ padding:'9px 18px', textAlign:'left', fontSize:12, color:T.ink, fontWeight:500 }}>{it.descricao || '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
+                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias))}</td>
+                      <td style={{ padding:'9px 18px', textAlign:'center' }}>
+                        <StatusBadgeRmi qtdFinalizados={it.finalizado ? 1 : 0} qtdTotal={1} />
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {farolDetalhe && (
+        <div onClick={() => setFarolDetalhe(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10002, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:400, display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+            <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Farol Financeiro</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>{farolDetalhe.titulo}</div>
+              </div>
+              <button onClick={() => setFarolDetalhe(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ padding:'6px 20px 20px' }}>
+              {[
+                ['Valor', farolDetalhe.valor, T.ink],
+                ['Total Consumido', farolDetalhe.totalConsumido, T.ink],
+                ['Saldo Orçamentário', farolDetalhe.saldo, farolDetalhe.desvio === 'negativo' ? T.red : farolDetalhe.desvio === 'positivo' ? T.green : T.ink],
+              ].map(([label, valor, cor]) => (
+                <div key={label} style={{ display:'flex', justifyContent:'space-between', gap:16, padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
+                  <span>{label}</span>
+                  <span className="mono" style={{ fontWeight:700, color:cor, fontVariantNumeric:'tabular-nums' }}>{fmtReais(valor)}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -5022,17 +6980,19 @@ const ALTURA_FALLBACK_TILE = { tabela:580, grafico:364 };
 // senão clicar nele iniciaria um arrasto. Remover só OCULTA — nada é
 // apagado, o bloco volta pelos botões "+ Nome" e reaparece na MESMA
 // posição/tamanho (a entrada dele continua guardada no layout).
-function TileFrame({ titulo, contagem, onRemover, children }){
+function TileFrame({ titulo, contagem, onRemover, travado, children }){
   return (
     <div className="card" style={{ height:'100%', borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
       {/* padding-right 18: deixa o "✕" fora da alça de resize do canto
           nordeste (12px + 3px de recuo), senão o clique de ocultar cai na
-          alça. padding-left 16 já passa da alça do canto noroeste. */}
-      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:'grab', touchAction:'none' }}>
+          alça. padding-left 16 já passa da alça do canto noroeste.
+          Travado (modo padrão, ver comentário no grid): cursor volta ao
+          normal e a alça (⠿⠿) fica apagada — não tem o que arrastar. */}
+      <div className="mono tile-handle" style={{ display:'flex', alignItems:'center', gap:8, padding:'11px 18px 8px 16px', flexShrink:0, cursor:travado ? 'default' : 'grab', touchAction:'none' }}>
         <span style={{ fontSize:10.5, letterSpacing:'0.1em', color:T.mut, textTransform:'uppercase', fontWeight:600, flex:1, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
           {titulo}{contagem != null && <span style={{ color:T.mut2, fontWeight:500 }}> ({contagem})</span>}
         </span>
-        <span title="Arraste para mover" style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0 }}>⠿⠿</span>
+        <span title={travado ? 'Layout travado' : 'Arraste para mover'} style={{ color:T.mut2, fontSize:13, letterSpacing:'-1px', userSelect:'none', flexShrink:0, opacity:travado ? 0.35 : 1 }}>⠿⠿</span>
         <button onClick={onRemover} title="Remover bloco (pode trazer de volta depois)" className="mono tile-nao-arrasta"
           style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:7, width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:12, lineHeight:1, flexShrink:0 }}>✕</button>
       </div>
@@ -5440,6 +7400,13 @@ function ModuloMedicoes({ obraId, obraNome }){
   });
   useEffect(() => { localStorage.setItem('mse_medicoes_grid', JSON.stringify(layoutTiles)); }, [layoutTiles]);
   useEffect(() => { localStorage.setItem('mse_medicoes_tile_ocultos', JSON.stringify(tileOcultos)); }, [tileOcultos]);
+  // Grid nasce TRAVADO toda vez (não persiste) — pedido explícito
+  // (2026-08-21): "vamos deixar o modo de ajuste travado, para evitar
+  // movimentações não intencionais". Só arrasta/redimensiona depois de
+  // clicar em "Ajustar layout"; persistir como destravado entre sessões
+  // reabriria a mesma brecha de arrasto acidental que o pedido queria
+  // fechar.
+  const [modoAjuste, setModoAjuste] = useState(false);
 
   const idsVisiveis = TILES_MEDICOES_IDS.filter(id => !tileOcultos.includes(id));
   const entradaLayout = (id) => layoutTiles.find(l => l.i === id) || LAYOUT_MEDICOES_PADRAO.find(l => l.i === id);
@@ -5466,9 +7433,11 @@ function ModuloMedicoes({ obraId, obraNome }){
   // nem coluna. Existe porque o grid roda SEM compactação automática (é o
   // que faz o resize pelo topo funcionar, ver comentário no
   // <GridLayoutMedicoes>): em troca, empurrar um vizinho pra baixo deixa
-  // faixa vazia que não se fecha sozinha. Isto fecha, sob demanda, sem
-  // tirar liberdade de posicionamento — e sem desfazer o arranjo, ao
-  // contrário do "Restaurar layout".
+  // faixa vazia que não se fecha sozinha. Isto fecha o vão sem tirar
+  // liberdade de posicionamento — e sem desfazer o arranjo, ao contrário
+  // do "Restaurar layout". Rodava só por botão manual até 2026-08-21;
+  // agora é chamada automaticamente por `onDragStop`/`onResizeStop` do
+  // grid a cada ajuste (pedido explícito), o botão saiu.
   const organizarLayout = () => {
     setLayoutTiles(prev => {
       const ocultos = prev.filter(l => tileOcultos.includes(l.i));
@@ -5738,6 +7707,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         const tileProps = {
           titulo: meta.titulo,
           onRemover: () => setTileOcultos(o => [...o, id]),
+          travado: !modoAjuste,
         };
 
         if (id === 'tabela') return (
@@ -5845,9 +7815,20 @@ function ModuloMedicoes({ obraId, obraNome }){
         // x/y do bloco, não só no w/h — com compactação vertical ligada, a
         // lib puxava o bloco de volta pra cima logo depois e o gesto não
         // surtia efeito nenhum. Sem compactação, cada bloco fica exatamente
-        // onde foi posto (e pode sobrar espaço vazio no meio — é o preço da
-        // liberdade, e o botão "Restaurar layout" resolve).
+        // onde foi posto (e pode sobrar espaço vazio no meio).
+        // `onDragStop`/`onResizeStop` chamam `organizarLayout` — pedido
+        // explícito (2026-08-21): "o organizar tem que ser automático, à
+        // medida que o ajuste nos balões é feito". Antes era um botão
+        // manual; agora roda sozinho ao SOLTAR o arrasto/resize (não em
+        // `onLayoutChange`, que a react-grid-layout dispara a cada frame
+        // durante o gesto — rodar o reflow no meio do gesto brigaria com
+        // o drag em andamento, o mesmo tipo de problema que o
+        // `compactType={null}` acima já existe pra evitar). `isDraggable`/
+        // `isResizable` só ligam com `modoAjuste` — grid nasce travado
+        // (ver comentário no estado `modoAjuste`).
         <GridLayoutMedicoes layout={layoutVisivel} onLayoutChange={aoMudarLayoutTiles}
+          onDragStop={organizarLayout} onResizeStop={organizarLayout}
+          isDraggable={modoAjuste} isResizable={modoAjuste}
           style={{ flexShrink:0 }}
           cols={12} rowHeight={40} margin={[14, 14]} containerPadding={[0, 0]}
           draggableHandle=".tile-handle" draggableCancel=".tile-nao-arrasta"
@@ -5857,13 +7838,25 @@ function ModuloMedicoes({ obraId, obraNome }){
       );
       })()}
 
-      {/* Barra de apoio do grid: dica de uso (sem ela o resize/lado a lado
-          fica escondido — a alça só aparece no hover), blocos ocultos e
-          volta ao padrão. */}
+      {/* Barra de apoio do grid: trava/destrava o modo de ajuste, dica de
+          uso (só faz sentido destravado), blocos ocultos e volta ao
+          padrão. Botão "Organizar" saiu — agora roda sozinho a cada
+          ajuste (ver `onDragStop`/`onResizeStop` acima). */}
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', flexShrink:0 }}>
-        <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
-          Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
-        </span>
+        <button onClick={() => setModoAjuste(m => !m)} className="mono"
+          title={modoAjuste ? 'Travar o layout (evita mover/redimensionar sem querer)' : 'Destravar pra mover ou redimensionar os blocos'}
+          style={{
+            background: modoAjuste ? 'rgba(37,99,235,0.08)' : 'none',
+            border: `1px solid ${modoAjuste ? T.blue : 'var(--line)'}`,
+            color: modoAjuste ? T.blue : T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5, fontWeight:600,
+          }}>
+          {modoAjuste ? 'Travar layout' : 'Ajustar layout'}
+        </button>
+        {modoAjuste && (
+          <span className="mono" style={{ fontSize:11, color:T.mut2 }}>
+            Arraste pelo cabeçalho para mover · puxe qualquer borda ou canto para redimensionar · encolha a largura para abrir espaço ao lado
+          </span>
+        )}
         <span style={{ flex:1, minWidth:8 }} />
         {tileOcultos.map(id => (
           <button key={id} onClick={() => setTileOcultos(o => o.filter(x => x !== id))} className="mono"
@@ -5872,10 +7865,6 @@ function ModuloMedicoes({ obraId, obraNome }){
             + {TILES_MEDICOES_META[id].titulo}
           </button>
         ))}
-        <button onClick={organizarLayout} className="mono" title="Subir os blocos para fechar espaços vazios, mantendo tamanho e coluna de cada um"
-          style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
-          Organizar
-        </button>
         <button onClick={restaurarLayoutPadrao} className="mono" title="Voltar posição, tamanho e visibilidade ao padrão"
           style={{ background:'none', border:'1px solid var(--line)', color:T.mut, borderRadius:8, padding:'5px 11px', cursor:'pointer', fontSize:11.5 }}>
           Restaurar layout
@@ -5921,33 +7910,24 @@ function ModuloMedicoes({ obraId, obraNome }){
           <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:440, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
-                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Composição</div>
-                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Valor Medido — {obraNome}</div>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Performance</div>
+                <div style={{ fontSize:15, fontWeight:700, color:T.ink }}>Indicador de Performance Financeira — {obraNome}</div>
               </div>
               <button onClick={() => setMedidoAberto(false)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
             <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Soma dos Boletins Faturados ({historico.length} {historico.length === 1 ? 'BM' : 'BMs'})</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(valorMedido)}</span>
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0', fontSize:14, color:T.ink, fontWeight:700 }}>
+                <span>Diferença de Avanço</span>
+                <span className="mono" style={{ color: (valorMedido - valorContrato) < 0 ? T.green : T.red }}>{fmtReais(valorMedido - valorContrato)}</span>
               </div>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:13, color:T.body }}>
-                <span>Valor Faturado (líquido)</span>
-                <span className="mono" style={{ fontWeight:600, color:T.ink }}>{fmtReais(soma(historico, 'valor_faturado') || 0)}</span>
-              </div>
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', fontSize:14, color:T.ink, fontWeight:700 }}>
-                <span>Valor Medido</span>
-                <span className="mono">{fmtReais(valorMedido)}</span>
-              </div>
-              {saldoAFaturar != null && (
-                <div style={{ display:'flex', justifyContent:'space-between', padding:'12px 0 0', marginTop:8, borderTop:'1px dashed #e4e7ec', fontSize:13, color:T.mut }}>
-                  <span>Saldo a Faturar</span>
-                  <span className="mono" style={{ fontWeight:600, color: saldoAFaturar < 0 ? T.red : T.body }}>{fmtReais(saldoAFaturar)}</span>
+              {(valorMedido - valorContrato) < 0 && (
+                <div style={{ marginTop:12, padding:'8px 10px', borderRadius:8, background:'rgba(31,157,87,0.08)', border:'1px solid rgba(31,157,87,0.25)', fontSize:12, color:T.green, lineHeight:1.4 }}>
+                  ✓ Dentro do previsto — saldo ainda disponível.
                 </div>
               )}
-              {saldoAFaturar < 0 && (
-                <div style={{ marginTop:10, padding:'7px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:11, color:T.red, lineHeight:1.4 }}>
-                  ⚠ Valor medido já ultrapassa o contrato.
+              {(valorMedido - valorContrato) >= 0 && (
+                <div style={{ marginTop:12, padding:'8px 10px', borderRadius:8, background:'rgba(210,59,59,0.08)', border:'1px solid rgba(210,59,59,0.25)', fontSize:12, color:T.red, lineHeight:1.4 }}>
+                  ⚠ Acima do previsto — contrato foi ultrapassado.
                 </div>
               )}
             </div>
@@ -6055,29 +8035,10 @@ function ModuloMedicoes({ obraId, obraNome }){
               </div>
               
               <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-                
-                {/* BLOCO DE SALDOS */}
-                <div style={{ padding:'12px 0', borderBottom:'1px dashed #eef0f3' }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Saldos Acumulados</div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
-                    <span>Saldo Previsto</span>
-                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoPrev != null ? fmtReais(saldoPrev) : '—'}</span>
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
-                    <span>Saldo Realizado (Medido)</span>
-                    <span className="mono" style={{ fontWeight:600, color:T.ink }}>{saldoReal != null ? fmtReais(saldoReal) : '—'}</span>
-                  </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', paddingTop:'4px', fontSize:13.5, color:T.ink, fontWeight:700 }}>
-                    <span>Diferença de Saldo</span>
-                    <span className="mono" style={{ color:corSaldo }}>
-                      {diffSaldo != null ? (diffSaldo > 0 ? '+' : '') + fmtReais(diffSaldo) : '—'}
-                    </span>
-                  </div>
-                </div>
 
-                {/* BLOCO DE AVANÇOS */}
-                <div style={{ padding:'16px 0 6px' }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Avanços Acumulados</div>
+                {/* BLOCO DE AVANÇOS - INDICADOR DE PERFORMANCE FINANCEIRA */}
+                <div style={{ padding:'12px 0' }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:12 }}>Indicador de Performance Financeira</div>
                   <div style={{ display:'flex', justifyContent:'space-between', paddingBottom:'8px', fontSize:13, color:T.body }}>
                     <span>Avanço Previsto</span>
                     <span className="mono" style={{ fontWeight:600, color:T.ink }}>{avancoPrev != null ? fmtReais(avancoPrev) : '—'}</span>
@@ -6166,11 +8127,51 @@ function SetorPlaceholder({ setor, obraId }){
   );
 }
 
+// Visualizador Deep Zoom da ortofoto (OpenSeadragon é vanilla JS, não
+// componente React — a integração é via ref + useEffect, igual qualquer
+// lib imperativa). `destroy()` no cleanup evita acumular viewers/listeners
+// ao trocar de obra ou desmontar a tela.
+function ModuloOrtofoto({ dziUrl, obraNome }){
+  const elRef = useRef(null);
+  const viewerRef = useRef(null);
+  useEffect(() => {
+    if (!elRef.current || typeof OpenSeadragon === 'undefined') return;
+    viewerRef.current = OpenSeadragon({
+      element: elRef.current,
+      tileSources: dziUrl,
+      prefixUrl: 'https://unpkg.com/openseadragon@4/build/openseadragon/images/',
+      showNavigator: true,
+      navigatorPosition: 'BOTTOM_RIGHT',
+      maxZoomPixelRatio: 2,
+      visibilityRatio: 1,
+      constrainDuringPan: true,
+      // Rotação de exibição (pedido explícito, 2026-08-25: "gire a foto
+      // 90º para esquerda") — gira só o viewport, não os tiles; sentido
+      // horário é positivo no OpenSeadragon, por isso 270 (= -90, giro
+      // pra esquerda/anti-horário).
+      degrees: 270,
+    });
+    return () => { viewerRef.current?.destroy(); viewerRef.current = null; };
+  }, [dziUrl]);
+  return <div ref={elRef} className="ortofoto-viewer" title={`Ortofoto — ${obraNome}`} />;
+}
+
 // ── Setor 9, provisório — Tour 360° (Constructin, embutido via iframe) ──────
 // Domínio do Constructin (CloudFront/S3) não envia X-Frame-Options nem CSP
 // frame-ancestors, então o iframe carrega normal. Rota SPA do Constructin usa
 // hash (#/tour/...), então a URL completa (com #) precisa ir inteira no src.
+// Ortofoto (`OBRA_ORTOFOTO`) tem prioridade sobre o tour Constructin — só
+// existe pra 1 obra por enquanto, sem conflito real, mas o gate deixa
+// explícito qual ganha se algum dia as duas existirem pra mesma obra.
 function ModuloTour360({ obraId, obraNome }){
+  const dziUrl = OBRA_ORTOFOTO[obraId];
+  if (dziUrl) {
+    return (
+      <div className="card tour-360-frame painel-gutter">
+        <ModuloOrtofoto dziUrl={dziUrl} obraNome={obraNome} />
+      </div>
+    );
+  }
   const url = OBRA_TOUR_360[obraId];
   if (!url) {
     return (
@@ -6205,11 +8206,12 @@ function App(){
     window.location.hash = `#/obra/${obraId}/${setor.slug}`;
   }, [obraId, setor]);
 
-  // Título da aba do navegador sempre "MSE - <Setor>" (pedido explícito),
-  // independente da obra selecionada — só o setor muda o texto.
+  // Título da aba do navegador sempre "MSE - <Setor>" (pedido explícito).
+  // Só o setor muda o texto — exceto "Tour 360°", que também depende da
+  // obra ter ortofoto cadastrada (ver `labelSetorObra`).
   useEffect(() => {
-    document.title = `MSE - ${setor.label}`;
-  }, [setor]);
+    document.title = `MSE - ${labelSetorObra(setor, obraId)}`;
+  }, [setor, obraId]);
 
   useEffect(() => {
     const onHash = () => {
@@ -6225,8 +8227,10 @@ function App(){
 
   const obraAtual = OBRAS.find(o => o.id === obraId) || OBRAS[0];
 
-  // Obras com mais de uma Curva S (hoje só NN - AP: PPU + C.O. consolidado,
-  // PPU e C.O. separados) — botão troca qual chave `obra` filtra curvas_s.
+  // Obras com mais de uma Curva S (hoje NN - AP: PPU e Estudo — PPU + C.O.
+  // consolidado e C.O. isolado foram suprimidos do seletor, pedido explícito
+  // 2026-08-26; NN - UB/SP: Original e Take-Off) — botão troca qual chave
+  // `obra` filtra curvas_s.
   // Reseta pra padrão sempre que a obra muda (senão uma obra sem essa
   // variante herdaria uma chave de curva que não existe pra ela).
   const [curvaEscolhida, setCurvaEscolhida] = useState(null);
@@ -6365,7 +8369,7 @@ function App(){
   return (
     <div className="screen-enter app-shell">
       <Header obraAtual={obraAtual} obras={OBRAS} onSelecionarObra={setObraId} foto={OBRA_FOTOS[obraAtual.id]} />
-      <TabsSetores atual={setor} onIr={setSetor} />
+      <TabsSetores atual={setor} onIr={setSetor} obraId={obraAtual.id} />
       <div key={setor.slug} className="screen-slide app-main">
         {setor.slug === 'curva-s'
           ? <ModuloCurvaS linhas={linhasCurva} info={infoCurva} carregando={linhasCurva === null} erro={curvasErro} obraId={obraAtual.id} obraNome={obraAtual.nome}
@@ -6384,7 +8388,9 @@ function App(){
                       ? <ModuloTour360 obraId={obraAtual.id} obraNome={obraAtual.nome} />
                       : setor.slug === 'oc-co'
                         ? <ModuloOcCo obraId={obraAtual.id} obraNome={obraAtual.nome} />
-                        : <SetorPlaceholder setor={setor} obraId={obraAtual.id} />}
+                        : setor.slug === 'suprimentos-criticos'
+                          ? <ModuloSuprimentos obraId={obraAtual.id} obraNome={obraAtual.nome} />
+                          : <SetorPlaceholder setor={setor} obraId={obraAtual.id} />}
       </div>
     </div>
   );

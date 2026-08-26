@@ -266,6 +266,118 @@ Abr-Jul=23, Ago=3 — bate exato), e validação ao vivo no filtro
 TOTAL/MOI/MOD da tela (TOTAL = MOD+MOI somados corretamente por mês,
 ex. Abr = 79+23 = 102).
 
+### Suprimentos — regra de "crítico" fechada: Curva A por item macro (2026-08-21)
+
+Decisão de produto que faltava desde 2026-08-05 (ver seção anterior):
+"os críticos serão, por hora, os itens Curva A, que correspondem, em sua
+soma, a 80% do valor do projeto" — implementado só em cima de
+`itens_rmi` (as outras 2 fontes de Suprimentos, `pedidos_suprimentos` e
+`itens_mapa_compras`, seguem sem tela própria).
+
+- **Grão = "item macro"** (disciplina) — não o item-folha, ~~fixado em
+  `raw.nivel === 1` inicialmente~~. **Corrigido 2x no mesmo dia**: 1º
+  pra resolução por RMI (nível 0 ou 1, varia por ramo — ver seção
+  abaixo); depois o próprio conceito de "crítico" desceu de disciplina
+  pra MATERIAL (ver "Crítico vira MATERIAL" mais abaixo) — o "item
+  macro"/disciplina virou só coluna de contexto, não mais o grão da
+  Curva A.
+- **Curva A**: ordena os macro-itens por `subtotal_custo_meta_orcamento`
+  decrescente, acumula, inclui todo item até o acumulado ANTES dele
+  cruzar 80% do total.
+- **Itens de canteiro/apoio excluídos do cálculo inteiro** (não entram
+  nem no denominador) — pedido em seguida: "itens de canteiro como
+  consumíveis, alojamento e afins não precisam ser considerados".
+  Classificação por palavra-chave (não taxonomia fixa — 2.975
+  descrições distintas de nível 1 nas 6 obras). Ver detalhe completo e
+  lista de palavras-chave em [[08 - Blueprint do Painel de Obra]],
+  seção "Setor 4 — Suprimentos sai do placeholder".
+- **`prazo_status` não virou critério**: checado no dado real antes de
+  decidir — 100% dos itens da obra 91 vieram `sem_data`, API ainda não
+  popula essa dimensão. `desvio_saldo_orcamentario` (já populado) virou
+  badge complementar na tabela, não critério de corte.
+- Consulta usa filtro de expressão jsonb direto no PostgREST:
+  `raw->>nivel=eq.1` (índice de expressão já existia pra
+  `prazo_status`/`desvio_saldo_orcamentario`, não pra `nivel` — sem
+  índice dedicado ainda, aceitável pro volume atual de ~150-900
+  itens/obra depois do filtro por `id_obra`).
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou linhas indesejadas no CNPEM Faseado — investigado antes
+de mexer (ADR-005) e o achado invalida a premissa da seção acima:
+`nivel === 1` fixo NÃO é universal. Comparando obra 91 × CNPEM Faseado
+(106) com consulta direta no PostgREST:
+
+- Obra 91: nível 0 é "balde" de origem de material (`MATERIAIS - UB/SP`,
+  `CHANGE ORDER N`, quase todos zerados) — a disciplina real só aparece
+  no nível 1. Por isso nível 1 fixo funcionava aqui.
+- CNPEM Faseado: é o INVERSO — nível 0 já É a disciplina real (HVAC,
+  CIVIL, ELÉTRICA E SISTEMAS, COMBUSTÍVEL...). Nível 1 é item de linha
+  granular (814 linhas na obra) — nível 1 fixo quebrava aqui.
+- RMI 43/GERAL (obra 91): tem ramo cujo nível 0 nem existe como linha
+  na origem (órfão) — só nível 1 carrega o valor real desse ramo.
+
+Consulta passou a buscar nível 0 E nível 1 da obra (2 requisições em
+vez de 1) e resolver por RAMO (`id_rmi`+`codigo_seq`) qual usar:
+desce pro nível 1 se o nome do nível 0 bater padrão de "balde"
+administrativo (`MATERIAIS -`, `CHANGE ORDER`, `OC -`, `CO <número>`),
+se o subtotal do nível 0 vier zerado com filho de valor real, ou se o
+ramo for órfão; senão usa o nível 0 direto. Detalhe completo e código em
+[[08 - Blueprint do Painel de Obra]], seção "'Item macro' deixa de ser
+nível fixo". Validado sem regressão (obra 91 bateu exato com o resultado
+anterior) + CNPEM Faseado com resultado sensato (4 itens críticos:
+HVAC, Elétrica e Sistemas, Civil, Custos com Efetivo MSE).
+
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+Correção de escopo maior, no mesmo dia: "no CNPEM o item de custo com
+efetivo não precisa aparecer também... observe no nível de material, é
+isso que precisamos exibir, os materiais críticos, orientados por área
+e disciplina" — o grão da Curva A desce de disciplina (resultado da
+seção anterior) pro MATERIAL real (item-folha); disciplina/área viram
+colunas de contexto.
+
+- **Material não é nível fixo** — varia até dentro do mesmo ramo (RMI
+  41/obra 91 tem material genuíno em nível 3 E 4). Identificado por
+  `unidade` populada e ≠ `SERV`/`VB`/`VERBA`, mais uma lista curta de
+  exceção por nome (TESTES, OMISSOS, COMISSIONAMENTO — vêm com unidade
+  "UN" igual material de verdade, mas não são). Evita contar 2x: só
+  desce pro filho se ele também tiver valor > 0 (não só a mesma
+  unidade do pai).
+- **"Custos com Efetivo MSE" some sozinho** — por baixo só tem
+  treinamento/passagens/plano de saúde, tudo `vb`, sem regra especial.
+- **Área**: pode vir de ABAIXO da disciplina na árvore (CNPEM) ou de
+  CIMA (obra 91 — UB/SP é o nível que a resolução de disciplina
+  descarta como balde). ~~Nesse 2º caso virava sufixo no nome da
+  disciplina~~ — **corrigido horas depois** (ver "Tabela vira árvore"
+  abaixo): virou campo próprio em todo material, igual nos 2 casos.
+- Fetch mudou de "nível 0 + nível 1" pra obra inteira (1 requisição) —
+  precisa caminhar até a folha, que pode estar em qualquer profundidade.
+
+Detalhe completo, o bug do "SAE002" pego na validação (sufixo só se
+aplica quando a descida foi por padrão de nome, não pelo fallback de
+subtotal zerado) e os números de validação em
+[[08 - Blueprint do Painel de Obra]], seção "Crítico vira MATERIAL".
+
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"precisa estar organizado em nívels, Área -> Disciplina -> Material...
+a necessidade de compilar materiais similares em uma coisa só" — área
+deixa de ser sufixo no nome da disciplina (só fazia sentido numa tabela
+plana) e vira campo próprio em todo material, virando nó real na árvore
+de exibição, não importa se fica acima ou abaixo da disciplina no RMI
+original. `consolidarMateriaisSemelhantes` soma valor+saldo de materiais
+com a mesma descrição normalizada dentro do MESMO par área+disciplina.
+
+2 bugs pegos na validação em Node antes do teste de UI: (1) área
+herdada de cima sendo sobrescrita pelo 1º sub-agrupamento abaixo da
+disciplina; (2) quando o material é filho direto da disciplina (sem
+camada de área), a área virava igual ao nome do próprio material.
+Resultado real: obra 91 = 3 áreas (UB, SP, sem área); CNPEM Faseado = 6
+áreas (Central de Água Gelada, Instalações Nível 614/619/623, Caixa de
+Acesso, sem área). Detalhe completo em
+[[08 - Blueprint do Painel de Obra]], seção "Tabela vira árvore".
+
 ### Suprimentos ganha 3ª fonte em ingestão — RMI (2026-08-20)
 
 Tabela `itens_rmi` desenhada (SQL em `painel-mse\n8n\rmi-suprimentos.README.md`)

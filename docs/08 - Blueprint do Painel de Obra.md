@@ -11,10 +11,10 @@ técnica (ADR-006, ainda pendente em [[06 - Decisões de Arquitetura]]).
 > 2026-08-10) abrem com **dado real** direto do Supabase (mesmas duas chaves
 > anon do dashboard atual) — Desvios lê `EAP` direto, agrupado por Local ×
 > Disciplina; Restrições lê `restricoes_obra`; Medições lê `nfs` +
-> `proximos_faturamentos` (ver seções próprias abaixo);
-> Suprimentos e OC/CO seguem placeholder por não terem fonte (Suprimentos
-> tem tabela, falta fechar a regra de "crítico"). Quando a
-> base técnica for decidida, este arquivo é descartável — mas a lógica de
+> `proximos_faturamentos`; OC/CO (desde 2026-08-11) lê
+> `orcamentos_complementares_obra`; Suprimentos (desde 2026-08-21) lê
+> `itens_rmi` e mostra os itens críticos por Curva A (ver seções próprias
+> abaixo). Quando a base técnica for decidida, este arquivo é descartável — mas a lógica de
 > leitura (mapas de nome/id, detecção de dado congelado) vale a pena carregar
 > para a versão real.
 
@@ -3150,6 +3150,45 @@ empilhar um sobre o outro). Nenhum par de blocos se sobrepõe nos 2 eixos
 depois da sequência toda. 0 erros de console. Deploy:
 `firebase deploy --only hosting --project planejamento-mse`.
 
+### Medições — grid nasce travado, "Organizar" vira automático (2026-08-21)
+
+Pedido explícito, 2 dias depois: "o organizar tem que ser automático, a
+medida que o ajuste nos balões é feito. Além disso, vamos deixar o modo
+de ajuste travado, para evitar movimentações não intencionais."
+
+- **"Organizar" deixa de ser botão manual** — passa a rodar via
+  `onDragStop`/`onResizeStop` do grid, disparando sozinho ao SOLTAR um
+  arrasto/resize. Deliberadamente NÃO usei `onLayoutChange` pra isso: a
+  react-grid-layout dispara esse evento a cada frame durante o gesto
+  (não só no fim), então reorganizar ali brigaria com o drag em
+  andamento — o mesmo tipo de conflito que `compactType={null}` (seção
+  acima) já existe pra evitar. `onDragStop`/`onResizeStop` disparam 1x,
+  no soltar, então o reflow acontece depois do gesto terminar, sem
+  interferir nele. Botão "Organizar" removido (redundante).
+- **Novo estado `modoAjuste`** (sempre nasce `false`, propositalmente
+  NÃO persiste no `localStorage` — diferente de `layoutTiles`/
+  `tileOcultos`). Persistir "destravado" reabriria a mesma brecha de
+  arrasto acidental que o pedido queria fechar; o grid deve começar
+  travado toda vez que a tela é aberta, não só na 1ª vez.
+  `isDraggable`/`isResizable` do `<GridLayoutMedicoes>` só ligam com
+  esse estado.
+- **1 botão só** na barra de apoio alterna "Ajustar layout" ⇄ "Travar
+  layout" (fundo/borda azul quando destravado, pra ficar óbvio que o
+  grid está em modo de edição). A dica de uso ("Arraste pelo
+  cabeçalho...") só aparece destravado — não faz sentido mostrar
+  instrução de gesto que não funciona no momento. `TileFrame` reflete o
+  estado no próprio bloco: alça (⠿⠿) apagada (opacity 0.35) e cursor
+  volta ao normal quando travado, em vez de manter a affordance de
+  "arrastável" num bloco que não arrasta.
+
+Testado via Playwright (obra 91): grid travado por padrão (drag no
+cabeçalho não move o bloco, posição idêntica antes/depois via
+`getBoundingClientRect`); "Ajustar layout" destrava (drag move o bloco,
+resize pela alça SE funciona); "Travar layout" trava de novo (drag
+volta a não mover); botão "Organizar" confirmado ausente; dica some/
+aparece conforme o estado. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
 ### Medições — as 2 tabelas viram 1 só, consolidada (2026-08-19)
 
 Pedido explícito: "ajuste tudo em uma única tabela, compile todas as
@@ -3459,6 +3498,682 @@ borda extrapolada); ponto do meio continua centralizado (diferença
 resizable-handle-s`) ainda mantém o tooltip dentro dos limites
 verticais; conteúdo legível em todos os casos. 0 erros de console.
 Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+## Setor 4 — Suprimentos sai do placeholder, Curva A dos itens macro (2026-08-21)
+
+"a partir da table itens RMI iremos basear a tela de suprimentos, quase
+que como um mapa de suprimentos automático... a ideia é fazer um
+acompanhamento gerencial dos itens críticos, os críticos serão, por
+hora, os itens Curva A, que correspondem, em sua soma, a 80% do valor do
+projeto" — em cima de `itens_rmi` (fonte `rmi_api`, ver
+[[07 - Modelo de Dados]] e `n8n/rmi-suprimentos.README.md`).
+
+**"Item macro" = `raw.nivel === 1`, não o item-folha.** Cada obra tem
+milhares de itens numa árvore de até 5 níveis (`codigo_seq` tipo
+"1.1.1.16.1.2"); nível 1 (ex. "Tubulação", "Estrutura Metálica") é a
+granularidade certa pra visão gerencial — validado no dado real (obra
+91): o subtotal do nível 1 bate exato com a soma de tudo abaixo dele em
+153 de 161 casos. **Nível 0 é NÃO confiável** — na RMI "GERAL" o
+subtotal do nível 0 vem zerado apesar de ~95M de valor real embaixo (bug
+da própria origem, não do painel); por isso o cálculo nunca usa nível 0.
+
+**Curva A** = ordena os itens macro por `subtotal_custo_meta_orcamento`
+decrescente, acumula, e marca como crítico todo item cujo acumulado
+ANTES de somá-lo ainda não tinha cruzado 80% do total (convenção padrão
+de curva ABC — o item que cruza o corte ainda entra).
+
+**Itens de canteiro/apoio ficam de fora do cálculo inteiro** — correção
+de escopo pedida em seguida: "vamos nos ater aos itens de obra, itens de
+canteiro como consumíveis, alojamento e afins não precisam ser
+considerados". Como são 2.975 descrições distintas nas 6 obras (sem
+taxonomia fixa), a separação é por PALAVRA-CHAVE (`ehItemCanteiroRmi`),
+não lista fechada de nomes:
+
+- Exclui (canteiro): CANTEIRO DE OBRAS, ALOJAMENTO, FILIAL, CONSUMÍVEIS,
+  UNIFORME, FRETE, COMBUSTÍVEL/DIESEL, MOBILIZAÇÃO, FERRAMENTA, SEGURO,
+  ÔNIBUS, ASO, EPI(S), QUALIFICAÇÃO DE SOLDADORES, TREINAMENTO, e
+  equipamento alugado (ESCAVADEIRA, MOTONIVELADORA, ROLO COMPACTADOR,
+  CAMINHÃO BASCULANTE, PLATAFORMA DE LANÇA ARTICULADA, RETROESCAVADEIRA,
+  GUINDASTE, MUNCK) — decidido via pergunta direta ao usuário.
+- Fica como item de obra (NÃO exclui), por decisão explícita: Serviços
+  Terceirizados, Equipamentos de Medição e Apoio.
+- **Categoria nova/desconhecida (sem match de palavra-chave) entra como
+  item de obra por padrão** — a lista é só de EXCLUSÃO, nunca inclusão
+  fechada. Racional do usuário: melhor arriscar incluir um item de
+  canteiro raro do que esconder um item de obra real por engano de
+  classificação (mesmo espírito de `corStatusRestricao`/`corStatusOc`,
+  nunca esconder categoria desconhecida).
+
+**`prazo_status` descartado como critério** — investigado antes de
+decidir: 100% dos itens de obra 91 vieram `sem_data` (API ainda não
+popula essa dimensão pra nenhuma obra carregada). O placeholder antigo
+falava em "prazo × impacto"; ficou só valor (Curva A) como critério de
+"crítico" por hora. `desvio_saldo_orcamentario` (positivo/negativo/
+zerado) já vem populado e aparece como badge complementar na tabela, sem
+custo extra de ingestão.
+
+**UI**: 4 balões de resumo (Itens Críticos "N de M", Valor coberto pela
+Curva A, Valor total de obra considerado, Itens de canteiro excluídos +
+seu valor) + tabela dos itens Curva A (Descrição, RMI de origem, Valor,
+% individual, % acumulado, Saldo Orçamentário, badge de Desvio) com
+rodapé somando o restante (Curva B/C) + gráfico de Curva ABC (`Grafico
+CurvaA`, SVG hand-rolled no mesmo padrão do resto do arquivo: barras de
+valor individual, linha de % acumulado, linha de referência nos 80%,
+tooltip por hover).
+
+Testado via Playwright (obra 91): 5 itens críticos de 143 macro-itens
+somam 83.7% do valor de obra (R$ 84,4M de R$ 100,8M); nenhum item de
+canteiro (Alojamento, Consumíveis, Construção do Canteiro) vazou na
+tabela; 18 itens de canteiro excluídos (R$ 32,7M) contabilizados à
+parte; 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+### Gráfico sai por hora, foco na tabela (2026-08-21, mesmo dia)
+
+"Vamos focar na tabela, por hora" → confirmado "Deixar só a tabela".
+`GraficoCurvaA` removido (função inteira, não usada em nenhum outro
+lugar) e a tabela passou a ocupar a largura inteira do card. Sem
+gráfico nenhum na tela por ora — pode voltar depois se fizer sentido.
+
+### "Item macro" deixa de ser nível fixo, passa a ser resolvido por RMI (2026-08-21, mesmo dia)
+
+Usuário reportou, olhando o CNPEM Faseado: "Ainda tem algumas linhas
+que não nos interessam... vamos exibir as linhas relacionadas aos
+níveis, que são a estrutura básica da EAP". Investiguei os 2 casos reais
+antes de mexer em código (ADR-005) — achado que muda a premissa da
+seção acima:
+
+- **Obra 91**: nível 0 é "balde" de origem de material (`MATERIAIS -
+  UB`, `MATERIAIS - SP`, `CHANGE ORDER N` — quase todos com subtotal
+  zerado). A disciplina real ("Estrutura Metálica", "Tubulação") só
+  aparece no nível 1 — por isso nível 1 fixo funcionava aqui.
+- **CNPEM Faseado**: é o INVERSO — nível 0 já É a disciplina real (HVAC
+  R$11,7M, CIVIL R$4,7M, ELÉTRICA E SISTEMAS R$6M, COMBUSTÍVEL, EPI,
+  CANTEIRO...). Nível 1 aqui é item de linha bem granular ("Combustível
+  para Guindaste de 35 ton") — 814 linhas, nível 1 fixo quebrava aqui.
+- **RMI 43/GERAL (obra 91)**: tem um ramo cujo nível 0 nem existe como
+  linha na origem (órfão) — só os filhos de nível 1 carregam o valor
+  real (~R$46M nesse ramo). Já era o motivo de nível 0 ter sido
+  descartado como "não confiável" na 1ª versão desta tela.
+
+**Não dá pra fixar 1 nível pro produto inteiro** — muda de RMI pra RMI,
+dependendo de como cada RMI foi montada na origem. Perguntei ao usuário
+como resolver isso (AskUserQuestion) em vez de supor: escolheu detecção
+automática por padrão de nome, em vez de confirmação manual RMI a RMI.
+
+`resolverItensMacroRmi` decide, por RAMO (`id_rmi` + `codigo_seq`), se
+usa o nível 0 ou desce pro nível 1 do ramo:
+1. **Padrão de nome** — nível 0 com nome batendo `/^(MATERIAIS\s*-|
+   CHANGE ORDER\b|OC\s*-|CO\s+\d)/` (normalizado, maiúsculo sem acento)
+   é tratado como "balde" administrativo → sempre desce.
+2. **Subtotal zerado com filho de valor real** — nível 0 = 0 mas a soma
+   dos filhos de nível 1 daquele ramo é > 0 → desce (pega o bug de
+   rollup da origem, não só o nome).
+3. **Ramo órfão** — existem itens de nível 1 com aquele código-pai mas
+   nenhuma linha de nível 0 correspondente → desce (não tem outra opção).
+4. Nenhuma das 3 condições → usa o nível 0 direto (já é a disciplina).
+
+Só resolve 1 nível de profundidade (nível 0 → nível 1); se aparecer uma
+3ª obra com "balde" aninhado mais fundo, revisitar.
+
+**Custo**: fetch mudou de 1 pra 2 requisições por obra (nível 0 + nível
+1) — a resolução por ramo precisa comparar os dois antes de decidir.
+
+**Validado sem regressão**: simulei a lógica nova em Node contra o dado
+real das 2 obras antes de tocar na UI. Obra 91 bateu EXATO com o
+resultado já testado antes (5 itens, R$ 84.419.464,60 de R$
+100.813.420,36 — mesmos valores, dígito a dígito). CNPEM Faseado: 4
+itens críticos de 315 macro-itens (HVAC, Elétrica e Sistemas, Civil,
+Custos com Efetivo MSE), 81,5% do valor considerado, nenhuma linha
+granular tipo "Combustível para Guindaste" sobrando. Playwright
+confirmou os mesmos números nas 2 obras depois, 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Linha da Curva A expande e mostra 1 nível de detalhe (2026-08-21, mesmo dia)
+
+"Preciso conseguir abrir mais um nível e ver o que está contemplado na
+curva A". Cada linha da tabela virou clicável (mesmo padrão visual de
+`LinhaLocalDesvio` em Desvios — chevron `▸`/`▾` mono antes do texto,
+`React.Fragment` com uma 2ª `<tr>` condicional pro detalhe).
+
+Como o "item macro" pode ter vindo do nível 0 OU do nível 1 (depende do
+ramo, ver seção acima), o detalhe também é resolvido caso a caso:
+- Item de nível 0 → filhos são nível 1, **já estão em memória**
+  (`itensPorNivel.n1`, a obra inteira já foi buscada) — filtra local,
+  sem requisição nova.
+- Item de nível 1 → filhos são nível 2, nunca buscados antes — 1 fetch
+  sob demanda só daquele `id_rmi`+nível, disparado ao expandir (não
+  pré-carrega a árvore inteira da obra de antemão, que seria caro pra
+  RMIs com milhares de folhas).
+- Resultado cacheado por item (`filhosPorItem`) — fechar e reabrir não
+  refaz o fetch.
+
+`LinhasDetalheRmi` é só apresentação (Descrição, Valor, % do item pai,
+Saldo Orçamentário) — não reaplica filtro de canteiro nem lógica de
+Curva A no nível-folha, é puro "o que compõe isso por baixo".
+
+Testado via Playwright (obra 91 e CNPEM Faseado): expandir/colapsar
+funciona nos 2 casos (memória e fetch sob demanda), cache confirmado
+(reabrir não refaz requisição, mesmos dados), valores sempre ≤ item
+pai, 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+**Correção no mesmo dia**: "Preciso que o valor esteja alinhado na
+coluna da macro, o saldo orçamentário também, a % não é necessária" —
+a 1ª versão usava uma mini-tabela própria dentro de 1 `<td colSpan=7>`,
+que não alinhava com as colunas do pai. `LinhasDetalheRmi` passou a
+renderizar `<tr>` direto nas mesmas 7 colunas da tabela pai (Valor e
+Saldo Orçamentário caem exatamente sob os cabeçalhos correspondentes;
+RMI/%/Desvio ficam vazios no detalhe); coluna de % removida. Validado
+via `getBoundingClientRect` (0px de diferença entre cabeçalho e linhas
+de detalhe). **Lição**: ao empilhar uma tabela de detalhe dentro de
+outra, alinhamento de coluna exige usar a MESMA grade de `<td>` da
+tabela pai — uma tabela aninhada nunca alinha por conta própria, por
+mais que as larguras pareçam parecidas.
+
+### Crítico vira MATERIAL, não mais disciplina inteira (2026-08-21, mesmo dia)
+
+"no CNPEM o item de custo com efetivo não precisa aparecer também.
+Observe no nível de material, é isso que precisamos exibir, os
+materiais críticos, orientados por área e disciplina." — correção de
+escopo maior que as anteriores: o crítico deixa de ser a DISCIPLINA
+inteira (Estrutura Metálica, HVAC — o que a tela mostrava desde a 1ª
+versão) e passa a ser o MATERIAL (item-folha de verdade), com
+disciplina/área como colunas de contexto.
+
+**Material não é nível fixo** (nem sequer dentro do mesmo ramo — RMI
+41/obra 91 tem material genuíno tanto em nível 3 quanto 4). Identificado
+por 2 sinais, não posição na árvore:
+1. `unidade` populada e diferente de `SERV` (mão de obra) e `VB`/`VERBA`
+   (verba/lump-sum, geralmente RH — é assim que "Custos com Efetivo
+   MSE" se resolveu sozinho: por baixo só tem treinamento, passagens e
+   plano de saúde, todos `vb`, nenhum material de verdade).
+2. Descrição não bate uma lista curta de itens que escapam do filtro de
+   unidade mas não são material (TESTES E MEDIÇÕES, OMISSOS,
+   Comissionamento — vêm com unidade "UN", igual material de verdade).
+
+**Evita contar 2x**: um nó com valor real (ex. "Estrutura média",
+2,46M) pode ter um filho-complemento zerado com a MESMA unidade (visto
+na obra 91: "SPINE COMPLEMENT" kg, valor 0, filho de "Estrutura média").
+Só desce pro filho se ele também tiver valor > 0; senão o próprio nó já
+é o material.
+
+**Área**: investigação (comparando as 2 obras de novo) achou que a
+"área" (zona física) só existe como conceito claro quando fica ABAIXO
+da disciplina na árvore — CNPEM: disciplina "HVAC" → área "Instalações
+Nível 614" → (sistema/circuito, ignorado) → material. Na obra 91 é o
+INVERSO: a "área" (UB/SP) é exatamente o nível que a resolução de
+disciplina descarta como "balde" (`MATERIAIS - UB`/`MATERIAIS - SP`) —
+fica ACIMA, não abaixo. Perguntei ao usuário como tratar essa
+assimetria (AskUserQuestion) em vez de tentar unificar os 2 casos num
+conceito só de "linha de área": escolhido dobrar o nome da disciplina
+quando a área fica acima (`Estrutura Metálica — SP`), e área vira
+coluna própria só quando fica abaixo.
+
+**Bug pego na validação, corrigido antes de subir**: o sufixo só pode
+ser aplicado quando a descida da disciplina foi por PADRÃO DE NOME
+reconhecível (`MATERIAIS - X`) — no fallback de "subtotal zerado com
+filho de valor real" (pensado pro bug de rollup da RMI 43/GERAL), o pai
+às vezes é só uma referência de aditivo/escopo (RMI pequena tipo "SAE002
+- Rede de coleta de condensados", vista no CNPEM), sem nenhuma
+informação de disciplina/área. Dobrar o nome nesse caso produzia rótulo
+sem sentido ("Central de vácuo Bonito... — SAE002 - Rede de coleta de
+condensados"). Corrigido restringindo o dobramento só ao caso de padrão
+de nome.
+
+Fetch mudou de "nível 0 + nível 1" pra "obra inteira, 1 requisição só" —
+resolver disciplina/área/material precisa caminhar a árvore até a
+folha, que pode estar em qualquer profundidade (volume por obra já
+confirmado pequeno o bastante, ~500 a ~8.000 linhas). A funcionalidade
+de "expandir 1 nível" (do pedido anterior, mesmo dia) ficou obsoleta —
+a linha já É o material agora, não há mais nível pra abrir — e foi
+removida (`LinhasDetalheRmi` deletada).
+
+**Padrão de processo que valeu a pena repetir**: antes de tocar na UI,
+simulei a lógica inteira (bem mais complexa que a resolução de
+disciplina do pedido anterior — combina 3 regras: material,
+disciplina, área) em um script Node isolado contra o dado real das 2
+obras. Foi assim que o bug do "SAE002" apareceu e foi corrigido ANTES
+do teste de navegador — iterar em Node é bem mais rápido que
+recarregar a tela a cada ajuste numa lógica com várias condições
+combinadas.
+
+Testado via Playwright depois da simulação bater: obra 91 = 86 de 746
+materiais críticos (mesmos valores da simulação, dígito a dígito);
+CNPEM Faseado = 158 de 1451, 0 disciplinas com "EFETIVO" remanescentes.
+0 erros de console nas 2 obras. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
+### Tabela vira árvore Área → Disciplina → Material (2026-08-21, mesmo dia)
+
+"a ideia é essa, mas precisa estar organizado em nívels, Área ->
+Disciplina -> Material, outro ponto é, a necessidade de compilar
+materiais similares em uma coisa só" — 2 pedidos no mesmo comentário.
+
+**Área vira campo próprio, não mais sufixo no nome.** A entrega anterior
+tinha resolvido a assimetria (área acima da disciplina na obra 91 vs.
+abaixo no CNPEM) dobrando o nome (`Estrutura Metálica — SP`) porque a
+tabela era plana — não tinha onde mais colocar a área. Com hierarquia
+de verdade pedida agora, isso deixou de fazer sentido: UB/SP e
+"Instalações Nível 614" viraram NÓS de área reais, ambos exibidos da
+mesma forma (Área → Disciplina → Material), não importa se na árvore
+original do RMI a área fica acima ou abaixo da disciplina.
+
+**Consolidação** (`consolidarMateriaisSemelhantes`): soma valor (+
+saldo orçamentário) de materiais com a MESMA descrição normalizada
+dentro do MESMO par área+disciplina — nunca entre grupos diferentes
+(perderia a orientação que é o objetivo da tela) nem tenta casar
+descrições parecidas-mas-diferentes (tubulação DN 14"/DN 12" continuam
+linhas separadas, são especificações diferentes).
+
+**2 bugs reais pegos na validação em Node, antes do teste de
+navegador** (mesmo padrão de processo da entrega anterior, valeu ainda
+mais aqui):
+1. A área herdada de cima (obra 91) estava sendo sobrescrita pelo
+   primeiro sub-agrupamento encontrado 1 nível abaixo da disciplina —
+   resultado: "áreas" sem sentido tipo "Aço Carbono", "Vigas - Perfís
+   laminados...". Só captura área de baixo quando NÃO existe área
+   herdada de cima.
+2. Quando o material é filho DIRETO da disciplina, sem camada de área
+   nenhuma (ex. "Equipamentos"/obra 91 — cada linha já É um equipamento
+   específico), a área virava igual ao nome do próprio material. Só
+   promove o nome do nível-abaixo a "área" quando esse nível NÃO é ele
+   mesmo o material.
+
+Resultado real: obra 91 colapsa pra 3 áreas (UB, SP, "sem área" —
+Equipamentos e Serviços Terceirizados, que não têm quebra por zona);
+CNPEM Faseado pra 6 áreas (Central de Água Gelada, Instalações Nível
+614/619/623, Caixa de Acesso, "sem área"). Tabela caiu de 8 pra 6
+colunas — Área/Disciplina/Material vira 1 coluna hierárquica com
+indentação (linha de área só com valor total, disciplina idem, material
+com % Individual/Acumulado/Saldo/Desvio completos).
+
+**Ponto cosmético aceito, não corrigido**: RMIs pequenas de aditivo
+(SAE001-005 no CNPEM) não têm disciplina real — o nome da disciplina
+acaba sendo igual ao do único material dentro dela, então a árvore
+mostra o mesmo texto 2x seguidas (header de disciplina + linha de
+material). Não é perda de dado (a linha de material continua com
+%/saldo/desvio completos), só redundância visual num punhado de itens
+de baixo valor. Não mexi nisso por ora.
+
+Testado via Playwright: obra 91 e CNPEM Faseado renderizando a árvore
+de 3 níveis corretamente (6 colunas, indentação, valores nas linhas
+certas), 0 erros de console. Deploy: `firebase deploy --only hosting
+--project planejamento-mse`.
+
+### Consolida materiais por família — mesma peça, tamanhos diferentes (2026-08-21, mesmo dia)
+
+"É nesse sentido, mas ainda podemos comprimir mais os itens, em coisas
+similares" — a consolidação anterior só juntava descrição EXATA
+idêntica; a mesma peça em tamanhos diferentes (ex. "Isolamento de
+Flanges - 10\" - Espuma..." e mais ~20 variações de diâmetro/material,
+todas na RMI de Tubulação/obra 91) continuava em linhas separadas.
+
+`familiaMaterialRmi` corta a descrição no primeiro `" - "` (espaço-
+traço-espaço) — é o separador real observado entre nome-base e
+especificação nesse padrão de descrição. Deliberadamente simples: não
+tenta reconhecer DN/Ø/Btu/h/mm² um por um. Hífen SEM espaço ao redor
+(`380-220V`, `CS 600X250`, `W310X38.7`) nunca bate — fica intacto, o
+comportamento seguro quando não dá pra separar nome-base de
+especificação com confiança. Antes de implementar, mostrei o padrão
+achado e perguntei (AskUserQuestion) se comprimir mantendo detalhe num
+popup ou sem guardar detalhe — escolhido sem guardar detalhe.
+
+Consolidação passou a agrupar por família (não mais descrição exata)
+dentro do mesmo par área+disciplina — mas a descrição exibida só vira o
+nome genérico quando REALMENTE há mais de 1 item consolidado ali; item
+único mantém a descrição completa (evita perder especificação à toa
+quando não havia nada pra comprimir). Indicador `(N itens)` cinza ao
+lado do nome quando a linha é fruto de consolidação.
+
+Testado: simulação em Node confirmou compressão real sem nenhuma junção
+aparentemente errada; Playwright confirmou na tela — obra 91 com 8
+famílias consolidadas ("Isolamento de Flanges" = 22 itens, "Cabo
+0,6/1kV..." = 15 itens); CNPEM Faseado com 21 famílias ("Tubulação Aço
+carbono" = 14 itens, "Fancoil Trox ICV" = 7 itens). 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Restringe a tela ao CP029 até validar as outras obras (2026-08-24)
+
+"Pela diversidade na forma como estão cadastradas as RMIs as mudanças
+terão de ser específicas para cada obra, vamos considerar que as
+feitas até o momento são válidas apenas para o cp029." — depois de
+várias rodadas desenhando/testando a régua de disciplina, área,
+material, canteiro e família comparando CP029 (CNPEM - Faseado,
+id_obra 106) × obra 91 (Novo Nordisk UB/SP), o usuário decidiu que o
+resultado só está validado pro CP029 mesmo — as 2 obras já mostraram
+convenções de RMI genuinamente diferentes (nível 0 vs. 1 pra
+disciplina, área acima vs. abaixo da disciplina), e as outras 4 obras
+do painel não foram checadas RMI por RMI ainda.
+
+`ModuloSuprimentos` ganhou `OBRA_SUPRIMENTOS_VALIDADA = 106`: pra
+qualquer `obraId` diferente, nem dispara o fetch de `itens_rmi` (evita
+chamada desnecessária) e mostra uma mensagem explicando que a obra
+ainda precisa de checagem própria, em vez de aplicar a régua atual às
+cegas — o risco de "crítico" errado silencioso numa tela gerencial é
+mais caro que deixar a tela indisponível pra quem ainda não foi
+validado.
+
+Testado via Playwright: obra 106 (CP029) continua funcionando
+normalmente (KPIs + árvore com dado real, 0 erros); obra 91 mostra a
+mensagem de bloqueio e confirmado 0 requisições a `itens_rmi`
+disparadas para ela (a restrição barra antes do fetch). Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+**Pendência registrada**: validar RMI por RMI as outras 5 obras
+(Novo Nordisk UB/SP/CP236 — apesar de já ter sido usada nos testes
+comparativos, o usuário fechou a validade só em CP029 mesmo —, Hitachi/
+CP022, Porto Itapoá/CP002, Novo Nordisk-AP/CP273 e Novo Nordisk-AP-
+Reforço/CP261) antes de estender a tela pra elas — mesmo processo usado
+até aqui (investigar estrutura real via PostgREST antes de assumir).
+
+### Exclui itens sem área e simplifica descrições sempre (2026-08-24, mesmo dia)
+
+"Seguindo na linha do cp029. Itens sem área não precisam ser
+considerados. Precisamos agrupar e simplificar as descrições dos
+materiais... exemplo: Chiller - Turbo Trans Air-Colled: TTA-450,
+modelo AD160.4EF1AKUAA024XA.02D poderá ser simplesmente: Chiller."
+
+- **Sem área = fora do cálculo inteiro**, não só escondido da árvore —
+  mesmo tratamento que canteiro. Novo 5º KPI "Itens sem área
+  identificada" (qtd + valor), mesmo padrão visual do de canteiro, pra
+  não esconder o que foi excluído sem explicar. `agruparPorAreaDisciplina`
+  perdeu o fallback `'(sem área)'` (virou código morto — nenhum material
+  sem área chega mais até ali).
+- **`familiaMaterialRmi` ganha um 2º separador**: além do primeiro
+  `" - "` (da entrega anterior), agora também corta na primeira vírgula
+  que NÃO esteja colada a dígito dos 2 lados — usa o que vier primeiro
+  dos 2 candidatos. Pega o padrão real de descrições longas separadas
+  por vírgula (ex. "Elevador Linha 3300 Atlas Schindler, com
+  capacidade..." → "Elevador Linha 3300 Atlas Schindler"). **Ressalva
+  importante**: vírgula também é separador DECIMAL em pt-BR dentro
+  dessas descrições (ex. "Cabo 0,6/1kV") — sem o cuidado de ignorar
+  vírgula colada em dígito, "Cabo 0,6/1kV" viraria "Cabo 0", quebrado.
+- **Consolidação sempre mostra a família**, não só quando há duplicata
+  pra juntar — a entrega anterior mantinha a descrição completa em item
+  único "pra não perder especificação à toa"; o pedido de agora deixou
+  claro que a simplificação vale mesmo sem duplicata (é sobre leitura,
+  não só desduplicação).
+
+Testado: simulação em Node contra dado real do CP029 confirmou "Chiller"
+saindo limpo e nenhum corte aparentemente errado na lista inteira (88
+materiais). Playwright confirmou na tela: KPI "Itens sem área
+identificada" = 318 (R$ 5.289.265,38); nenhum grupo "(sem área)" na
+árvore; material "Chiller" exibido exatamente assim, R$ 6.480.000; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
+### Permite fechar Área e Disciplina, visão macro (2026-08-24, mesmo dia)
+
+"Precisamos conseguir fechar os itens, visualização macro é relevante."
+Linhas de Área e Disciplina na árvore ganharam chevron (▾ aberto/▸
+fechado) clicável, mesmo padrão visual já usado em `LinhaLocalDesvio`
+(Desvios). Fechar uma Área esconde disciplinas + materiais dela; fechar
+uma Disciplina esconde só os materiais dela; em ambos os casos o valor
+total da própria linha continua visível — dá pra ver o "macro" (só
+áreas e disciplinas com valor) sem precisar rolar pelos materiais.
+Nasce tudo aberto (comportamento anterior preservado; fechar é opt-in).
+
+Testado via Playwright (CP029): 106 linhas visíveis com tudo aberto;
+fechar a 1ª área derruba pra 93 linhas (valor da área mantido);
+reabrir volta a 106 com o mesmo valor; fechar 1 disciplina (com a área
+aberta) derruba pra 100 linhas sem afetar as outras disciplinas da
+mesma área; reabrir volta a 106. 0 erros de console. Deploy: `firebase
+deploy --only hosting --project planejamento-mse`.
+
+### Catálogo de itens padrão pra simplificar descrições (2026-08-24, mesmo dia)
+
+"Pensei no seguinte, criar um banco de itens padrão, a descrição deverá
+ter match com um daqueles itens, algo como: Chiller, válvulas e
+acessórios, elevadores, isolamento térmico, tubulação Aço Carbono,
+tubulação Inox, Cabos, Painéis. Consegue verificar os dados e gerar uma
+lista deste tipo? Que cubra a maior parte dos itens? Se ficar com
+dúvida em algum, questione."
+
+`CATALOGO_MATERIAIS_RMI` — ~30 categorias levantadas analisando os
+1.133 materiais reais do CP029 (script Node descartável contra o
+PostgREST, fora do repo). Cobre **97,6% do VALOR** (60% da contagem —
+o resto é cauda longa de itens únicos de baixo valor, que caem no
+fallback por separador da entrega anterior). Além dos 8 exemplos
+dados, entraram: Fancoils e Fancoletes, Molas, Ventiladores e
+Exaustores, Difusores e Grelhas, Bombas, Instrumentação, Detecção e
+Alarme, Combate a Incêndio, Ventilação e Dutos, Automação e Controle,
+Rede/Cabeamento Estruturado, CFTV, Iluminação, Eletrodutos e
+Infraestrutura Elétrica, Estrutura e Suportação Metálica, Concreto e
+Impermeabilização, Pisos, Rodapés e Acabamentos, Divisórias, Esquadrias,
+Portas, Pintura, Forros e Drywall, Louças e Metais, Marcenaria e
+Mobiliário, Revestimentos.
+
+**2 perguntas resolvidas antes de implementar** (ADR-005 — não
+fabricar classificação sem confirmar), via AskUserQuestion:
+1. O maior bloco não classificado era um código repetido tipo
+   "RMTAC-F2 1.0Y1 (dutos)"/"RMG 1.606F4-26 (chillers e ventiladores)"
+   — não reconhecível como tipo de material. Usuário confirmou: são
+   **molas antivibratórias** (código de sala/sistema entre parênteses).
+2. Escopo: manter categorias de acabamento civil (Pisos, Elevadores,
+   Divisórias, Pintura, Louças) junto das de MEP, não só os 8 exemplos
+   dados — confirmado que sim.
+
+`familiaMaterialRmi` passou a tentar o catálogo PRIMEIRO
+(`classificarMaterialRmi`); sem match, cai no corte por separador (" -
+"/vírgula segura) da entrega anterior. Isso faz a consolidação já
+existente juntar qualquer variante do mesmo TIPO de item dentro do
+mesmo par área+disciplina — não só duplicatas exatas ou da mesma
+"família" de nome — ex. "Válvula Borboleta 10"", "Válvula Balanceadora
+2"" e "Filtro Y 1"" viram 1 linha "Válvulas e acessórios" só.
+
+**Ordem das categorias importa** (primeira que bate, ganha) — 2 casos
+de colisão pegos ANTES e DEPOIS de subir:
+- Pego na revisão manual (antes de subir): "Louças e Metais" e
+  "Eletrodutos e Infraestrutura Elétrica" ficam ANTES de "Válvulas e
+  acessórios" — palavras curtas genéricas (VALVULA/FLANGE/CURVA 90)
+  colidiam com "Válvula para Mictório/Lavatório" (registro de louça,
+  não válvula de processo) e "Flange ligação perf fze"/"Curva 90°
+  leito horizontal" (acessório de bandeja elétrica, não de tubulação).
+- Pego no teste Playwright (depois de subir, corrigido no mesmo commit):
+  "Molas" fica ANTES de "Chiller" — "RMG 1.606F4-26 (chillers e
+  ventiladores)" é mola, mas o texto entre parênteses contém
+  literalmente "chillers", inflando o Chiller em ~R$68 mil (de R$
+  6.480.000,00 pra R$ 6.548.277,60, com indicador errado "(2 itens)").
+
+Testado: cobertura e falsos positivos revisados em Node contra dado
+real antes de subir (mesmo padrão de processo das entregas anteriores
+do dia). Playwright confirmou na tela: Curva A caiu de ~88 pra 35
+linhas; "Chiller" exato R$ 6.480.000,00 sem contaminação (confirmado
+inclusive chamando `classificarMaterialRmi` ao vivo no console do
+navegador); "Válvulas e acessórios" e "Cabos" consolidando dezenas de
+itens cada; nenhuma descrição longa/técnica sobrando na Curva A; 0
+erros de console. Deploy: `firebase deploy --only hosting --project
+planejamento-mse`.
+
+### Volta atrás na supressão da Curva A (2026-08-24, mesmo dia)
+
+"Volte ao anterior, estava mais alinhado" — logo depois da tentativa de
+suprimir a Curva A (mapa geral, 499 materiais), sem elaborar o motivo.
+Revertido via `git revert` dos 2 commits daquela tentativa (código +
+docs), voltando exatamente ao estado anterior (catálogo de itens
+padrão + corte de Curva A). Não testado de novo via Playwright — é
+revert byte-a-byte pra um estado já validado antes.
+
+### Remove balões do topo, adiciona Total Consumido e Finalizado (2026-08-24, mesmo dia)
+
+"Vamos retirar os balões superiores, trazer o total consumido também,
+o finalizado é algo interessante de se trazer."
+
+- Fileira de KPI do topo removida por completo — a tela vai direto do
+  cabeçalho de setores pro card da tabela. O cálculo de canteiro/sem
+  área que os balões mostravam continua rodando (ainda exclui do mapa),
+  só parou de aparecer.
+- **Total Consumido** (`raw.total_consumido`) nova coluna, entre Valor
+  e % Individual.
+- **Finalizado** (`raw.finalizado`) nova coluna, no fim — confirmado no
+  dado real que o campo varia (478 true / 522 false no CP029, não é
+  sempre a mesma coisa). Item único mostra badge Sim/Não; linha
+  consolidada (várias peças da mesma categoria) mostra "X/Y" (quantos
+  dos itens somados já estão finalizados) — reduzir a um booleano só
+  não fazia sentido quando a linha representa várias peças físicas
+  diferentes; a cor do badge acompanha (verde = todos, âmbar = parcial,
+  cinza = nenhum).
+
+Testado via Playwright (CP029): sem nenhum balão no topo; 8 colunas no
+cabeçalho (Área/Disciplina/Material, Valor, Total Consumido, %
+Individual, % Acumulado, Saldo Orçamentário, Desvio, Finalizado);
+Chiller com Total Consumido R$ 14.256.000,00 (maior que o valor
+orçado, daí o desvio NEGATIVO já existente) e Finalizado "Sim"; linhas
+consolidadas cobrindo os 3 estados de cor do badge (9/9 verde, 0/7
+cinza, 3/10 âmbar); linhas de área/disciplina sem conteúdo quebrado
+nas colunas novas; 0 erros de console. Deploy: `firebase deploy
+--only hosting --project planejamento-mse`.
+
+### Remove colunas de %, Finalizado vira Status com 3 estados (2026-08-24, mesmo dia)
+
+"As % podem ser suprimidas também. Com relação ao finalizado, vamos
+chamar de coluna de status e classificar em finalizado, em andamento e
+pendente. Em andamento será para itens que já tiveram algo finalizado,
+pendente será nada finalizado, ao passar o mouse pelo status poderemos
+ver a contagem de itens 1/20 por exemplo."
+
+- Colunas "% Individual" e "% Acumulado" removidas (8 → 6 colunas). O
+  cálculo interno de % continua existindo no modelo de dados (ainda
+  decide o corte de Curva A), só parou de aparecer na tabela.
+- `FinalizadoBadgeRmi` virou `StatusBadgeRmi`, 3 estados por contagem
+  de itens finalizados na linha (uma linha pode ser consolidação de
+  várias peças — catálogo de itens padrão): nenhum finalizado =
+  **Pendente** (cinza); todos finalizados = **Finalizado** (verde); só
+  parte = **Em andamento** (âmbar). A fração "X/Y" que antes ia direto
+  no texto do badge virou tooltip (`title`, "X/Y itens finalizados").
+
+Testado via Playwright (CP029): 6 colunas confirmadas; Chiller =
+Finalizado (`title="1/1 itens finalizados"`); linha consolidada sem
+nenhum finalizado = Pendente (`title="0/7..."`); linha parcial = Em
+andamento (`title="3/10..."`); varredura de todas as 31 linhas
+consolidadas confirmou status sempre coerente com a fração; layout
+íntegro nas linhas de área/disciplina; 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
+
+### Pop-up dos itens aninhados + hover do Status vira troca de texto (2026-08-24, mesmo dia)
+
+"Vamos gerar um pop-up que permita verificar quais são os itens que
+estão aninhados, ao clicar na linha de resumo dele, outro ponto, havia
+pensado na exibição ao passar o mouse como uma mudança no cartão do
+status, não uma informação acima."
+
+- `consolidarMateriaisSemelhantes` passou a guardar `itensOriginais`
+  (array com os itens de antes da fusão por família, ordenado por
+  valor decrescente) além de `qtdConsolidada`/`qtdFinalizados` — dado
+  que já existia calculado, só não estava sendo carregado adiante.
+- Linha de material com mais de 1 item consolidado ganhou indicador
+  azul "(N itens ›)" ao lado da descrição e ficou clicável; o clique
+  abre um pop-up (mesmo padrão visual `modal-overlay-in`/`modal-card-in`
+  já usado no resto do produto, ex. detalhe de OC/CO) com cabeçalho
+  "Área — Disciplina" + nome do material, e a lista dos itens
+  originais (descrição completa, valor, status individual
+  Finalizado/Pendente). Linha de item único (sem "aninhados") não
+  reage ao clique — não tem o que abrir.
+- Correção de rumo no `StatusBadgeRmi`: a fração "X/Y itens
+  finalizados" tinha sido implementada como tooltip nativo (`title`),
+  que aparece como uma caixa flutuando ACIMA do cursor. O usuário
+  queria uma troca de conteúdo DENTRO do próprio cartão do badge, não
+  uma informação por cima. Resolvido com 2 `<span>` internos e CSS
+  puro (`.status-badge-rmi-texto`/`.status-badge-rmi-fracao`, um
+  escondido e outro mostrado no `:hover` do badge) — sem `title`,
+  sem JS extra.
+
+Testado via Playwright (CP029): pop-up abre com cabeçalho e contagem
+corretos e a lista bate item a item com o "(N itens)" do título; fecha
+pelo "✕" e por clique fora do card; linha sem aninhados não abre nada
+e mantém `cursor: default`; nenhum badge tem atributo `title`; hover
+troca texto↔fração nos 35 badges da tabela, cor sempre coerente com a
+fração (verde = X=Y, cinza = 0/Y, âmbar = 0<X<Y); 0 erros de console.
+Deploy: `firebase deploy --only hosting --project planejamento-mse`.
+
+### Farol Financeiro substitui Valor/Consumido/Saldo/Desvio, entram as datas de compra (2026-08-24, mesmo dia)
+
+"O valor, total consumido e saldo orçamentário poderão ser parte de um
+farol, a coluna chamará Farol Financeiro, funcionando similarmente ao
+desvio (que poderá ser suprimida). Vamos exibir a data da necessidade
+de compra, prazo de entrega, e material em obra, que será a Data da
+necessidade somada ao prazo de entrega."
+
+Duas perguntas feitas antes de codar (ADR-005 — não inventar regra de
+negócio):
+- **Regra de cor do farol** — confirmado reaproveitar a mesma
+  classificação que já existia na coluna Desvio
+  (`desvio_saldo_orcamentario`: positivo=verde, negativo=vermelho), em
+  vez de um limiar novo por % consumido.
+- **Data em linha consolidada** (vários itens fundidos pelo catálogo
+  de materiais) — confirmado deixar em branco no resumo; cada item tem
+  seu próprio prazo de compra, não existe 1 data representativa sem
+  fabricar uma regra de agregação. As datas reais aparecem no pop-up
+  de itens aninhados.
+
+Mudanças:
+- Colunas "Valor", "Total Consumido", "Saldo Orçamentário" e "Desvio"
+  saíram; entraram "Farol Financeiro", "Data da Necessidade de
+  Compra", "Prazo de Entrega" e "Material em Obra" — 6 colunas no
+  total, mesma contagem de antes.
+- `FarolFinanceiroRmi`: ponto colorido (mesmo padrão visual dos outros
+  faróis do produto — Medido×Previsto e Medido×Físico em Medições),
+  não pílula de texto; `title` mostra Valor/Consumido/Saldo em R$.
+  Linhas de Área/Disciplina continuam mostrando o rollup em R$ na
+  mesma coluna (reaproveitada — só as linhas de material viram ponto).
+- `data_necessidade_compra` e `prazo_entrega` (dias) vêm prontos da
+  origem; "Material em Obra" é a soma dos dois
+  (`calcularMaterialEmObra`). Linha consolidada mostra "—" nas 3
+  colunas de data; o pop-up de itens aninhados ganhou uma linha
+  "Necessidade: ... · Prazo: ... · Em obra: ..." por item.
+- **Bug pego pelo teste, corrigido no mesmo commit**: em linha
+  consolidada, `desvio_saldo_orcamentario` sobrava do 1º item fundido
+  (nunca recalculado) — o farol podia sair verde com o saldo agregado
+  (mostrado no próprio `title`) negativo. Achado real: "Cabos" e
+  "Tubulação Inox" com saldo negativo e ponto verde. Corrigido
+  recalculando pelo sinal do saldo somado quando há fusão de itens
+  (mesma regra da origem, só aplicada à soma).
+
+Testado via Playwright (CP029) em 2 rodadas: 6 colunas corretas;
+"Material em Obra" bate matematicamente com necessidade+prazo; farol
+renderiza como ponto (não texto), `title` com os 3 valores; pop-up
+mostra data por item. 2ª rodada, focada na correção do bug de cor:
+varredura de TODAS as 35 linhas de material (31 consolidadas + 4
+únicas) — sinal do saldo agregado bate 100% com a cor do farol,
+incluindo o caso mais apertado ("Tubulação Inox", saldo -R$ 989,09); 0
+erros de console nas 2 rodadas. Deploy: `firebase deploy --only
+hosting --project planejamento-mse`.
+
+### Linha consolidada mostra pior caso de data, Farol Financeiro troca hover para card (2026-08-24, mesmo dia)
+
+Dois ajustes em cima da rodada anterior:
+
+"Para os itens agrupados em material padrão, vamos considerar sempre
+o pior caso para, menor necessidade de compra, menor prazo e menor
+data limite em obra."
+
+"O mouse por cima do farol pode funcionar igual ao do status,
+expandindo o card do texto."
+
+- Linha consolidada (indicador "(N itens ›)") deixou de mostrar "—"
+  nas 3 colunas de data — mostra o PIOR CASO: menor (mais urgente)
+  data de necessidade, menor prazo de entrega, e menor "material em
+  obra" já calculado por item. As 3 reduções são independentes entre
+  si (não precisam vir do mesmo item fundido) — evita compor uma data
+  fictícia que nenhum item real tem; item sem alguma dessas
+  informações é ignorado no cálculo do mínimo dos outros. Item único
+  segue com o próprio valor (mínimo de 1 elemento = ele mesmo).
+- `FarolFinanceiroRmi` trocou o `title` nativo pela mesma mecânica CSS
+  do `StatusBadgeRmi` (hover troca conteúdo dentro do próprio
+  elemento, sem tooltip flutuando acima). Como o texto
+  (Valor/Consumido/Saldo) é bem mais largo que o ponto de 10px, ele
+  "expande" como card `position:absolute` ancorado ao ponto, em vez de
+  só alternar `display` no lugar — evita que a coluna inteira alargue
+  a cada hover.
+
+Testado via Playwright (CP029): 6 linhas consolidadas com data
+preenchida — resumo bate exatamente com o mínimo calculado a partir
+dos itens reais dentro do pop-up de itens aninhados (Necessidade,
+Prazo e Em Obra, sem divergência); farol sem `title`, card oculto por
+padrão e visível com o texto certo (inclusive valores negativos) em 8
+faróis testados (3 vermelhos, 5 verdes); 0 erros de console. Deploy:
+`firebase deploy --only hosting --project planejamento-mse`.
 
 ## Próximos passos possíveis
 
