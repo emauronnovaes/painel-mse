@@ -139,6 +139,7 @@
   .kpi-row.cols-2 { grid-template-columns: repeat(2, 1fr); }
   .kpi-row.cols-3 { grid-template-columns: repeat(3, 1fr); }
   .kpi-row.cols-4 { grid-template-columns: repeat(4, 1fr); }
+  .kpi-row.cols-5 { grid-template-columns: repeat(5, 1fr); }
   .kpi-row-flex { display: flex; gap: 12px; flex-shrink: 0; }
   .tabs-setores-wrap { display: flex; align-items: center; gap: 10px; padding: 14px 32px 0; flex-shrink: 0; }
   .tabs-scroll {
@@ -287,7 +288,8 @@
     .painel-gutter { margin-left: 12px !important; margin-right: 12px !important; }
     .kpi-row.cols-2,
     .kpi-row.cols-3,
-    .kpi-row.cols-4 { grid-template-columns: 1fr !important; }
+    .kpi-row.cols-4,
+    .kpi-row.cols-5 { grid-template-columns: 1fr !important; }
     .kpi-row-flex { flex-direction: column; }
     .kpi-row-flex > .farol-fix { flex: 0 0 auto !important; width: 100%; max-width: none; }
     .chart-area {
@@ -406,17 +408,17 @@ const OBRA_FOTOS = {
 const SETORES = [
   { num: 1, slug: 'curva-s',               label: 'Curva S',                     estado: 'pronto' },
   { num: 2, slug: 'encarregados',           label: 'Encarregados',                estado: 'pronto' },
-  { num: 3, slug: 'histograma',             label: 'Histograma',                  estado: 'pronto' },
+  { num: 3, slug: 'desvios',                label: 'Desvios',                     estado: 'pronto' },
+  { num: 4, slug: 'restricoes',             label: 'Restrições',                  estado: 'pronto' },
+  { num: 5, slug: 'histograma',             label: 'Histograma',                  estado: 'pronto' },
   // Saiu do placeholder em 2026-08-21 — "crítico" virou Curva A (itens
   // macro cujo valor acumulado, em ordem decrescente, soma 80% do valor
   // da obra), não mais o cruzamento de prazo×impacto do rascunho original
   // (a API rmi_api até tem campo de prazo, mas veio vazio pra todas as
   // obras carregadas até agora — sem dado, não dava pra usar). Ver
   // ModuloSuprimentos.
-  { num: 4, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'pronto' },
-  { num: 5, slug: 'oc-co',                  label: 'OC / CO',                     estado: 'pronto' },
-  { num: 6, slug: 'desvios',                label: 'Desvios',                     estado: 'pronto' },
-  { num: 7, slug: 'restricoes',             label: 'Restrições',                  estado: 'pronto' },
+  { num: 6, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'pronto' },
+  { num: 7, slug: 'oc-co',                  label: 'OC / CO',                     estado: 'pronto' },
   { num: 8, slug: 'medicoes',               label: 'Medições',                    estado: 'pronto' },
   // Provisório: teste de embutir o tour 360° do Constructin numa obra só
   // (ver OBRA_TOUR_360). Tirar daqui se não vingar, ou promover pra
@@ -1948,7 +1950,7 @@ function BadgePT({ hhmm, dim }){
   const bg  = hhmm <= '07:00' ? 'rgba(31,157,87,0.13)' : hhmm <= '07:15' ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
   return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:12, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{hhmm}</span>;
 }
-function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, produtividadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
+function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, produtividadeEnc, produtividadeHhEnc, colaboradoresEnc, horarioPT, onClickNome }){
   const dim = row.semApontamentos;
   const destaque = idx === 0 && !row.ausente && !row.semApontamentos;
   // Ausente: os indicadores do dia (qualidade/produtividade/colaboradores/PT)
@@ -1984,6 +1986,7 @@ function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, prod
       )}
       <td style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>{colab ?? '—'}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeEnc} dim={dim} />}</td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeHhEnc} dim={dim} />}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>
         {row.ausente
           ? <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11.5, fontWeight:800, letterSpacing:'0.05em', textTransform:'uppercase', background:T.red, color:'#fff' }}>Ausente</span>
@@ -2040,11 +2043,45 @@ function CartaoAtivo({ c, onVerEfetivo, linhasVisiveis, fmtDateISO, fmtQtd }){
   const temHistorico = (c.aponts || []).some(a => a.row);
   const mostrarHistorico = temHistorico && linhasVisiveis.historico;
   const mostrarIndices = !!c.indices && linhasVisiveis.indices;
-  const hasMetrics = temHistorico || c.aderUltimo || e?.qtd != null || e?.meta_diaria != null || e?.saldo_qtd != null || qualidade || mostrarIndices;
   // Índice de produtividade (v_indices_financeiros_diario.indice_receita_custo_incorrido):
-  // >=1 favorável (rendendo mais do que custando); <1 desfavorável.
+  // >=1 favorável (rendendo mais do que custando); <1 desfavorável. Exibido
+  // na UI como "Performance" (renomeado 2026-08-27, pedido explícito) — o
+  // dado/nome de variável internos continuam "produtividade", só o rótulo
+  // visível mudou.
   const idxCor = v => v == null ? T.mut2 : v >= 1 ? T.green : T.red;
   const idxTxt = v => v == null ? null : v.toFixed(2);
+
+  // Produtividade (Hh Previsto ÷ Hh Real) — NOVO indicador, baseado em
+  // homem-hora, distinto da "Performance" acima (índice financeiro). Pedido
+  // explícito, 2026-08-27:
+  //   Hh previsto diário = EAP.ponderacao_hht (Hh total planejado da
+  //   tarefa) ÷ duração da atividade em dias corridos (início e fim
+  //   inclusive), usando SEMPRE data_inicio/data_termino ORIGINAIS — NÃO
+  //   a reprogramada (pedido explícito, 2026-08-27; diferente da
+  //   convenção de dtI/dtF acima, que prefere a reprogramada pra exibição).
+  //   Hh real = nº de colaboradores alocados no card (snapshot mais
+  //   recente de `apontamento_efetivo`, mesmo dado do badge "Efetivo"
+  //   acima) × HORAS_POR_COLABORADOR_DIA — exemplo do usuário: 5
+  //   colaboradores × 8,8h = 44 Hh real.
+  //   Produtividade = Hh previsto diário ÷ Hh real. ≥1,00 favorável
+  //   (previsto exige tantas ou mais horas do que o efetivo alocado tem
+  //   capacidade de entregar); <1,00 desfavorável — mesma convenção de
+  //   cor da Performance (confirmado explicitamente com o usuário,
+  //   2026-08-27, porque o sentido do ≥1 aqui NÃO é óbvio a partir da
+  //   fórmula sozinha).
+  const HORAS_POR_COLABORADOR_DIA = 8.8;
+  const parseDataRaw = (s) => (s && !String(s).startsWith('0000') && s !== '') ? new Date(String(s).split('T')[0]) : null;
+  const dtInicioRaw = e ? parseDataRaw(e.data_inicio) : null;
+  const dtTerminoRaw = e ? parseDataRaw(e.data_termino) : null;
+  const duracaoDiasAtiv = (dtInicioRaw && dtTerminoRaw) ? Math.round((dtTerminoRaw - dtInicioRaw) / 86400000) + 1 : null;
+  const hhPonderado = e?.ponderacao_hht != null ? parseFloat(e.ponderacao_hht) : null;
+  const hhPrevistoDiario = (hhPonderado != null && duracaoDiasAtiv > 0) ? hhPonderado / duracaoDiasAtiv : null;
+  const numColabAlocado = (c.efetivo || []).length;
+  const hhReal = numColabAlocado > 0 ? numColabAlocado * HORAS_POR_COLABORADOR_DIA : null;
+  const produtividadeHh = (hhPrevistoDiario != null && hhReal) ? hhPrevistoDiario / hhReal : null;
+
+  const hasMetrics = temHistorico || c.aderUltimo || e?.qtd != null || e?.meta_diaria != null || e?.saldo_qtd != null || qualidade || mostrarIndices || produtividadeHh != null;
+
   // Cor do acento: verde se concluído, vermelho se atrasado, azul se dentro do prazo.
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const dtFRaw = e ? ((e.data_termino_reprogramado && !e.data_termino_reprogramado.startsWith('0000') && e.data_termino_reprogramado !== '') ? e.data_termino_reprogramado : e.data_termino) : null;
@@ -2091,12 +2128,20 @@ function CartaoAtivo({ c, onVerEfetivo, linhasVisiveis, fmtDateISO, fmtQtd }){
             const cor = semDado ? T.mut2 : c.aderUltimo.pct >= 100 ? T.green : c.aderUltimo.pct >= 80 ? T.blue : T.red;
             return <CardMetric label={`Aderência ${ad}/${am}`} value={semDado ? null : `${c.aderUltimo.pct.toFixed(0)}%`} cor={cor} />;
           })()}
-          {c.aderUltimo && mostrarIndices && <div style={{ width:1, alignSelf:'stretch', background:'#e4e7ec' }} />}
+          {c.aderUltimo && (mostrarIndices || produtividadeHh != null) && <div style={{ width:1, alignSelf:'stretch', background:'#e4e7ec' }} />}
           {mostrarIndices && (
-            <CardMetric label="Índice de Produtividade"
+            <CardMetric label="Performance"
               value={idxTxt(c.indices.indice_receita_custo_incorrido)}
               cor={idxCor(c.indices.indice_receita_custo_incorrido)}
-              info="Mede a produtividade da atividade até o momento. Acima de 1,00 a execução está favorável; abaixo disso, indica queda de produtividade."
+              info="Mede a performance da atividade até o momento. Acima de 1,00 a execução está favorável; abaixo disso, indica queda de performance."
+              infoAlign="right" />
+          )}
+          {mostrarIndices && produtividadeHh != null && <div style={{ width:1, alignSelf:'stretch', background:'#e4e7ec' }} />}
+          {produtividadeHh != null && (
+            <CardMetric label="Produtividade"
+              value={idxTxt(produtividadeHh)}
+              cor={idxCor(produtividadeHh)}
+              info="Compara o Hh previsto diário (Hh planejado da tarefa ÷ duração) com o Hh real (efetivo alocado no card × 8,8h/dia). Acima de 1,00 favorável; abaixo disso, desfavorável."
               infoAlign="right" />
           )}
         </div>
@@ -2147,7 +2192,7 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
         const cardsData = (Array.isArray(cardsRaw) ? cardsRaw : []).filter(c => (c.nome_obra || '').trim().toUpperCase() === alvo);
         if (!cardsData.length) { setCards([]); setLoading(false); return; }
         const ids = cardsData.map(c => c.card_id).join(',');
-        const eapUrl = `${SUPABASE_URL}/rest/v1/EAP?id=in.(${ids})&select=id,disciplina,local,unidade,qtd,saldo_qtd,efetivo_previsto,avanco_atual,desvio,data_inicio,data_termino,data_inicio_reprogramado,data_termino_reprogramado,meta_diaria`;
+        const eapUrl = `${SUPABASE_URL}/rest/v1/EAP?id=in.(${ids})&select=id,disciplina,local,unidade,qtd,saldo_qtd,efetivo_previsto,avanco_atual,desvio,data_inicio,data_termino,data_inicio_reprogramado,data_termino_reprogramado,meta_diaria,ponderacao_hht`;
         const efUrl  = `${SUPABASE_URL}/rest/v1/apontamento_efetivo?tarefa_id=in.(${ids})&select=tarefa_id,funcionario_nome,nome_funcao,data_consulta&order=funcionario_nome.asc`;
         // `Apontamentos` via `fetchPaginado` (não `fetch` cru + `limit=`
         // ignorado pelo PostgREST) — mesmo cap de 1000 linhas já corrigido
@@ -2252,7 +2297,7 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
             })}
             <div style={{ width:1, height:18, background:'#e4e7ec', margin:'0 2px', flexShrink:0 }} />
             <span className="mono" style={{ fontSize:9, fontWeight:600, letterSpacing:'0.14em', color:T.mut2, textTransform:'uppercase', whiteSpace:'nowrap', flexShrink:0 }}>Exibir</span>
-            {[{ key:'historico', label:'Histórico de Apontamento' }, { key:'indices', label:'Índice de Produtividade' }].map(f => {
+            {[{ key:'historico', label:'Histórico de Apontamento' }, { key:'indices', label:'Performance' }].map(f => {
               const on = linhasVisiveis[f.key];
               return (
                 <button key={f.key} onClick={() => setLinhasVisiveis(v => ({ ...v, [f.key]: !v[f.key] }))} className="mono"
@@ -2312,6 +2357,18 @@ function ModuloEncarregados({ obraId, obraNome }){
   // informativa (não entra no score) — % de dias com apontamento nos
   // últimos 7 dias úteis, ver cálculo em `linhas`/`assiduidade` abaixo.
   const [showAssiduidade, setShowAssiduidade] = useState(false);
+  // "Data de Status" ajustável (pedido explícito, 2026-08-27: "o default
+  // seguirá a lógica, mas permitirá a visualização de outro dia") — null
+  // = comportamento padrão de sempre (`getDiaAderenciaComFallback`); com
+  // valor, esse dia (YMD) é usado DIRETO no lugar do cálculo automático
+  // pra Aderência/Qualidade/Ausente/Última liberação de PT — os únicos
+  // indicadores que já tinham o conceito de "dia de referência". Produtividade/
+  // Produtividade (Hh)/Colaboradores continuam mostrando o snapshot mais
+  // recente disponível (não têm esse conceito hoje, fora de escopo aqui).
+  const [dataStatusOverride, setDataStatusOverride] = useState(null);
+  // Troca de obra volta pro dia de referência padrão — override de uma
+  // obra não faz sentido carregar pra outra.
+  useEffect(() => { setDataStatusOverride(null); }, [obraId]);
 
   const [tvRaw, setTvRaw] = useState(null);
   const [tvErro, setTvErro] = useState(false);
@@ -2319,6 +2376,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   const [cardsErro, setCardsErro] = useState(false);
   const [qualidadeEnc, setQualidadeEnc] = useState({});
   const [produtividadeEnc, setProdutividadeEnc] = useState({});
+  const [produtividadeHhEnc, setProdutividadeHhEnc] = useState({});
   const [colaboradoresEnc, setColaboradoresEnc] = useState({});
   const [numColabObra, setNumColabObra] = useState(null);
   const [ptsPorNomeDia, setPtsPorNomeDia] = useState({});
@@ -2361,7 +2419,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   // mesmos card_id de cards_ativos, buscados em lotes de 200.
   useEffect(() => {
     if (!cardsRaw) return;
-    if (cardsRaw.length === 0) { setQualidadeEnc({}); setProdutividadeEnc({}); setColaboradoresEnc({}); setNumColabObra(0); return; }
+    if (cardsRaw.length === 0) { setQualidadeEnc({}); setProdutividadeEnc({}); setProdutividadeHhEnc({}); setColaboradoresEnc({}); setNumColabObra(0); return; }
     let cancelado = false;
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
     const ids = cardsRaw.map(c => String(c.card_id));
@@ -2402,7 +2460,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.keys(apontPorCard).forEach(k => {
         const rows = apontPorCard[k].filter(r => r.data_do_input);
         if (!rows.length) return;
-        const dia = getDiaAderenciaComFallback(ymd => rows.some(r => (r.data_do_input || '').startsWith(ymd)));
+        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => (r.data_do_input || '').startsWith(ymd)));
         // `Apontamentos.id` não é único por dia — o mesmo card pode ter
         // mais de 1 linha no mesmo `data_do_input` (dado real: até 3
         // linhas no mesmo dia, misturando `status_qualidade` nulo e
@@ -2423,11 +2481,22 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEnc).forEach(([nome, lista]) => { resumo[nome] = resumoQualidade(lista); });
       if (!cancelado) setQualidadeEnc(resumo);
 
+      // Produtividade agora segue a "Data de Status" (pedido explícito,
+      // 2026-08-27: "para tudo, toda a tela seguirá a data de status") —
+      // antes pegava sempre o valor mais recente disponível, sem noção de
+      // dia de referência; agora é o valor DAQUELE dia especificamente
+      // (mesmo padrão de fallback por card já usado em Qualidade acima,
+      // checando a disponibilidade nesta MESMA fonte pro caso de fim de
+      // semana). Sem valor no dia -> card não entra (mesmo "sem dado" de
+      // antes, só que agora por dia, não por "não ter nenhum histórico").
       const prodPorCard = await emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id');
       const produtividadePorCard = {};
       Object.keys(prodPorCard).forEach(k => {
-        const comValor = prodPorCard[k].filter(r => r.indice_receita_custo_incorrido != null).sort((a, b) => (b.data || '').localeCompare(a.data || ''));
-        if (comValor.length) produtividadePorCard[k] = comValor[0].indice_receita_custo_incorrido;
+        const comValor = prodPorCard[k].filter(r => r.indice_receita_custo_incorrido != null && r.data);
+        if (!comValor.length) return;
+        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => comValor.some(r => String(r.data).startsWith(ymd)));
+        const rowDoDia = comValor.find(r => String(r.data).startsWith(dia));
+        if (rowDoDia) produtividadePorCard[k] = rowDoDia.indice_receita_custo_incorrido;
       });
       const porEncProd = {};
       cardsRaw.forEach(c => {
@@ -2440,11 +2509,16 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEncProd).forEach(([nome, lista]) => { resumoProd[nome] = lista.reduce((a, b) => a + b, 0) / lista.length; });
       if (!cancelado) setProdutividadeEnc(resumoProd);
 
+      // Colaboradores idem (mesmo pedido) — era sempre o snapshot mais
+      // recente de `apontamento_efetivo`, vira o snapshot DAQUELE dia.
+      // Sem apontamento nesse dia -> Set vazio (0 colaboradores), mesmo
+      // tratamento gracioso que `colabPorEnc` já dava pra card sem dado.
       const efPorCard = await emLotes('apontamento_efetivo', 'tarefa_id,funcionario_nome,data_consulta', 'tarefa_id');
       const nomesPorCard = {};
       Object.keys(efPorCard).forEach(k => {
-        const maisRecente = efPorCard[k].reduce((max, r) => (!max || r.data_consulta > max) ? r.data_consulta : max, null);
-        nomesPorCard[k] = new Set(efPorCard[k].filter(r => r.data_consulta === maisRecente && r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
+        const rows = efPorCard[k].filter(r => r.data_consulta);
+        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
+        nomesPorCard[k] = new Set(rows.filter(r => String(r.data_consulta).startsWith(dia) && r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
       });
       const colabPorEnc = {};
       cardsRaw.forEach(c => {
@@ -2458,9 +2532,46 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(colabPorEnc).forEach(([nome, set]) => { resumoColab[nome] = set.size; });
       if (!cancelado) setColaboradoresEnc(resumoColab);
       if (!cancelado) setNumColabObra(new Set(Object.values(nomesPorCard).flatMap(s => [...s])).size);
+
+      // Produtividade (Hh Previsto ÷ Hh Real) — NOVO indicador (pedido
+      // explícito, 2026-08-27), independente da "Performance" acima. Mesma
+      // fórmula/constante de `CartaoAtivo`: Hh previsto diário =
+      // EAP.ponderacao_hht ÷ duração da atividade em dias corridos
+      // (inclusive), usando SEMPRE data_inicio/data_termino ORIGINAIS —
+      // NÃO a reprogramada (pedido explícito, 2026-08-27). Hh real = nº de
+      // colaboradores do card no snapshot mais recente (`nomesPorCard`,
+      // já calculado acima pro bloco de Colaboradores) × 8,8h. Por
+      // encarregado, mesma convenção de média simples entre os cards já
+      // usada pra Performance.
+      const eapPorCard = await emLotes('EAP', 'id,ponderacao_hht,data_inicio,data_termino', 'id');
+      const HORAS_POR_COLABORADOR_DIA = 8.8;
+      const parseDataRawEnc = (s) => (s && !String(s).startsWith('0000') && s !== '') ? new Date(String(s).split('T')[0]) : null;
+      const produtividadeHhPorCard = {};
+      Object.keys(eapPorCard).forEach(k => {
+        const eapRow = eapPorCard[k][0]; // EAP.id é PK — 1 linha só por id
+        if (!eapRow) return;
+        const dtIniciohh = parseDataRawEnc(eapRow.data_inicio);
+        const dtTerminohh = parseDataRawEnc(eapRow.data_termino);
+        const duracaohh = (dtIniciohh && dtTerminohh) ? Math.round((dtTerminohh - dtIniciohh) / 86400000) + 1 : null;
+        const hhPonderado = eapRow.ponderacao_hht != null ? parseFloat(eapRow.ponderacao_hht) : null;
+        const hhPrevistoDiario = (hhPonderado != null && duracaohh > 0) ? hhPonderado / duracaohh : null;
+        const numColab = nomesPorCard[k] ? nomesPorCard[k].size : 0;
+        const hhReal = numColab > 0 ? numColab * HORAS_POR_COLABORADOR_DIA : null;
+        if (hhPrevistoDiario != null && hhReal) produtividadeHhPorCard[k] = hhPrevistoDiario / hhReal;
+      });
+      const porEncProdHh = {};
+      cardsRaw.forEach(c => {
+        const v = produtividadeHhPorCard[String(c.card_id)];
+        if (v == null) return;
+        const nome = c.responsavel_encarregado.trim().toUpperCase();
+        (porEncProdHh[nome] = porEncProdHh[nome] || []).push(v);
+      });
+      const resumoProdHh = {};
+      Object.entries(porEncProdHh).forEach(([nome, lista]) => { resumoProdHh[nome] = lista.reduce((a, b) => a + b, 0) / lista.length; });
+      if (!cancelado) setProdutividadeHhEnc(resumoProdHh);
     })().catch(() => {});
     return () => { cancelado = true; };
-  }, [cardsRaw]);
+  }, [cardsRaw, dataStatusOverride]);
 
   // Última liberação de PT por encarregado — só existe pra Novo Nordisk
   // (AP/UB), únicas obras com `origemPTS` mapeado.
@@ -2489,16 +2600,21 @@ function ModuloEncarregados({ obraId, obraNome }){
   }, [obraId]);
 
   // Selo "Ausente" — mesma view do Histograma (efetivo_diario_raw, projeto
-  // Efetivo), últimos 7 dias.
+  // Efetivo). Janela de 21 dias (não só 7) pra cobrir a "Data de Status"
+  // ajustável (pedido explícito, 2026-08-27) — o usuário pode escolher
+  // qualquer dia dentro desse horizonte pra ver o Ausente daquele dia.
+  // `fetchPaginado` (Range header), não `fetch` cru — 21 dias × todos os
+  // colaboradores da obra pode passar de 1000 linhas (mesmo bug de corte
+  // silencioso do PostgREST já catalogado no projeto), `limit=5000` sozinho
+  // não é suficiente pra evitar isso.
   useEffect(() => {
     setPresencaEnc({});
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-    const seteDiasAtras = new Date(ontem); seteDiasAtras.setDate(ontem.getDate() - 6);
+    const vinteEUmDiasAtras = new Date(ontem); vinteEUmDiasAtras.setDate(ontem.getDate() - 20);
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(seteDiasAtras)}&data_efetivo_diario=lte.${ymd(ontem)}&select=nome,data_efetivo_diario,situacao&limit=5000`, { headers })
-      .then(r => r.ok ? r.json() : [])
+    fetchPaginado(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(vinteEUmDiasAtras)}&data_efetivo_diario=lte.${ymd(ontem)}&select=nome,data_efetivo_diario,situacao`, headers)
       .then(rows => {
         const mapa = {};
         (Array.isArray(rows) ? rows : []).forEach(r => { if (r.nome) mapa[`${r.nome.trim().toUpperCase()}__${r.data_efetivo_diario}`] = r.situacao || ''; });
@@ -2528,12 +2644,18 @@ function ModuloEncarregados({ obraId, obraNome }){
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
     const seteDiasAtras = new Date(ontem); seteDiasAtras.setDate(ontem.getDate() - 6); seteDiasAtras.setHours(0, 0, 0, 0);
+    // Janela de COLETA de `aderenciaPorDia`/`diasApontados` é mais larga que
+    // os 7 dias da Assiduidade (`diasBaseObra` abaixo continua exatamente 7
+    // — não muda) — precisa cobrir o horizonte da "Data de Status" ajustável
+    // (pedido explícito, 2026-08-27), mesmo range já buscado em `tvRaw`
+    // acima (21 dias).
+    const inicioColeta = new Date(ontem); inicioColeta.setDate(ontem.getDate() - 20); inicioColeta.setHours(0, 0, 0, 0);
 
     const porEnc = {};
     tvRaw.forEach(row => {
       const resp = row['RESPONSÁVEL']; if (!resp) return;
       const dataYMD = parseBRDateParaYMD(row.DATA); if (!dataYMD) return;
-      const dt = new Date(dataYMD + 'T12:00:00'); if (dt < seteDiasAtras || dt > ontem) return;
+      const dt = new Date(dataYMD + 'T12:00:00'); if (dt < inicioColeta || dt > ontem) return;
       if (!porEnc[resp]) porEnc[resp] = { nome: resp, diasApontados: new Set(), aderenciaPorDia: {} };
       porEnc[resp].diasApontados.add(dataYMD);
       const lin = parsePTNumero(row.ADERENCIA_LINEAR);
@@ -2574,7 +2696,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     const totalDiasAssiduidade = Math.max(1, diasBaseObra.size);
 
     let arr = Object.values(porEnc).map(s => {
-      const diaAderencia = getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
+      const diaAderencia = dataStatusOverride || getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
       const diasUteisEnc = Array.from(s.diasApontados).filter(ymd => diasBaseObra.has(ymd)).length;
@@ -2587,7 +2709,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: getDiaAderencia(), aderenciaLin: null, assiduidade: 0, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: dataStatusOverride || getDiaAderencia(), aderenciaLin: null, assiduidade: 0, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -2596,9 +2718,9 @@ function ModuloEncarregados({ obraId, obraNome }){
       (a.semApontamentos ? 1 : 0) - (b.semApontamentos ? 1 : 0) ||
       b.score - a.score);
 
-    const diaAderenciaObra = getDiaAderenciaComFallback(ymd => tvRaw.some(r => parseBRDateParaYMD(r.DATA) === ymd));
+    const diaAderenciaObra = dataStatusOverride || getDiaAderenciaComFallback(ymd => tvRaw.some(r => parseBRDateParaYMD(r.DATA) === ymd));
     return { linhas: arr, diaAderenciaObra };
-  }, [tvRaw, cardsRaw, presencaEnc]);
+  }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride]);
 
   const [ordenarEnc, setOrdenarEnc] = useState('aderencia');
   const [ordenarDirEnc, setOrdenarDirEnc] = useState('desc');
@@ -2628,6 +2750,7 @@ function ModuloEncarregados({ obraId, obraNome }){
         case 'assiduidade': return r.assiduidade ?? -1;
         case 'colaboradores': return colaboradoresEnc[up(r.nome)] ?? -1;
         case 'produtividade': return produtividadeEnc[up(r.nome)] ?? -1;
+        case 'produtividadeHh': return produtividadeHhEnc[up(r.nome)] ?? -1;
         case 'pt': {
           const hpt = horarioPT(r.nome, r.diaAderencia);
           if (!hpt) return -1;
@@ -2644,7 +2767,7 @@ function ModuloEncarregados({ obraId, obraNome }){
         ? a.nome.localeCompare(b.nome, 'pt', { sensitivity: 'base' }) * dir
         : (valor(a) - valor(b)) * dir));
     return arr;
-  }, [linhas, ordenarEnc, ordenarDirEnc, colaboradoresEnc, produtividadeEnc, qualidadeEnc, ptsPorNomeDia]);
+  }, [linhas, ordenarEnc, ordenarDirEnc, colaboradoresEnc, produtividadeEnc, produtividadeHhEnc, qualidadeEnc, ptsPorNomeDia]);
 
   // Exportar PNG do ranking — portado do dashboard-main (`exportarPNG` da
   // seção de Performance de Encarregados), pedido explícito: "trazer o
@@ -2678,12 +2801,14 @@ function ModuloEncarregados({ obraId, obraNome }){
     ctx.font = '600 10px "IBM Plex Sans", Arial';
     const wLabelColab = ctx.measureText('COLABORADORES').width;
     const wLabelQual  = ctx.measureText('STATUS QUALIDADE').width;
-    const wLabelProd  = Math.max(ctx.measureText('ÍNDICE DE').width, ctx.measureText('PRODUTIVIDADE').width);
+    const wLabelProd  = ctx.measureText('PERFORMANCE').width;
+    const wLabelProdHh = ctx.measureText('PRODUTIVIDADE').width;
     const wLabelAder  = Math.max(ctx.measureText('ADERÊNCIA AO').width, ctx.measureText('AVANÇO PLANEJADO').width);
     ctx.font = '700 18px "IBM Plex Sans", Arial';
     const wBadgeAder = ctx.measureText('100.0%').width + 28;
     ctx.font = '700 15px "IBM Plex Sans", Arial';
     const wBadgeProd = ctx.measureText('000.00').width + 24;
+    const wBadgeProdHh = wBadgeProd;
     ctx.font = '600 12px "IBM Plex Sans", Arial';
     const wBadgeQual = ctx.measureText('PENDENTE QUALIDADE').width + 22;
     ctx.font = '700 16px "IBM Plex Sans", Arial';
@@ -2695,13 +2820,15 @@ function ModuloEncarregados({ obraId, obraNome }){
 
     const ADER_W = Math.max(wLabelAder, wBadgeAder);
     const PROD_W = Math.max(wLabelProd, wBadgeProd);
+    const PRODHH_W = Math.max(wLabelProdHh, wBadgeProdHh);
     const QUAL_W = Math.max(wLabelQual, wBadgeQual);
     const COLAB_W = Math.max(wLabelColab, wValColab);
     const PT_W = Math.max(wLabelPT, wBadgePT);
 
     const PT_X = temPT ? W - 32 : null;
     const ADER_X = temPT ? PT_X - PT_W - GAP : W - 32;
-    const PROD_X = ADER_X - ADER_W - GAP;
+    const PRODHH_X = ADER_X - ADER_W - GAP;
+    const PROD_X = PRODHH_X - PRODHH_W - GAP;
     const COLAB_X = PROD_X - PROD_W - GAP;
     const QUAL_X = COLAB_X - COLAB_W - GAP;
     const NOME_MAXW = QUAL_X - QUAL_W - GAP - 84;
@@ -2719,7 +2846,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     }
     ctx.fillText(tituloObra, 32, 62);
 
-    const LABELS_ORD = { aderencia:'Aderência ao avanço planejado', nome:'Encarregado', qualidade:'Qualidade', colaboradores:'Colaboradores', produtividade:'Índice de produtividade', pt:'Última liberação de PT' };
+    const LABELS_ORD = { aderencia:'Aderência ao avanço planejado', nome:'Encarregado', qualidade:'Qualidade', colaboradores:'Colaboradores', produtividade:'Performance', produtividadeHh:'Produtividade', pt:'Última liberação de PT' };
     const setaOrd = ordenarDirEnc === 'asc' ? '▲' : '▼';
     ctx.textAlign = 'left';
     ctx.fillStyle = T.mut;
@@ -2784,8 +2911,8 @@ function ModuloEncarregados({ obraId, obraNome }){
     ctx.textAlign = 'right';
     ctx.fillText('QUALIDADE', QUAL_X, 134);
     ctx.fillText('COLABORADORES', COLAB_X, 134);
-    ctx.fillText('ÍNDICE DE', PROD_X, 127);
-    ctx.fillText('PRODUTIVIDADE', PROD_X, 139);
+    ctx.fillText('PERFORMANCE', PROD_X, 134);
+    ctx.fillText('PRODUTIVIDADE', PRODHH_X, 134);
     ctx.fillText('ADERÊNCIA AO', ADER_X, 127);
     ctx.fillText('AVANÇO PLANEJADO', ADER_X, 139);
     if (temPT) {
@@ -2871,6 +2998,23 @@ function ModuloEncarregados({ obraId, obraNome }){
         ctx.fillText(pTxt, pbx + pbw / 2, cy + 1);
       }
 
+      const prodHh = produtividadeHhEnc[nomeUpper];
+      {
+        const temProdHh = prodHh != null;
+        const phTxt = temProdHh ? prodHh.toFixed(2) : '—';
+        const phCor = !temProdHh ? T.mut : prodHh >= 1 ? T.green : T.red;
+        const phBg  = !temProdHh ? '#eef0f3' : prodHh >= 1 ? 'rgba(31,157,87,0.12)' : 'rgba(210,59,59,0.10)';
+        ctx.font = '700 15px "IBM Plex Sans", Arial';
+        const phtw = ctx.measureText(phTxt).width;
+        const phbw = phtw + 24, phbh = 27, phbx = PRODHH_X - phbw, phby = cy - phbh / 2;
+        ctx.fillStyle = phBg;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(phbx, phby, phbw, phbh, 7); else ctx.rect(phbx, phby, phbw, phbh);
+        ctx.fill();
+        ctx.fillStyle = phCor;
+        ctx.fillText(phTxt, phbx + phbw / 2, cy + 1);
+      }
+
       const q = qualidadeEnc[nomeUpper];
       if (q) {
         const nq = q.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -2928,7 +3072,8 @@ function ModuloEncarregados({ obraId, obraNome }){
     { label:'Qualidade', campo:'qualidade', align:'right' },
     ...(showAssiduidade ? [{ label:'Assiduidade', campo:'assiduidade', align:'right' }] : []),
     { label:'Colaboradores', campo:'colaboradores', align:'right' },
-    { label:'Produtividade', campo:'produtividade', align:'right' },
+    { label:'Performance', campo:'produtividade', align:'right' },
+    { label:'Produtividade', campo:'produtividadeHh', align:'right' },
     { label:'Aderência', campo:'aderencia', align:'right' },
     ...(temPT ? [{ label:'Últ. Liberação PT', campo:'pt', align:'right' }] : []),
   ];
@@ -2940,11 +3085,33 @@ function ModuloEncarregados({ obraId, obraNome }){
           <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z" /><path d="M17 5h3a2 2 0 0 1-2 4M7 5H4a2 2 0 0 0 2 4" />
         </svg>
         <span className="mono" style={{ fontSize:12, fontWeight:700, letterSpacing:'0.12em', color:T.body, textTransform:'uppercase' }}>Performance de Encarregados</span>
-        <span className="mono" style={{ marginLeft:'auto', fontSize:11, color:T.mut }}>Referência: {fmtDataCurta(parseDataCorte(diaAderenciaObra)) || '—'}</span>
         <button onClick={exportarPNG} disabled={!rankingRows.length} title="Baixar PNG do ranking de aderência"
-          className="mono" style={{ background:'#eef3fe', border:'1px solid #d8e3fb', color:T.blue, padding:'6px 11px', borderRadius:8, cursor: rankingRows.length ? 'pointer' : 'default', opacity: rankingRows.length ? 1 : 0.5, fontSize:10.5, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+          className="mono" style={{ marginLeft:'auto', background:'#eef3fe', border:'1px solid #d8e3fb', color:T.blue, padding:'6px 11px', borderRadius:8, cursor: rankingRows.length ? 'pointer' : 'default', opacity: rankingRows.length ? 1 : 0.5, fontSize:10.5, fontWeight:600, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Baixar PNG ↓
         </button>
+        {/* "Data de Status" (pedido explícito, 2026-08-27: "coloque junto
+            ao botão de assiduidade" + "terá de ser ajustável, o default
+            seguirá a lógica, mas permitirá a visualização de outro dia")
+            — default é `diaAderenciaObra` (mesmo dia de referência que
+            Aderência/Qualidade/Ausente/Última liberação de PT já usavam);
+            escolher outra data aqui troca `dataStatusOverride`, que passa
+            a valer NO LUGAR do cálculo automático nesses 4 indicadores
+            (Produtividade/Colaboradores continuam no snapshot mais
+            recente — não têm esse conceito hoje). `max` trava em HOJE
+            (pedido explícito, 2026-08-27: "está bloqueando o hoje, o
+            hoje deverá ser permitido") — não em futuro. */}
+        <div className="mono" title="Dia de referência usado por Aderência/Qualidade/Ausente/Última liberação de PT — clique pra ver outro dia"
+          style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'4px 6px 4px 11px', borderRadius:8, background:'#eef0f3', color:T.mut }}>
+          <span style={{ fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>Data de Status</span>
+          <input type="date" value={dataStatusOverride || diaAderenciaObra || ''}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={e => setDataStatusOverride(e.target.value || null)}
+            style={{ border:'none', background:'transparent', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:11, fontWeight:700, color:T.ink }} />
+          {dataStatusOverride && (
+            <button onClick={() => setDataStatusOverride(null)} title="Voltar ao dia de referência padrão"
+              style={{ border:'none', background:'transparent', color:T.mut, cursor:'pointer', padding:'0 2px', fontSize:14, fontWeight:700, lineHeight:1 }}>×</button>
+          )}
+        </div>
         <button onClick={() => setShowAssiduidade(v => !v)} title="Exibir/ocultar assiduidade dos cards (dias com apontamento nos últimos 7 dias úteis — só informativa, não entra no score)"
           className="mono" style={{ background: showAssiduidade ? 'rgba(31,157,87,0.15)' : '#eef0f3', border:'none', color: showAssiduidade ? T.green : T.mut, padding:'6px 12px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>
           Assiduidade
@@ -2977,11 +3144,11 @@ function ModuloEncarregados({ obraId, obraNome }){
             <tbody>
               {rankingRows.map((row, idx) => (
                 <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT} showAssiduidade={showAssiduidade}
-                  qualidadeEnc={qualidadeEnc} produtividadeEnc={produtividadeEnc} colaboradoresEnc={colaboradoresEnc}
+                  qualidadeEnc={qualidadeEnc} produtividadeEnc={produtividadeEnc} produtividadeHhEnc={produtividadeHhEnc} colaboradoresEnc={colaboradoresEnc}
                   horarioPT={horarioPT} onClickNome={setNomeSelecionado} />
               ))}
               {rankingRows.length === 0 && (
-                <tr><td colSpan={5 + (showAssiduidade ? 1 : 0) + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
+                <tr><td colSpan={colsEncarregados.length} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
               )}
             </tbody>
           </table>
@@ -4226,11 +4393,17 @@ function nomeUsuarioCadastro(usuario){
 }
 
 const RANK_CRITICIDADE = { alta: 0, média: 1, media: 1, baixa: 2 };
+// "Responsável" (pessoa, `nome_responsavel`) e "edt"/"id_eap" chegaram na
+// origem em 2026-08-27 (pedido explícito) — o antigo "Responsável" (que na
+// verdade era `responsabilidade`, MSE/CLIENTE) virou "Responsabilidade" pra
+// não colidir o nome com a coluna nova. "Cadastrado por" (`usuario_cadastro`)
+// saiu da tabela pra abrir espaço — o dado ainda existe na origem, só não é
+// mais exibido aqui.
 const COLUNAS_RESTRICOES = [
   { label:'Descrição',   campo:'descricao' },
   { label:'Tipo',        campo:'tipo' },
+  { label:'Responsabilidade', campo:'responsabilidade' },
   { label:'Responsável', campo:'responsavel' },
-  { label:'Cadastrado por', campo:'usuario' },
   { label:'Início',      campo:'inicio',    align:'right' },
   { label:'Conclusão',   campo:'conclusao', align:'right' },
   { label:'Monitoramento', campo:'monitoramento' },
@@ -4277,9 +4450,35 @@ function ModuloRestricoes({ obraId, obraNome }){
   const [busca, setBusca] = useState('');
   const [ordenarPor, setOrdenarPor] = useState('prioridade');
   const [ordenarDir, setOrdenarDir] = useState('asc');
+  // Popup "dados da tarefa" — pedido explícito, 2026-08-27: clicar numa
+  // restrição (que agora vem com `edt`/`id_eap` na origem) abre os dados da
+  // tarefa correspondente na EAP, cruzando `id_eap`+`edt` (par único,
+  // confirmado contra o banco antes de implementar). Só clicável quando os
+  // 2 campos existem — restrições antigas/sem esses campos ficam sem o
+  // popup, degradação silenciosa em vez de abrir vazio.
+  const [restricaoSelecionada, setRestricaoSelecionada] = useState(null);
+  const [tarefaEap, setTarefaEap] = useState(null);
+  const [tarefaCarregando, setTarefaCarregando] = useState(false);
+  const [tarefaErro, setTarefaErro] = useState(false);
+
+  useEffect(() => {
+    if (!restricaoSelecionada) return;
+    setTarefaEap(null); setTarefaErro(false); setTarefaCarregando(true);
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const { id_eap, edt } = restricaoSelecionada;
+    fetch(`${SUPABASE_URL}/rest/v1/EAP?id_eap=eq.${id_eap}&edt=eq.${encodeURIComponent(edt)}&select=*`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(rows => {
+        if (!Array.isArray(rows)) { setTarefaErro(true); return; }
+        setTarefaEap(rows[0] || null);
+      })
+      .catch(() => setTarefaErro(true))
+      .finally(() => setTarefaCarregando(false));
+  }, [restricaoSelecionada]);
 
   useEffect(() => {
     setDado(null); setErro(false); setBusca(''); setOrdenarPor('prioridade'); setOrdenarDir('asc');
+    setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false);
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
     fetch(`${SUPABASE_URL}/rest/v1/restricoes_obra?id_obra=eq.${obraId}&select=restricoes,atualizado_em`, { headers })
       .then(r => r.ok ? r.json() : null)
@@ -4304,7 +4503,7 @@ function ModuloRestricoes({ obraId, obraNome }){
     if (!dado) return null;
     const alvo = normalizarNomeParaMatch(busca);
     if (!alvo) return dado;
-    return dado.filter(r => [r.descricao, r.nome_eap, r.responsabilidade, r.nome_tipo_restricao, r.usuario_cadastro, r.criticidade, r.status_cadastro_label]
+    return dado.filter(r => [r.descricao, r.nome_eap, r.responsabilidade, r.nome_tipo_restricao, r.nome_responsavel, r.edt, r.criticidade, r.status_cadastro_label]
       .some(campo => normalizarNomeParaMatch(campo).includes(alvo)));
   }, [dado, busca]);
 
@@ -4326,8 +4525,8 @@ function ModuloRestricoes({ obraId, obraNome }){
         case 'status': return rankStatusAberto(r);
         case 'descricao': return (r.descricao || '').toLowerCase();
         case 'tipo': return (r.nome_tipo_restricao || '').toLowerCase();
-        case 'responsavel': return (r.responsabilidade || '').toLowerCase();
-        case 'usuario': return (nomeUsuarioCadastro(r.usuario_cadastro) || '').toLowerCase();
+        case 'responsabilidade': return (r.responsabilidade || '').toLowerCase();
+        case 'responsavel': return (r.nome_responsavel || '').toLowerCase();
         case 'inicio': return r.data_inicio || '';
         case 'conclusao': return r.data_conclusao || '';
         case 'monitoramento': return monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label)?.ordem ?? 3;
@@ -4352,11 +4551,23 @@ function ModuloRestricoes({ obraId, obraNome }){
   const totalResp = qtdMse + qtdCliente;
   const pctMse = totalResp ? Math.round((qtdMse / totalResp) * 100) : 0;
   const pctCliente = totalResp ? 100 - pctMse : 0;
+  // Atividades impactadas (pedido explícito, 2026-08-27): contagem de
+  // TAREFAS distintas atingidas por alguma restrição, não de restrições —
+  // várias restrições podem mirar a mesma tarefa. Deduplicada pela chave
+  // `id_eap::edt` (o mesmo par usado no popup "dados da tarefa" — já
+  // confirmado contra o banco que é único por tarefa), não só pelo EDT
+  // sozinho: cruzar com `id_eap` evita contar 2x um EDT que se repita em
+  // ramos diferentes da EAP (ou inflar a contagem com lixo de restrição
+  // sem tarefa de verdade associada).
+  const atividadesImpactadas = new Set(
+    dado.filter(r => r.id_eap != null && !!r.edt).map(r => `${r.id_eap}::${r.edt}`)
+  ).size;
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
-      <div className="kpi-row cols-4">
+      <div className="kpi-row cols-5">
         <Balao titulo="Restrições" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={dado.length} />
+        <Balao titulo="Atividades Impactadas" cor={T.blue} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={atividadesImpactadas} />
         <Balao titulo="Abertas" cor={T.amber} bg="rgba(217,145,26,0.06)" borda="rgba(217,145,26,0.12)" valor={abertas} />
         <Balao titulo="Criticidade Alta" cor={T.red} bg="rgba(210,59,59,0.06)" borda="rgba(210,59,59,0.12)" valor={altas} />
         <BalaoIRC pctMse={pctMse} pctCliente={pctCliente} temDados={totalResp > 0} />
@@ -4395,12 +4606,15 @@ function ModuloRestricoes({ obraId, obraNome }){
                 const cc = corCriticidade(r.criticidade);
                 const cs = corStatusRestricao(r.status_cadastro_label);
                 const cm = monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label);
+                const temTarefa = r.id_eap != null && !!r.edt;
                 return (
-                  <tr key={r.id} style={{ borderBottom:'1px solid var(--line)' }}>
+                  <tr key={r.id} onClick={() => temTarefa && setRestricaoSelecionada(r)}
+                    title={temTarefa ? `Ver dados da tarefa (EDT ${r.edt})` : undefined}
+                    style={{ borderBottom:'1px solid var(--line)', cursor: temTarefa ? 'pointer' : 'default' }}>
                     <td style={{ padding:'10px 14px', fontSize:12.5, color:T.ink, maxWidth:380, lineHeight:1.4 }}>{r.descricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.nome_tipo_restricao || '—'}</td>
                     <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.responsabilidade || '—'}</td>
-                    <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{nomeUsuarioCadastro(r.usuario_cadastro) || '—'}</td>
+                    <td style={{ padding:'10px 14px', fontSize:12, color:T.body }}>{r.nome_responsavel || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_inicio_formatada || '—'}</td>
                     <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:12, color:T.body }}>{r.data_conclusao_formatada || '—'}</td>
                     <td style={{ padding:'10px 14px' }}>{cm ? <BadgePill texto={cm.texto} cor={cm.cor} bg={cm.bg} /> : <span style={{ color:T.mut }}>—</span>}</td>
@@ -4411,6 +4625,64 @@ function ModuloRestricoes({ obraId, obraNome }){
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {restricaoSelecionada && (
+        <PopupTarefaRestricao restricao={restricaoSelecionada} tarefa={tarefaEap} carregando={tarefaCarregando} erro={tarefaErro}
+          onClose={() => { setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false); }} />
+      )}
+    </div>
+  );
+}
+
+// Popup "dados da tarefa" da Restrição — cruza `id_eap`+`edt` da restrição
+// contra a EAP (pedido explícito, 2026-08-27). Mostra os campos da própria
+// linha da EAP, sem nenhum indicador derivado (Performance/Produtividade
+// ficam de fora de propósito — não foi pedido aqui e exigiriam mais joins).
+function PopupTarefaRestricao({ restricao, tarefa, carregando, erro, onClose }){
+  const fmtD = (iso) => {
+    if (!iso || String(iso).startsWith('0000')) return null;
+    const [a, m, d] = String(iso).split('T')[0].split('-');
+    return (a && m && d) ? `${d}/${m}/${a}` : null;
+  };
+  const fmt2 = (v) => v != null && v !== '' ? parseFloat(v).toFixed(2) : null;
+
+  return (
+    <div onClick={onClose} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:520, maxHeight:'80vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+        <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'flex-start', gap:12, flexShrink:0 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>
+              Dados da Tarefa · EDT {restricao.edt}
+            </div>
+            <div style={{ fontSize:14, fontWeight:600, color:T.ink, lineHeight:1.3 }}>{tarefa?.tarefa || restricao.nome_eap || '—'}</div>
+          </div>
+          <button onClick={onClose} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+        </div>
+        <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'16px 20px' }}>
+          {carregando && <div style={{ padding:'24px 0', textAlign:'center', fontSize:13, color:'#98a1b0' }}>Carregando dados da tarefa…</div>}
+          {!carregando && erro && <div style={{ padding:'24px 0', textAlign:'center', fontSize:13, color:T.red }}>Erro ao carregar EAP</div>}
+          {!carregando && !erro && !tarefa && <div style={{ padding:'24px 0', textAlign:'center', fontSize:13, color:'#98a1b0' }}>Nenhuma tarefa encontrada na EAP para este EDT</div>}
+          {!carregando && !erro && tarefa && (
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {(tarefa.disciplina || tarefa.local) && (
+                <div style={{ display:'flex', gap:14, flexWrap:'wrap', fontSize:12, color:T.mut }}>
+                  {tarefa.disciplina && <span><span style={{ fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', fontSize:9 }}>Disciplina </span>{tarefa.disciplina}</span>}
+                  {tarefa.local && <span><span style={{ fontWeight:700, textTransform:'uppercase', letterSpacing:'0.06em', fontSize:9 }}>Local </span>{tarefa.local}</span>}
+                </div>
+              )}
+              <div className="kpi-row cols-3">
+                <CardMetric label="Avanço Atual" value={fmt2(tarefa.avanco_atual) != null ? `${fmt2(tarefa.avanco_atual)}%` : null} />
+                <CardMetric label="Desvio" value={fmt2(tarefa.desvio) != null ? `${fmt2(tarefa.desvio)}%` : null} cor={tarefa.desvio != null ? (tarefa.desvio >= 0 ? T.green : T.red) : undefined} />
+                <CardMetric label="Encarregado" value={tarefa.encarregado_nome} />
+              </div>
+              <div className="kpi-row cols-2">
+                <CardMetric label="Início" value={fmtD(tarefa.data_inicio_reprogramado) || fmtD(tarefa.data_inicio)} />
+                <CardMetric label="Término" value={fmtD(tarefa.data_termino_reprogramado) || fmtD(tarefa.data_termino)} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -5446,20 +5718,32 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
     //   R$529.121 nelas pra R$60.876 — o pior caso ("Parafuso estojo
     //   (barra cilíndrica rosqueada UNC...)", 148 caracteres) e o 2º pior
     //   (Grupo gerador diesel, R$335.665) saíram da lista.
-    //   Parado aqui — resto é cauda longa de baixo valor individual (PMT
-    //   R$626.813 é exceção alta, mas fica de fora por segurança: sigla
-    //   sem significado confirmado, melhor não categorizar errado do que
-    //   arriscar um chute).
+    //   rodada 4 (2026-08-27, pedido explícito: "ainda tem muitos itens
+    //   com descrições muito específicas... faça uma análise geral dos
+    //   itens, vamos buscar enquadrar o máximo possível" — 2 exemplos
+    //   dados: "Prego 17X21" → Miscelânias, "Cond cu cl 2 105º
+    //   12/20kv 35.0 pt" → Cabos): varredura completa das 144 famílias
+    //   fora do catálogo (script descartável, dump real + réplica da
+    //   pipeline, mesmo processo já documentado nesta obra), maior bloco
+    //   era PVC/PEAD de esgoto-drenagem (~70 famílias, 1 por diâmetro) e
+    //   tags de quadro elétrico QD-/QL-/QGBT (~R$167k espalhados em 9
+    //   famílias de 1 item). 98,0% → **99,2%**, 144 → 5 famílias fora.
+    //   Parado aqui — as 5 que sobraram são cauda genuína (PMT
+    //   R$626.813, VPA-01 R$173.204, MFC-01 R$28.665: siglas sem
+    //   significado confirmado; "Central de resíduos" R$34.499: estrutura
+    //   única, sem outra da família; "Acendedor m320" R$1.364: função
+    //   ambígua) — mesmo critério de sempre, melhor não categorizar
+    //   errado do que arriscar um chute.
     catalogoExtra: {
       // Categorias NOVAS (perfil terraplanagem/pavimentação/civil, sem
       // equivalente no catálogo base do CP029):
-      'Terraplanagem e Movimentação de Terra': ['ATERRO', 'FORNECIMENTO DE MATERIAL IMPORTADO', 'BOTA-FORA', 'BOTA FORA', 'PROTECAO DE TALUDE', 'EMPRESTIMO DE MATERIAL'],
+      'Terraplanagem e Movimentação de Terra': ['ATERRO', 'FORNECIMENTO DE MATERIAL IMPORTADO', 'BOTA-FORA', 'BOTA FORA', 'PROTECAO DE TALUDE', 'EMPRESTIMO DE MATERIAL', 'RACHAO'],
       'Geossintéticos': ['GEOGRELHA', 'GEOTEXTIL'],
       'Drenos Especiais': ['DRENOS FIBROQUIMICOS', 'DRENO FIBROQUIMICO'],
-      'Pavimentação (camadas e revestimento)': ['APLICACAO DA CAMADA', 'CBUQ', 'INTERTRAVADO', 'AREIA DE ASSENTAMENTO DO PAVER'],
+      'Pavimentação (camadas e revestimento)': ['APLICACAO DA CAMADA', 'CBUQ', 'INTERTRAVADO', 'AREIA DE ASSENTAMENTO DO PAVER', 'IMPRIMACAO'],
       'Fundações e Estacas': ['ESTACA'],
       'Balanças e Pesagem': ['BALANCA'],
-      'Cercamento': ['CERCAS E PORTOES', 'CERCA E PORTAO'],
+      'Cercamento': ['CERCAS E PORTOES', 'CERCA E PORTAO', 'BARREIRA NEW JERSEY', 'CANCELA', 'PORTAO'],
       // Fôrma/escoramento (madeirite, sarrafo, arame recozido,
       // desmoldante) se repete em DEZENAS de ramos diferentes — maior
       // ganho de "simplificar a descrição" do catálogo inteiro (143
@@ -5469,24 +5753,65 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
       // checar por "contém" sem risco de bater dentro de outra palavra
       // (mesmo cuidado já usado em ASO/EPI no `ehItemCanteiroRmi`).
       'Estações de Tratamento (ETA/ETE)': [/\bETA\b/, /\bETE\b/],
-      'Contêineres e Instalações Provisórias': ['CONTAINER'],
-      'Drenagem (tubos e acessórios)': ['TUBO PEAD', 'BOCA DE LOBO', 'POCO DE VISITA', 'CAIXA PRE-MOLDADA', 'TAMPA EM FERRO FUNDIDO', 'COMPORTA METALICA'],
+      'Contêineres e Instalações Provisórias': ['CONTAINER', /^WC$/],
+      // rodada 4 (2026-08-27, "faça uma análise geral dos itens, vamos
+      // buscar enquadrar o máximo possível"): PVC/PEAD de esgoto e
+      // drenagem eram a maior fatia fora do catálogo (~70 famílias
+      // isoladas, uma por diâmetro/conexão) — `PVC ESGOTO`/`PVC ESG`
+      // (forma abreviada) e `PEAD` bare (Luva/Tê/Redução/Tubulação PEAD,
+      // não só `TUBO PEAD` já coberto) resolvem a maioria de uma vez.
+      // `FERRO FUND` bare substitui a necessidade de listar variante por
+      // variante de "Tampa (de/em) ferro fund(ido)..." (`TAMPA EM FERRO
+      // FUNDIDO` sozinho não bate as com "DE" ou sem "IDO").
+      'Drenagem (tubos e acessórios)': ['TUBO PEAD', 'BOCA DE LOBO', 'POCO DE VISITA', 'CAIXA PRE-MOLDADA', 'TAMPA EM FERRO FUNDIDO', 'COMPORTA METALICA', 'PVC ESGOTO', 'PVC ESG', 'CAIXA INSPECAO', 'FERRO FUND', 'PEAD', 'CALHA', 'COMPORTA'],
       // `AREIA` exata (regex `^$`) — não `.includes()` — pra não
       // arrastar junto variantes com especificação própria tipo "AREIA
       // GROSSA"/"AREIA LAVADA" (ficam de fora de propósito, cauda longa
       // de valor zero na prática).
-      'Agregados (Areia/Brita)': [/^AREIA$/],
+      'Agregados (Areia/Brita)': [/^AREIA$/, 'LASTRO DE BRITA', 'LASTRO BRITA'],
       // rodada 3 — categorias novas:
       'Geradores': ['GRUPO GERADOR', 'GERADOR DIESEL'],
       'Transformadores': ['TRANSFORMADOR'],
-      'Aterramento': ['ATERRAMENTO'],
-      'Parafusos e Fixação': ['PARAFUSO', 'ESTOJO'],
+      // rodada 4: cartucho de solda exotérmica/haste/terminal aéreo/caixa
+      // equipotencial são acessórios de aterramento e proteção contra
+      // descargas atmosféricas, não bateram o `ATERRAMENTO` sozinho.
+      'Aterramento': ['ATERRAMENTO', 'CARTUCHO SOLDA', 'MOLDE EXOTERMICO', 'HASTE AC', 'TERMINAL AEREO', 'CAIXA EQUIPOTENCIAL'],
+      'Parafusos e Fixação': ['PARAFUSO', 'ESTOJO', 'CHUMBADOR', 'BUCHA NYLON', 'PORCA SEXTAVADA', 'ARRUELA', 'ABRACADEIRA'],
       // Extensões de categoria já existente no catálogo base (união de
       // palavras-chave, nunca substituição — mesmo padrão da Hitachi):
-      'Estrutura e Suportação Metálica': ['ESTRUTURA METALICA', 'TELHA METALICA', 'CORRIMAO', 'GUARDA-CORPO'],
-      'Iluminação': ['ILUMINACAO', 'EVERLED', 'CITYLED'],
-      'Painéis': ['ELETROCENTRO'],
-      'Concreto e Impermeabilização': ['ARGAMASSA POLIMERICA'],
+      'Estrutura e Suportação Metálica': ['ESTRUTURA METALICA', 'TELHA METALICA', 'CORRIMAO', 'GUARDA-CORPO', 'CHAPA DE ACO', 'PERFIL U', 'TELHA', 'GRAMPO C'],
+      'Iluminação': ['ILUMINACAO', 'EVERLED', 'CITYLED', 'REFLETOR'],
+      // `QD-`/`QDG-`/`QL-`/`QGBT` são códigos de tag de quadro elétrico
+      // (Quadro de Distribuição/Luz/Geral de Baixa Tensão) — cada tag
+      // vinha como família isolada (achado maior da rodada 4 em valor:
+      // ~R$167k espalhados em 9 famílias de 1 item cada).
+      'Painéis': ['ELETROCENTRO', /^QD/, /^QL-/, 'QGBT', 'DISJUNTOR'],
+      'Concreto e Impermeabilização': ['ARGAMASSA POLIMERICA', 'IMPERMEABILIZACAO', 'ESPACADOR', 'TELA Q'],
+      // Categorias de BASE (CP029) estendidas com achados do Porto
+      // Itapoá — mesmo padrão de união por chave de sempre, catálogo do
+      // CP029 continua intocado:
+      'Tubulação Aço Carbono': ['TUBO ACO PTO NBR'],
+      'Cabos': ['COND CU', 'COND COBRE', 'MUFLA', 'TERMINAL COMPRESSAO'],
+      'Válvulas e acessórios': ['LUVA REDUCAO', 'NIPLE', 'JUNTA EXPANSAO'],
+      'Instrumentação': ['PRESSOSTATO'],
+      'Eletrodutos e Infraestrutura Elétrica': ['EMENDA INTERNA'],
+      // `EXTINTOR`/`STORZ` (bare) consolidam sozinhos ~13 famílias de
+      // itens de combate a incêndio (extintores de todo tipo, mangueira/
+      // esguicho/chave/adaptador com engate STORZ) que antes viviam
+      // cada uma como família própria.
+      'Combate a Incêndio': ['EXTINTOR', 'STORZ', 'MANGUEIRA TIPO', 'ABRIGO P/MANGUEIRA', 'TAMPAO CEGO', 'REGISTRO GLOBO ANGULAR'],
+      'Detecção e Alarme': ['ACIONADOR MANUAL', 'INDICADOR AUDIOVISUAL', 'ALARME PNE', 'BOTAO PNE', 'CAIXA INSTA ACIONADOR'],
+      // Categorias NOVAS (rodada 4, sem equivalente no catálogo base):
+      'Acoplamentos e Conexões Ranhuradas': ['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO'],
+      'Sinalização de Segurança': ['PLACA FOTO', 'PLACA DE SINALIZACAO', 'PLACAS DE SINALIZACAO', 'PLACA SINALIZACAO', 'FAIXA DE PEDESTRE'],
+      'Dispositivos Elétricos (Tomadas/Interruptores)': ['TOMADA', 'INTERRUPTOR', 'RABICHO'],
+      // Catch-all pra hardware avulso de baixo valor unitário, sem
+      // família própria que valha a pena (pedido explícito do usuário,
+      // 2026-08-27: "Prego 17X21 poderia ser simplesmente Miscelâneas")
+      // — DECLARADA POR ÚLTIMO de propósito: só pega o que sobrar de
+      // tudo mais acima. `\b` (fronteira de palavra) evita bater dentro
+      // de outra palavra (ex. "ESTAMPA" conteria "TAMPA" sem o boundary).
+      'Miscelâneas': [/\bPREGO\b/, /\bTAMPA\b/, /\bLONA\b/, 'CSAO'],
     },
     // (7) Simplificação da DISCIPLINA (2º nível) — pedido explícito
     // (2026-08-26: "podemos trabalhar uma lógica similar para
@@ -6371,9 +6696,17 @@ function ModuloSuprimentos({ obraId, obraNome }){
               nível" também é controle só da tabela, então migrou pra cá
               junto (nada do que tinha ali dizia respeito ao gráfico). */}
           <div className="toolbar-wrap" style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, padding:'14px 16px 0' }}>
-            <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
-              placeholder="Buscar por material, disciplina ou área..."
-              style={{ flex:1, boxSizing:'border-box', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:12.5, padding:'9px 12px', border:'1px solid var(--line)', borderRadius:8, outline:'none', color:T.ink, background:'#fff' }} />
+            <div style={{ position:'relative', flex:1, minWidth:0 }}>
+              <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
+                placeholder="Buscar por material, disciplina ou área..."
+                style={{ width:'100%', boxSizing:'border-box', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:12.5, padding: busca ? '9px 30px 9px 12px' : '9px 12px', border:'1px solid var(--line)', borderRadius:8, outline:'none', color:T.ink, background:'#fff' }} />
+              {/* Limpar busca (pedido explícito, 2026-08-27) — só aparece
+                  com texto digitado, mesmo ✕ já usado nos pop-ups do app. */}
+              {busca && (
+                <button onClick={() => setBusca('')} title="Limpar busca" aria-label="Limpar busca"
+                  style={{ position:'absolute', right:6, top:'50%', transform:'translateY(-50%)', width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center', background:'#eef0f3', border:'none', borderRadius:'50%', color:T.mut, cursor:'pointer', fontSize:12, lineHeight:1, padding:0 }}>✕</button>
+              )}
+            </div>
             {busca && (
               <span className="mono" style={{ fontSize:11, color:T.mut, whiteSpace:'nowrap' }}>{curvaABuscada.length} de {curvaA.length}</span>
             )}
