@@ -698,6 +698,20 @@ function getDiaAderenciaComFallback(temDadosNoDia){
     d.setDate(d.getDate() - 1);
   }
 }
+// Dado que a Data de Status exige dia exato, uma fonte com sincronização
+// atrasada (achado real: `v_indices_financeiros_diario` parada há dias em
+// toda a base, não só numa obra) fazia o indicador sumir por inteiro em vez
+// de mostrar o último valor conhecido. `linhasDoDiaMaisRecenteAte` busca,
+// dentre as linhas de um card, as do dia mais recente <= `dia` (não
+// necessariamente igual) — usada por Qualidade, Performance e Efetivo tanto
+// no Ranking (`ModuloEncarregados`) quanto no popup (`PopupCardsEncarregado`).
+function linhasDoDiaMaisRecenteAte(rows, campoData, dia){
+  const comData = rows.filter(r => r[campoData]);
+  const ateDia = comData.filter(r => String(r[campoData]).slice(0, 10) <= dia);
+  if (!ateDia.length) return [];
+  const diaAlvo = ateDia.reduce((max, r) => { const d = String(r[campoData]).slice(0, 10); return d > max ? d : max; }, ateDia[0][campoData].slice(0, 10));
+  return ateDia.filter(r => String(r[campoData]).slice(0, 10) === diaAlvo);
+}
 
 // ── Seletor de obra (dropdown no cabeçalho) ─────────────────────────────────
 function SeletorObra({ obras, atual, onSelecionar }){
@@ -2164,7 +2178,7 @@ function CartaoAtivo({ c, onVerEfetivo, linhasVisiveis, fmtDateISO, fmtQtd }){
   );
 }
 
-function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
+function PopupCardsEncarregado({ nome, obraId, obraNome, onClose, dataStatusOverride }){
   const obraCfg = OBRAS.find(o => o.id === obraId);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
@@ -2209,24 +2223,49 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
         const apontData = apontDataRaw || [];
         const finData = finRes.ok ? await finRes.json() : [];
         const eapMap = {}; (Array.isArray(eapData) ? eapData : []).forEach(e => { eapMap[e.id] = e; });
-        const finMap = {}; (Array.isArray(finData) ? finData : []).forEach(f => { const k = String(f.tarefa_id); if (!finMap[k]) finMap[k] = f; });
+        // Performance NÃO segue a "Data de Status" (revertido 2026-08-28,
+        // pedido explícito: "qualidade e efetivo precisam da data de
+        // status, somente a performance que não") — diferente de
+        // Qualidade/Efetivo abaixo, aqui é sempre o valor mais recente
+        // disponível em `v_indices_financeiros_diario`, independente da
+        // data escolhida no seletor.
+        const finPorCard = {};
+        (Array.isArray(finData) ? finData : []).forEach(f => { const k = String(f.tarefa_id); (finPorCard[k] = finPorCard[k] || []).push(f); });
+        const finMap = {};
+        Object.keys(finPorCard).forEach(k => {
+          const comValor = finPorCard[k].filter(f => f.indice_receita_custo_incorrido != null && f.data);
+          if (!comValor.length) return;
+          const rowDoDia = comValor.reduce((max, f) => (!max || f.data > max.data) ? f : max, null);
+          if (rowDoDia) finMap[k] = rowDoDia;
+        });
         const apontMap = {}; (Array.isArray(apontData) ? apontData : []).forEach(a => { const k = String(a.id); if (a.data_do_input) (apontMap[k] = apontMap[k] || []).push(a); });
-        const efMap = {}; (Array.isArray(efData) ? efData : []).forEach(r => {
-          const k = String(r.tarefa_id);
-          if (!efMap[k] || r.data_consulta > efMap[k].data) efMap[k] = { data: r.data_consulta, rows: [] };
-          if (r.data_consulta === efMap[k].data) efMap[k].rows.push(r);
+        // Efetivo idem (mesma lógica de Data de Status, mesmo ajuste
+        // 2026-08-28 de tolerar atraso na fonte) — antes pegava sempre o
+        // snapshot mais recente de `apontamento_efetivo` (`data_consulta`
+        // máxima), agora é o snapshot mais recente <= a Data de Status.
+        const efPorCard = {};
+        (Array.isArray(efData) ? efData : []).forEach(r => { const k = String(r.tarefa_id); (efPorCard[k] = efPorCard[k] || []).push(r); });
+        const efMap = {};
+        Object.keys(efPorCard).forEach(k => {
+          const rows = efPorCard[k].filter(r => r.data_consulta);
+          if (!rows.length) return;
+          const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
+          const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+          if (rowsDoDia.length) efMap[k] = { data: rowsDoDia[0].data_consulta, rows: rowsDoDia };
         });
 
         const diaAderPorCard = {}; const apontDiaAder = {}; const qualMap = {};
         Object.keys(apontMap).forEach(k => {
           const rows = apontMap[k];
-          const dia = getDiaAderenciaComFallback(ymd => rows.some(r => (r.data_do_input || '').startsWith(ymd)));
-          diaAderPorCard[k] = dia;
+          const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => (r.data_do_input || '').startsWith(ymd)));
           // Mesmo card pode ter mais de 1 linha no mesmo dia (achado real,
           // ver `emLotes` da tela de ranking) — prioriza a que tem status
           // de qualidade preenchido em vez da simplesmente primeira do array.
-          const rowsDoDia = rows.filter(r => (r.data_do_input || '').startsWith(dia));
+          // `linhasDoDiaMaisRecenteAte` (não dia exato, ajuste 2026-08-28,
+          // mesmo motivo de Performance/Efetivo acima).
+          const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_do_input', dia);
           const rowDoDia = rowsDoDia.find(r => r.status_qualidade?.trim()) || rowsDoDia[0] || null;
+          diaAderPorCard[k] = dia;
           apontDiaAder[k] = rowDoDia;
           if (rowDoDia?.status_qualidade?.trim()) qualMap[k] = rowDoDia.status_qualidade.trim();
         });
@@ -2250,7 +2289,7 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose }){
         setLoading(false);
       })
       .catch(e => { setErro(e.message); setLoading(false); });
-  }, [nomeNorm, obraId]);
+  }, [nomeNorm, obraId, dataStatusOverride]);
 
   const cardsFiltrados = cards.filter(c =>
     (!filtros.efetivo || (c.efetivo || []).length > 0) &&
@@ -2467,7 +2506,10 @@ function ModuloEncarregados({ obraId, obraNome }){
         // preenchido). Pegar só a "primeira" linha que bate a data
         // descartava a real quando ela vinha depois de uma nula — corrigido
         // priorizando qualquer linha do dia que TENHA status preenchido.
-        const rowsDoDia = rows.filter(r => (r.data_do_input || '').startsWith(dia));
+        // `linhasDoDiaMaisRecenteAte` (não dia exato) — achado real
+        // (2026-08-28): fonte com sincronização atrasada fazia o card sumir
+        // por inteiro em vez de mostrar o último status conhecido.
+        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_do_input', dia);
         const rowDoDia = rowsDoDia.find(r => r.status_qualidade?.trim()) || rowsDoDia[0];
         if (rowDoDia?.status_qualidade?.trim()) statusPorCard[k] = rowDoDia.status_qualidade.trim();
       });
@@ -2481,22 +2523,21 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEnc).forEach(([nome, lista]) => { resumo[nome] = resumoQualidade(lista); });
       if (!cancelado) setQualidadeEnc(resumo);
 
-      // Produtividade agora segue a "Data de Status" (pedido explícito,
-      // 2026-08-27: "para tudo, toda a tela seguirá a data de status") —
-      // antes pegava sempre o valor mais recente disponível, sem noção de
-      // dia de referência; agora é o valor DAQUELE dia especificamente
-      // (mesmo padrão de fallback por card já usado em Qualidade acima,
-      // checando a disponibilidade nesta MESMA fonte pro caso de fim de
-      // semana). Sem valor no dia -> card não entra (mesmo "sem dado" de
-      // antes, só que agora por dia, não por "não ter nenhum histórico").
+      // Performance NÃO segue a "Data de Status" (revertido 2026-08-28,
+      // pedido explícito: "qualidade e efetivo precisam da data de status,
+      // somente a performance que não") — diferente de Qualidade/Efetivo
+      // abaixo, aqui é sempre o valor mais recente disponível em
+      // `v_indices_financeiros_diario`, independente da data escolhida no
+      // seletor. (Tinha passado a seguir a Data de Status em 2026-08-27,
+      // depois corrigido pra tolerar atraso de sincronização em 2026-08-28
+      // — ambas as mudanças foram revertidas aqui a pedido do usuário.)
       const prodPorCard = await emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id');
       const produtividadePorCard = {};
       Object.keys(prodPorCard).forEach(k => {
         const comValor = prodPorCard[k].filter(r => r.indice_receita_custo_incorrido != null && r.data);
         if (!comValor.length) return;
-        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => comValor.some(r => String(r.data).startsWith(ymd)));
-        const rowDoDia = comValor.find(r => String(r.data).startsWith(dia));
-        if (rowDoDia) produtividadePorCard[k] = rowDoDia.indice_receita_custo_incorrido;
+        const maisRecente = comValor.reduce((max, r) => (!max || r.data > max.data) ? r : max, null);
+        produtividadePorCard[k] = maisRecente.indice_receita_custo_incorrido;
       });
       const porEncProd = {};
       cardsRaw.forEach(c => {
@@ -2510,15 +2551,18 @@ function ModuloEncarregados({ obraId, obraNome }){
       if (!cancelado) setProdutividadeEnc(resumoProd);
 
       // Colaboradores idem (mesmo pedido) — era sempre o snapshot mais
-      // recente de `apontamento_efetivo`, vira o snapshot DAQUELE dia.
-      // Sem apontamento nesse dia -> Set vazio (0 colaboradores), mesmo
+      // recente de `apontamento_efetivo`, vira o snapshot mais recente <=
+      // a Data de Status (não exige o dia exato, mesmo ajuste 2026-08-28
+      // de Qualidade/Performance acima — tolera atraso na fonte). Sem
+      // nenhum apontamento até a data -> Set vazio (0 colaboradores), mesmo
       // tratamento gracioso que `colabPorEnc` já dava pra card sem dado.
       const efPorCard = await emLotes('apontamento_efetivo', 'tarefa_id,funcionario_nome,data_consulta', 'tarefa_id');
       const nomesPorCard = {};
       Object.keys(efPorCard).forEach(k => {
         const rows = efPorCard[k].filter(r => r.data_consulta);
         const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
-        nomesPorCard[k] = new Set(rows.filter(r => String(r.data_consulta).startsWith(dia) && r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
+        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+        nomesPorCard[k] = new Set(rowsDoDia.filter(r => r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
       });
       const colabPorEnc = {};
       cardsRaw.forEach(c => {
@@ -3157,7 +3201,7 @@ function ModuloEncarregados({ obraId, obraNome }){
 
       {nomeSelecionado && (
         <PopupCardsEncarregado nome={nomeSelecionado} obraId={obraId} obraNome={obraNome}
-          onClose={() => setNomeSelecionado(null)} />
+          onClose={() => setNomeSelecionado(null)} dataStatusOverride={dataStatusOverride} />
       )}
     </div>
   );
