@@ -4604,6 +4604,17 @@ function ModuloRestricoes({ obraId, obraNome }){
   const [busca, setBusca] = useState('');
   const [ordenarPor, setOrdenarPor] = useState('prioridade');
   const [ordenarDir, setOrdenarDir] = useState('asc');
+  // Filtro por status da TABELA (pedido explícito, 2026-09-03: "vamos incluir
+  // um filtro por status, por default ele virá filtrado para exibir somente
+  // as em aberto") — `null` = "Todos"; senão guarda o valor CRU de
+  // `status_cadastro_label` (não um sentinel tipo 'aberto') pra comparar por
+  // igualdade exata contra o texto real do Portal. Opções vêm dos valores
+  // distintos que realmente existem em `dado` (domínio não é conhecido por
+  // inteiro — mesmo racional de `corStatusRestricao`), não uma lista fixa.
+  // Independente dos 3 balões abaixo (Atividades Impactadas/Criticidade
+  // Alta/IRC), que ficam SEMPRE travados em "Aberto" por regra de negócio
+  // (pedido explícito, mesmo dia) — não acompanham este filtro.
+  const [filtroStatus, setFiltroStatus] = useState(null);
   // Popup "dados da tarefa" — pedido explícito, 2026-08-27: clicar numa
   // restrição (que agora vem com `edt`/`id_eap` na origem) abre os dados da
   // tarefa correspondente na EAP, cruzando `id_eap`+`edt` (par único,
@@ -4632,7 +4643,7 @@ function ModuloRestricoes({ obraId, obraNome }){
 
   useEffect(() => {
     setDado(null); setErro(false); setBusca(''); setOrdenarPor('prioridade'); setOrdenarDir('asc');
-    setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false);
+    setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false); setFiltroStatus(null);
     const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
     fetch(`${SUPABASE_URL}/rest/v1/restricoes_obra?id_obra=eq.${obraId}&select=restricoes,atualizado_em`, { headers })
       .then(r => r.ok ? r.json() : null)
@@ -4643,6 +4654,30 @@ function ModuloRestricoes({ obraId, obraNome }){
       .catch(() => { setErro(true); setDado([]); });
   }, [obraId]);
 
+  // Default do filtro = a variante REAL de "Aberto" que existe nesta obra
+  // (pode ser "Aberto", "Aberta"... o Portal não padroniza) — roda de novo a
+  // cada troca de obra, já que `dado` muda de referência. Se a obra não tiver
+  // nenhum status "aberto" (raro/inexistente hoje), cai em "Todos" (null).
+  useEffect(() => {
+    if (!dado) return;
+    const abertoReal = dado.map(r => (r.status_cadastro_label || '').trim()).find(s => s.toLowerCase().includes('abert'));
+    setFiltroStatus(abertoReal || null);
+  }, [dado]);
+
+  // Valores distintos de status presentes na obra, na ordem em que aparecem
+  // — usados pra montar os pills do filtro (não é lista fixa, ver comentário
+  // do `filtroStatus` acima).
+  const statusDisponiveis = useMemo(() => {
+    if (!dado) return [];
+    const vistos = new Set();
+    const lista = [];
+    dado.forEach(r => {
+      const s = (r.status_cadastro_label || '').trim();
+      if (s && !vistos.has(s)) { vistos.add(s); lista.push(s); }
+    });
+    return lista;
+  }, [dado]);
+
   const alternarOrdenacao = (campo) => {
     if (ordenarPor === campo) setOrdenarDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setOrdenarPor(campo); setOrdenarDir('asc'); }
@@ -4651,15 +4686,17 @@ function ModuloRestricoes({ obraId, obraNome }){
   const rankStatusAberto = r => (r.status_cadastro_label || '').toLowerCase().includes('abert') ? 0 : 1;
   const rankCriticidade = r => RANK_CRITICIDADE[(r.criticidade || '').trim().toLowerCase()] ?? 3;
 
-  // Busca textual — mesmo normalizador de nome já usado em Encarregados
-  // (maiúsculo, sem acento), aplicado aqui a qualquer campo visível na linha.
+  // Filtro por status (pill ativa) + busca textual (mesmo normalizador já
+  // usado em Encarregados, maiúsculo/sem acento), aplicado a qualquer campo
+  // visível na linha. Status primeiro, busca refina dentro do que sobrou.
   const filtradas = useMemo(() => {
     if (!dado) return null;
+    const porStatus = filtroStatus == null ? dado : dado.filter(r => (r.status_cadastro_label || '').trim() === filtroStatus);
     const alvo = normalizarNomeParaMatch(busca);
-    if (!alvo) return dado;
-    return dado.filter(r => [r.descricao, r.nome_eap, r.responsabilidade, r.nome_tipo_restricao, r.nome_responsavel, r.edt, r.criticidade, r.status_cadastro_label]
+    if (!alvo) return porStatus;
+    return porStatus.filter(r => [r.descricao, r.nome_eap, r.responsabilidade, r.nome_tipo_restricao, r.nome_responsavel, r.edt, r.criticidade, r.status_cadastro_label]
       .some(campo => normalizarNomeParaMatch(campo).includes(alvo)));
-  }, [dado, busca]);
+  }, [dado, busca, filtroStatus]);
 
   const restricoes = useMemo(() => {
     if (!filtradas) return null;
@@ -4698,40 +4735,57 @@ function ModuloRestricoes({ obraId, obraNome }){
   if (erro) return <CartaoEstado texto="Erro ao carregar restricoes_obra" maxHeight={620} tom={T.red} />;
   if (dado.length === 0) return <CartaoEstado texto="Nenhuma restrição cadastrada para esta obra" maxHeight={620} />;
 
-  const abertas = dado.filter(r => (r.status_cadastro_label || '').toLowerCase().includes('abert')).length;
-  const altas = dado.filter(r => (r.criticidade || '').trim().toLowerCase() === 'alta').length;
-  const qtdMse = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'MSE').length;
-  const qtdCliente = dado.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'CLIENTE').length;
+  // Restrições com status "Aberto" (substring, mesmo idioma de sempre) — base
+  // fixa dos balões Atividades Impactadas/Criticidade Alta/IRC (pedido
+  // explícito, 2026-09-03: "deverão estar filtradas pelo status 'Aberto'").
+  // Independente do `filtroStatus` da TABELA (pill) — os 3 balões não
+  // acompanham o que o usuário escolhe filtrar embaixo, ficam sempre em
+  // "Aberto" por regra de negócio.
+  const restricoesAbertas = dado.filter(r => (r.status_cadastro_label || '').toLowerCase().includes('abert'));
+  const abertas = restricoesAbertas.length;
+  const altas = restricoesAbertas.filter(r => (r.criticidade || '').trim().toLowerCase() === 'alta').length;
+  const qtdMse = restricoesAbertas.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'MSE').length;
+  const qtdCliente = restricoesAbertas.filter(r => (r.responsabilidade || '').trim().toUpperCase() === 'CLIENTE').length;
   const totalResp = qtdMse + qtdCliente;
   const pctMse = totalResp ? Math.round((qtdMse / totalResp) * 100) : 0;
   const pctCliente = totalResp ? 100 - pctMse : 0;
   // Atividades impactadas (pedido explícito, 2026-08-27): contagem de
-  // TAREFAS distintas atingidas por alguma restrição, não de restrições —
-  // várias restrições podem mirar a mesma tarefa. Deduplicada pela chave
-  // `id_eap::edt` (o mesmo par usado no popup "dados da tarefa" — já
-  // confirmado contra o banco que é único por tarefa), não só pelo EDT
+  // TAREFAS distintas atingidas por alguma restrição ABERTA, não de
+  // restrições — várias restrições podem mirar a mesma tarefa. Deduplicada
+  // pela chave `id_eap::edt` (o mesmo par usado no popup "dados da tarefa" —
+  // já confirmado contra o banco que é único por tarefa), não só pelo EDT
   // sozinho: cruzar com `id_eap` evita contar 2x um EDT que se repita em
   // ramos diferentes da EAP (ou inflar a contagem com lixo de restrição
   // sem tarefa de verdade associada).
   const atividadesImpactadas = new Set(
-    dado.filter(r => r.id_eap != null && !!r.edt).map(r => `${r.id_eap}::${r.edt}`)
+    restricoesAbertas.filter(r => r.id_eap != null && !!r.edt).map(r => `${r.id_eap}::${r.edt}`)
   ).size;
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
       <div className="kpi-row cols-5">
+        <BalaoIRC pctMse={pctMse} pctCliente={pctCliente} temDados={totalResp > 0} />
         <Balao titulo="Restrições" cor={T.ink} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={dado.length} />
         <Balao titulo="Atividades Impactadas" cor={T.blue} bg="rgba(37,99,235,0.05)" borda="rgba(37,99,235,0.1)" valor={atividadesImpactadas} />
         <Balao titulo="Abertas" cor={T.amber} bg="rgba(217,145,26,0.06)" borda="rgba(217,145,26,0.12)" valor={abertas} />
         <Balao titulo="Criticidade Alta" cor={T.red} bg="rgba(210,59,59,0.06)" borda="rgba(210,59,59,0.12)" valor={altas} />
-        <BalaoIRC pctMse={pctMse} pctCliente={pctCliente} temDados={totalResp > 0} />
+      </div>
+
+      <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap' }}>
+        <span className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut2, marginRight:2 }}>Status:</span>
+        <BadgePill texto="Todos" cor={filtroStatus === null ? T.blue : T.mut} bg={filtroStatus === null ? 'rgba(37,99,235,0.13)' : '#eef0f3'}
+          onClick={() => setFiltroStatus(null)} ativo={filtroStatus === null} />
+        {statusDisponiveis.map(s => {
+          const cs = corStatusRestricao(s);
+          return <BadgePill key={s} texto={s} cor={cs.cor} bg={cs.bg} onClick={() => setFiltroStatus(s)} ativo={filtroStatus === s} />;
+        })}
       </div>
 
       <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0 }}>
         <input type="text" value={busca} onChange={e => setBusca(e.target.value)}
           placeholder="Buscar por descrição, tarefa, responsável, tipo..."
           style={{ flex:1, boxSizing:'border-box', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:12.5, padding:'9px 12px', border:'1px solid var(--line)', borderRadius:8, outline:'none', color:T.ink, background:'#fff' }} />
-        {busca && (
+        {(busca || filtroStatus !== null) && (
           <span className="mono" style={{ fontSize:11, color:T.mut, whiteSpace:'nowrap' }}>{restricoes.length} de {dado.length}</span>
         )}
       </div>
@@ -6542,72 +6596,99 @@ function configStatusManual(status){
 // `statusRmiConsolidado` (baseado em datas/RMI, removido). Ver
 // `statusAutomaticoItem` em `ModuloSuprimentos` pra regra completa —
 // inclusive o desempate quando o item tem mais de 1 requisição com status
-// diferente. Valores confirmados ao vivo na base (IPEN, id_obra 114):
-// EmAprovacao, Comprado, "Em Aberto", Aprovado — + "Pendente" (sem
-// requisição ativa) e "Atrasado" (sobreposto localmente, não vem da base —
-// ver `statusAtrasadoOuPendente`). "Cancelado" existe na base mas nunca
-// chega aqui: filtrado na origem, pedido explícito 2026-09-02 ("as
-// canceladas não precisam ser exibidas") — mapeado abaixo só de propósito,
-// caso algum consumidor futuro passe o valor cru sem passar pelo filtro.
-// Outro valor não mapeado aqui cai no fallback cinza.
+// diferente. Valores confirmados ao vivo na base em 2026-09-03 (TODAS as
+// obras, 7.317 requisições, paginado — o levantamento anterior "só IPEN"
+// tinha ficado desatualizado e cortado sem querer em 1000 linhas pelo
+// limite de página do PostgREST): Aprovado(5.649), Cancelado(922),
+// "Em Aberto"(342), Comprado(284), EmAprovacao(114), EmCotacao(4, CNPEM-
+// Faseado + Hitachi), DefinicaoEngenharia(2, só CNPEM-Faseado) — + as
+// sobrepostas localmente "Pendente"/"Atrasado" (sem requisição ativa, não
+// vêm da base — ver `statusAtrasadoOuPendente`). "Cancelado" existe na
+// base mas nunca chega aqui: filtrado na origem, pedido explícito
+// 2026-09-02 ("as canceladas não precisam ser exibidas") — mapeado abaixo
+// só de propósito, caso algum consumidor futuro passe o valor cru sem
+// passar pelo filtro. `DefinicaoEngenharia` ainda cai no fallback cinza
+// de propósito — mapeamento pendente, decisão de negócio não tomada
+// ainda (achado em 2026-09-03, só 2 requisições até agora).
 function configStatusRequisicao(status){
   if (status === 'Comprado') return { cor:T.green, bg:'rgba(31,157,87,0.13)' };
   if (status === 'Aprovado') return { cor:T.blue, bg:'rgba(37,99,235,0.13)' };
-  if (status === 'EmAprovacao') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
+  // EmAprovacao/EmCotacao mesma cor: ambos colapsam no estágio agregado
+  // "Em cotação" desde 2026-09-03 (ver `statusItemFolha`).
+  if (status === 'EmAprovacao' || status === 'EmCotacao') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
   if (status === 'Em Aberto') return { cor:T.mut, bg:'#eef0f3' };
   if (status === 'Cancelado') return { cor:T.red, bg:'rgba(210,59,59,0.13)' };
-  return { cor:T.mut, bg:'#eef0f3' }; // fallback
+  return { cor:T.mut, bg:'#eef0f3' }; // fallback (ex.: DefinicaoEngenharia, ainda não mapeado)
 }
 // Cores do status AGREGADO do item/família (`statusAutomaticoItem`,
 // vocabulário próprio: Entregue/Comprado (+ Parcial)/Em Andamento/
 // Requisitado/Atrasado/Pendente) — DIFERENTE de `configStatusRequisicao`
 // acima, que colore o status CRU de uma requisição específica (badges
 // "RM<número>", pop-up da requisição).
-// Paleta VALIDADA (pedido explícito, 2026-09-02: "cores mais vibrantes e
-// mais distintas uma das outras", depois "o em andamento ficou muito
-// similar ao entregue" — tentativas anteriores reprovadas: gradiente
-// cinza→verde interpolado — tons intermediários próximos demais; laranja+
-// âmbar adjacentes — ΔE 13,7 < piso 15; aqua (Em Andamento) vs verde
-// (Entregue) — não eram nem vizinhos na ordem e ainda ficaram próximos,
-// ΔE 9-11 < piso 15). Validado com `node scripts/validate_palette.js`
-// (skill `dataviz`) na ORDEM real de exibição (Atrasado, Pendente,
+// Redesenhada em 2026-09-03 (pedido explícito: "as cores vão variar do
+// vermelho ao verde, com centro no azul, então os status vão variar do
+// atrasado (vermelho) -> entregue (verde)") — substitui a paleta de hues
+// arbitrários (validada em 2026-09-02, ver histórico) por um GRADIENTE real
+// interpolado em OKLCH: Atrasado (vermelho) → Requisitado (violeta) →
+// Em Andamento (AZUL, centro semântico do pipeline) → Comprado
+// Parcial/Comprado (azul-petróleo/ciano) → Entregue Parcial → Entregue
+// (verde). O caminho do matiz vai deliberadamente PELO violeta no braço
+// vermelho→azul (nunca por laranja/amarelo — colidiria com o braço
+// azul→verde do outro lado). "Pendente" continua cinza sem croma
+// (isenção intencional, mesmo motivo de antes) e "Em cotação" continua
+// âmbar fixo em `configStatusManual` — nenhum dos dois faz parte do
+// gradiente (não são estágios do pipeline automático), mas entram na
+// checagem de adjacência abaixo porque aparecem entre os outros na ordem
+// real de exibição. Validado com `node scripts/validate_palette.js`
+// (skill `dataviz`) na mesma ordem de sempre (Atrasado, Pendente,
 // Requisitado, Em cotação, Em Andamento, Comprado Parcial, Comprado,
-// Entregue Parcial, Entregue): pior par adjacente ΔE 13,2 (daltonismo,
-// piso 8 ✓) / 16,1 (visão normal, piso 15 ✓). Único "FAIL" que sobra é a
-// Pendente (cinza) não ter croma — INTENCIONAL, é o estado "nada
-// aconteceu ainda", não devia competir visualmente com os outros; mesma
-// isenção que a paleta de Status de referência da própria skill usa pros
-// tons neutros. Alguns tons ficam abaixo de 3:1 de contraste no fundo
-// branco — mitigado pelo texto do próprio badge, sempre visível em
-// negrito (mesmo padrão da paleta de referência: "warning"/"serious" dela
-// também ficam abaixo de 3:1 por design, com o rótulo como mitigação).
+// Entregue Parcial, Entregue): pior par adjacente ΔE 10,9 (daltonismo,
+// piso 8 ✓) / 15,5 (visão normal, piso 15 ✓ — margem menor que a paleta
+// anterior, é o preço de forçar os extremos a lerem como vermelho/verde
+// puros e o centro como azul puro; testado várias combinações de matiz/
+// luminosidade/croma em OKLCH até achar uma que não caísse abaixo do piso
+// nem colapsasse pra tons "sujos"/oliva por clipping de gamut sRGB).
+// Único "FAIL" que sobra é a Pendente (cinza) não ter croma — INTENCIONAL,
+// mesma isenção de sempre (ver acima), igual à paleta de Status de
+// referência da própria skill pros tons neutros. Comprado/Entregue/
+// Pendente/Em cotação ficam abaixo de 3:1 de contraste no fundo branco —
+// mitigado pelo texto do próprio badge, sempre visível em negrito (mesmo
+// padrão de antes).
 function configStatusItem(status){
-  if (status === 'Atrasado') return { cor:'#e34948', bg:'rgba(227,73,72,0.13)' };
+  // Vermelho trocado (pedido explícito, 2026-09-03: "mais vibrante,
+  // clássico") — era um vermelho meio rosado/salmão (#ec5660, L alto,
+  // sobra do gradiente antigo), virou um vermelho de verdade, saturado
+  // (#e10600, OKLCH C 0,233 vs 0,185 de antes). Revalidado com
+  // `validate_palette.js` contra os vizinhos que realmente aparecem na
+  // tela hoje (Atrasado, Pendente, Em cotação, Comprado, Entregue — só
+  // esses 5, depois da consolidação de status do mesmo dia): pior par
+  // ΔE 14,2 (daltonismo) / 15,3 (visão normal), folga boa nos dois pisos.
+  if (status === 'Atrasado') return { cor:'#e10600', bg:'rgba(225,6,0,0.13)' };
   if (status === 'Pendente') return { cor:'#98a1b0', bg:'rgba(152,161,176,0.13)' };
-  if (status === 'Requisitado') return { cor:'#2a78d6', bg:'rgba(42,120,214,0.13)' };
-  // "Em Andamento" era aqua (#1baf7a) — trocado (pedido explícito, 2026-09-02:
-  // "o em andamento ficou muito similar ao entregue"): mesmo não sendo
-  // vizinhos na ordem de exibição, aqua e o verde do Entregue são da MESMA
-  // família (ΔE ~9-11, perto do piso 15) — magenta testado contra o verde:
-  // ΔE 38,2 (visão normal), sem risco de confusão.
-  if (status === 'Em Andamento') return { cor:'#db2777', bg:'rgba(219,39,119,0.13)' };
-  if (status === 'Comprado Parcial') return { cor:'#eb6834', bg:'rgba(235,104,52,0.13)' };
-  if (status === 'Comprado') return { cor:'#4a3aa7', bg:'rgba(74,58,167,0.13)' };
-  // Era rosa/magenta (#e87ba4) — trocado pro mesmo motivo acima, já que "Em
-  // Andamento" passou a usar magenta (não podem ficar parecidos entre si).
-  if (status === 'Entregue Parcial') return { cor:'#0891b2', bg:'rgba(8,145,178,0.13)' };
-  if (status === 'Entregue') return { cor:'#008300', bg:'rgba(0,131,0,0.13)' };
+  // "Em cotação" virou um status AUTOMÁTICO também em 2026-09-03 (ver
+  // `statusItemFolha` — Em Aberto/EmAprovacao/EmCotacao colapsam nele),
+  // deixando de existir só como opção manual. Mesma cor âmbar de sempre
+  // (`configStatusManual`) — convenção do arquivo: mesmo nome de status,
+  // manual ou automático, tem que ter a MESMA cor.
+  if (status === 'Em cotação') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
+  if (status === 'Requisitado') return { cor:'#802ea3', bg:'rgba(128,46,163,0.13)' };
+  if (status === 'Em Andamento') return { cor:'#0095fa', bg:'rgba(0,149,250,0.13)' };
+  if (status === 'Comprado Parcial') return { cor:'#006ca6', bg:'rgba(0,108,166,0.13)' };
+  if (status === 'Comprado') return { cor:'#00afb9', bg:'rgba(0,175,185,0.13)' };
+  if (status === 'Entregue Parcial') return { cor:'#007c51', bg:'rgba(0,124,81,0.13)' };
+  if (status === 'Entregue') return { cor:'#13ad48', bg:'rgba(19,173,72,0.13)' };
   return { cor:T.mut, bg:'#eef0f3' }; // fallback
 }
 // Rótulo de EXIBIÇÃO do status — separado do valor usado pra comparação/
 // filtro/contagem (pedido explícito, 2026-09-02: "deveria ser Em
-// Aprovação, não EmAprovacao"). Só `EmAprovacao` (valor cru da API,
-// camelCase sem espaço) precisa de tradução; os demais já vêm/ficam em
-// português legível e passam direto. NUNCA usar isso como chave de
+// Aprovação, não EmAprovacao"). `EmAprovacao`/`EmCotacao` (valores crus da
+// API, camelCase sem espaço) precisam de tradução; os demais já vêm/ficam
+// em português legível e passam direto. NUNCA usar isso como chave de
 // `counts`/`activeStatus`/`STATUS_MANUAL_OPCOES.includes` — só na hora de
 // desenhar o texto na tela.
 function rotuloStatusRequisicao(status){
   if (status === 'EmAprovacao') return 'Em Aprovação';
+  if (status === 'EmCotacao') return 'Em Cotação';
   return status;
 }
 // Um `<select>` só, com a MESMA aparência do `StatusBadgeRmi` (badge
@@ -7041,24 +7122,45 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (reqs.length === 0) return statusAtrasadoOuPendente(folha);
     const vencedora = reqs.reduce((melhor, r) => (!melhor || (r.data_cadastro || '') > (melhor.data_cadastro || '')) ? r : melhor, null);
     const st = vencedora.status_requisicao;
-    // Em Aprovação/Aprovado viram "Em Andamento", Em Aberto vira
-    // "Requisitado" (pedido explícito: "Em Aprovação e Aprovado Exibirá
-    // 'Em Andamento', 'Em aberto' será 'Requisitado'").
-    if (st === 'Comprado') return 'Comprado';
-    if (st === 'EmAprovacao' || st === 'Aprovado') return 'Em Andamento';
-    if (st === 'Em Aberto') return 'Requisitado';
+    // Revisado em 2026-09-03 (pedido explícito: "'Aprovado' será igual a
+    // 'Comprado'") — Aprovado conta como Comprado (entra na regra de
+    // Parcial do agrupado: só vira "Comprado" pleno se TODAS as folhas da
+    // família estiverem Comprado ou Aprovado). Revisado de novo no mesmo
+    // dia (pedido explícito: "Em aberto, Em Aprovação, Em cotação será
+    // tudo Em Cotação") — os 3 juntam num único estágio "Em cotação"
+    // (substitui a separação anterior em "Requisitado"/"Em Andamento",
+    // que ficam com nenhum produtor automático depois disso — ver
+    // comentário em `configStatusItem`). Inclui `EmCotacao` (sem espaço),
+    // valor cru achado ao vivo na base em 2026-09-03 (CNPEM-Faseado,
+    // Hitachi) que não tinha NENHUM tratamento antes — caía sem querer em
+    // Atrasado/Pendente como se o item não tivesse requisição nenhuma.
+    // `DefinicaoEngenharia` (achado no mesmo levantamento, só CNPEM-
+    // Faseado) continua SEM mapeamento — decisão de negócio pendente,
+    // não perguntada ainda.
+    if (st === 'Comprado' || st === 'Aprovado') return 'Comprado';
+    if (st === 'Em Aberto' || st === 'EmAprovacao' || st === 'EmCotacao') return 'Em cotação';
     return statusAtrasadoOuPendente(folha);
   };
   // Ordem de estágio (do mais pro menos avançado) — usada só pra achar o
-  // "mais próximo do final" abaixo, não é exibida.
-  const RANK_STATUS_ITEM = { 'Entregue':4, 'Comprado':3, 'Em Andamento':2, 'Requisitado':1, 'Atrasado':0, 'Pendente':0 };
+  // "mais próximo do final" abaixo, não é exibida. "Em Andamento"/
+  // "Requisitado" REMOVIDOS (2026-09-03) — os 3 status crus que os
+  // alimentavam colapsaram em "Em cotação" (ver `statusItemFolha`); tinham
+  // ficado como entradas "mortas" no mapa, mas causavam bug de verdade em
+  // `statusAutomaticoItem` abaixo (rank 1 comparitlhado com "Em cotação"
+  // fazia família com folha "Em cotação" sair rotulada "Requisitado" —
+  // achado ao vivo no IPEN, várias famílias erradas).
+  const RANK_STATUS_ITEM = { 'Entregue':4, 'Comprado':3, 'Em cotação':1, 'Atrasado':0, 'Pendente':0 };
   // Status do MACRO/agrupado — pedido explícito (2026-09-02): "para o
   // agrupado vamos sempre exibir o mais próximo do final, da compra e
-  // entrega" + regras de "parcial": 1 item comprado (dos vários da
-  // família) → Comprado Parcial; TODOS comprados → Comprado; mesma lógica
-  // pro Entregue. Em Andamento/Requisitado/Atrasado/Pendente não têm
-  // variante parcial (não pedida) — o estágio mais avançado alcançado por
-  // QUALQUER item da família já define o status inteiro nesses casos.
+  // entrega" + regra de "parcial" pro Entregue: 1 item entregue (dos
+  // vários da família) → Entregue Parcial; TODOS entregues → Entregue.
+  // Regra equivalente pro Comprado foi RETIRADA (pedido explícito,
+  // 2026-09-03: "se tiver 1 item comprado o status ficará comprado") — a
+  // automática nunca mais produz "Comprado Parcial", só o rank 3 (comprado
+  // em QUALQUER folha) já basta pro grupo inteiro virar "Comprado" pleno.
+  // "Comprado Parcial" continua existindo só como opção MANUAL
+  // (`STATUS_MANUAL_OPCOES`) — não mexi nisso, é uma escolha separada do
+  // usuário, independente dessa regra automática.
   // Funciona igual pra família consolidada (`itensOriginais`, tabela
   // principal) e pro item FOLHA sozinho (dentro do pop-up) — com 1 item
   // só, "algum"/"todos" coincidem, cai direto no status dele.
@@ -7067,9 +7169,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
     const statusPorFolha = folhas.map(statusItemFolha);
     const melhorRank = Math.max(...statusPorFolha.map(s => RANK_STATUS_ITEM[s] ?? 0));
     if (melhorRank === 4) return statusPorFolha.every(s => s === 'Entregue') ? 'Entregue' : 'Entregue Parcial';
-    if (melhorRank === 3) return statusPorFolha.every(s => s === 'Comprado') ? 'Comprado' : 'Comprado Parcial';
-    if (melhorRank === 2) return 'Em Andamento';
-    if (melhorRank === 1) return 'Requisitado';
+    if (melhorRank === 3) return 'Comprado';
+    if (melhorRank === 1) return 'Em cotação';
     return statusPorFolha.includes('Atrasado') ? 'Atrasado' : 'Pendente';
   };
   // Pop-up do Farol Financeiro (Valor/Total Consumido/Saldo) — pedido
@@ -9209,18 +9310,29 @@ function ModuloMedicoes({ obraId, obraNome }){
   const temProximo = !!proximo;
   const percProximo = (temProximo && proximo.valor_previsto != null && valorContrato) ? (Number(proximo.valor_previsto) / valorContrato) * 100 : null;
 
-  // Farol Medido × Físico — mesma lógica de sempre (corte da Curva S mais
-  // próximo da data do ÚLTIMO FATURAMENTO), agora usando
-  // `historico[].data_faturamento` no lugar de `nfs.emissao`.
-  const dataUltimoFaturamento = historico.length ? historico.reduce((max, r) => (r.data_faturamento && r.data_faturamento > max ? r.data_faturamento : max), historico[0].data_faturamento) : null;
-  const dtUltimoFaturamento = parseDataCorte(dataUltimoFaturamento);
-  const corteFisico = (curvaFisica && curvaFisica.length && dtUltimoFaturamento)
+  // Farol Medido × Físico — corte da Curva S mais próximo do FIM DO PERÍODO
+  // MEDIDO (periodo_fim do último boletim faturado), NÃO mais da data em que
+  // foi faturado (`data_faturamento`). Corrigido (pedido explícito,
+  // 2026-09-03, achado no CP029): cada boletim mede um mês CHEIO
+  // (periodo_inicio/periodo_fim = 1º e último dia do mês), mas o
+  // faturamento sai bem depois — no CP029, ~25 dias após o fim do período
+  // (ex.: julho/2026, periodo_fim 31/07, data_faturamento 25/08). Usar
+  // `data_faturamento` como corte comparava o avanço medido de julho contra
+  // a Curva S de final de agosto — quase um mês de física "adiantada" a
+  // mais, inflando a defasagem do farol sem motivo real. Como o valor
+  // faturado representa o mês CHEIO medido, o corte físico correto é o
+  // fim desse mês (`periodo_fim`), não a data administrativa do faturamento.
+  const ultimoBoletimFaturado = historico.length
+    ? historico.reduce((melhor, r) => (r.periodo_fim && (!melhor || r.periodo_fim > melhor.periodo_fim)) ? r : melhor, null)
+    : null;
+  const dtCorteFisico = ultimoBoletimFaturado ? parseDataCorte(ultimoBoletimFaturado.periodo_fim) : null;
+  const corteFisico = (curvaFisica && curvaFisica.length && dtCorteFisico)
     ? curvaFisica
         .filter(r => r.acum_realizado != null && r.data)
         .reduce((melhor, r) => {
           const dtLinha = parseDataCorte(r.data);
           if (!dtLinha || isNaN(dtLinha.getTime())) return melhor;
-          const dist = Math.abs(dtLinha - dtUltimoFaturamento);
+          const dist = Math.abs(dtLinha - dtCorteFisico);
           return (!melhor || dist < melhor.dist) ? { linha: r, dist } : melhor;
         }, null)
     : null;
@@ -9642,9 +9754,9 @@ function ModuloMedicoes({ obraId, obraNome }){
                 <span className="mono">{farolDiff > 0 ? '+' : ''}{farolDiff.toFixed(2)}%</span>
               </div>
               <div style={{ marginTop:16, paddingTop:12, borderTop:'1px solid #eef0f3', fontSize:11.5, color:T.mut, lineHeight:1.6 }}>
-                Comparado no corte da Curva S mais próximo da data do último
-                faturamento ({fmtDataLonga(dataUltimoFaturamento)}): corte de{' '}
-                {fmtDataLonga(corteFisico.linha.data)}.
+                Comparado no corte da Curva S mais próximo do fim do último
+                mês medido ({fmtDataLonga(ultimoBoletimFaturado?.periodo_fim)}
+                ): corte de {fmtDataLonga(corteFisico.linha.data)}.
               </div>
 
               {/* TOTAIS DA OBRA (Layout Aprimorado com Retenção) */}
