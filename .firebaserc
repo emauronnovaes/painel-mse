@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "planejamento-mse"
-  }
+  },
+  "targets": {
+    "planejamento-mse": {
+      "hosting": {
+        "apresentacao": [
+          "painel-mse-apresentacao"
+        ],
+        "prototipo": [
+          "painel-mse-prototipo"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

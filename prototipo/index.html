@@ -235,13 +235,6 @@
     border-top: 3px solid var(--mut2); border-radius: 3px;
   }
   .tile-handle:active { cursor: grabbing; }
-  /* Badge de Status (Suprimentos) — passar o mouse troca o texto pra
-     fração "X/Y itens finalizados" DENTRO do próprio badge, em vez de
-     tooltip nativo (pedido explícito: "uma mudança no cartão do
-     status, não uma informação acima"). */
-  .status-badge-rmi-fracao { display: none; }
-  .status-badge-rmi:hover .status-badge-rmi-texto { display: none; }
-  .status-badge-rmi:hover .status-badge-rmi-fracao { display: inline; }
   .farol-financeiro-rmi { transition: box-shadow 200ms ease-out; }
   .farol-financeiro-rmi:hover { filter: brightness(1.1); }
   .suprimentos-spine-farol { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; margin-right: 12px; }
@@ -330,6 +323,101 @@
     .desvios-filtros { flex-wrap: wrap; }
     .placeholder-card { margin-left: 12px !important; margin-right: 12px !important; padding: 36px 20px !important; }
   }
+
+  /* ── Exportar PDF (Suprimentos) — pedido explícito (2026-08-28): "mapa
+     de suprimentos... exportado aberto, use e abuse do front end design".
+     Sem lib nenhuma (jsPDF/html2canvas) — usa o "Salvar como PDF" nativo
+     do diálogo de impressão do navegador (Ctrl+P / window.print()), que
+     já é PDF de verdade e não pesa o bundle. `.print-report` só existe
+     no DOM (display:none na tela) e vira visível SÓ dentro de
+     `@media print`; o resto do app (header, sidebar, sidebar de setores,
+     tudo) some via o truque clássico de "visibility:hidden geral,
+     visibility:visible só na área de impressão" — não precisa conhecer
+     nem marcar `.no-print` em cada componente do app pra isso funcionar.
+
+     Visual REFEITO (2026-08-28, pedido explícito) a partir de um laudo
+     técnico real da MSE ("cp279 - Laudo SPDA - REV01.pdf") como
+     referência, e depois ajustado 2x no mesmo dia, ambas pedido
+     explícito: 1) "o vermelho está muito chamativo, vamos usar um cinza
+     claro" — trocado #980000 (achado por amostra de pixel no laudo) por
+     cinza claro (#e6e6e6, texto preto — vermelho só sobrevive como
+     detalhe mínimo na regrinha da capa e no "mse" do rodapé, ainda mais
+     discreto que antes). 2) "talvez não seja necessário as bordas na
+     table" — grade preta virou só 1 linha inferior clara por linha
+     (`border-bottom`), sem borda vertical nem moldura. Também "não
+     precisa exibir o valor" — Valor (R$) saiu por completo do relatório
+     (coluna da tabela, subtotal de Área/Disciplina, estatística do
+     topo) — essa exportação não é sobre dinheiro, é sobre a lista de
+     materiais em si. Farol financeiro segue removido (pedido anterior,
+     mesmo dia) — zero canto arredondado, zero "bolinha" de status. */
+  .print-report{ display:none; }
+  @media print{
+    @page{ size:A4; margin:16mm 14mm; }
+    html, body{ overflow:visible !important; background:#fff !important; }
+    body *{ visibility:hidden; }
+    /* Só um dos dois fica visível por vez, controlado por display:block inline
+       (ver ReactDOM.createPortal de cada um — modoExportacao define qual). */
+    .print-report[style*="display: block"], .print-report[style*="display: block"] *{ visibility:visible; }
+    .print-report{
+      position:absolute; inset:0 auto auto 0; width:100%;
+      -webkit-print-color-adjust:exact; print-color-adjust:exact; color-adjust:exact;
+      font-family:'IBM Plex Sans', sans-serif; color:#000;
+    }
+    .pr-resumo-cover{ padding:20mm 0; max-width:100%; }
+    .pr-resumo-header{ display:flex; align-items:center; gap:20px; margin-bottom:32px; }
+    .pr-resumo-header h1{ margin:0; font-size:28px; font-weight:800; color:#192231; }
+    .pr-resumo-header > div > div{ font-size:14px; color:#4d5868; margin-top:4px; }
+    .pr-cover{
+      display:flex; justify-content:space-between; align-items:flex-start; gap:24px;
+      border-bottom:1.5px solid #000; padding-bottom:8px; margin-bottom:14px;
+    }
+    .pr-cover-left{ min-width:0; }
+    .pr-rule{ width:46px; height:3px; background:#980000; margin-bottom:8px; }
+    .pr-title{ font-size:24px; font-weight:800; letter-spacing:-0.01em; margin:0 0 6px; text-transform:uppercase; }
+    .pr-eyebrow{ display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; }
+    /* Coluna direita: logo grande em cima + data embaixo, alinhados à
+       direita — altura do logo casada com a coluna esquerda inteira
+       (regrinha + título + obra), pedido explícito (2026-08-28). */
+    .pr-cover-right{ display:flex; flex-direction:column; align-items:flex-end; gap:4px; flex-shrink:0; }
+    .pr-meta-text{ text-align:right; font-size:9.5px; color:#333; line-height:1.5; }
+    .pr-logo{ height:48px; width:auto; }
+    .pr-area{
+      background:#e6e6e6 !important; color:#000 !important;
+      padding:5px 8px; margin-top:14px; display:flex; justify-content:space-between; gap:10px;
+      break-after:avoid; break-inside:avoid;
+    }
+    .pr-area:first-of-type{ margin-top:0; }
+    .pr-area .nome{ font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:0.02em; }
+    .pr-disc{
+      display:flex; justify-content:space-between; gap:10px; padding:4px 8px;
+      border-bottom:1.5px solid #000; margin-top:6px;
+      break-after:avoid; break-inside:avoid;
+    }
+    .pr-disc .nome{ font-weight:700; font-size:10.5px; }
+    table.pr-mat{ width:100%; border-collapse:collapse; margin-top:0; font-size:9px; table-layout:fixed; }
+    table.pr-mat thead{ display:table-header-group; }
+    table.pr-mat th{
+      text-align:center; font-size:8px; text-transform:uppercase; letter-spacing:0.03em; color:#000;
+      font-weight:700; padding:4px 6px; background:#e6e6e6 !important; border-bottom:1.5px solid #000 !important;
+    }
+    table.pr-mat th:first-child{ text-align:left; }
+    table.pr-mat th.num, table.pr-mat td.num{ text-align:right; }
+    table.pr-mat td{ padding:4px 6px; border-bottom:1px solid #ddd; vertical-align:top; text-align:center; }
+    table.pr-mat td.desc{ word-break:break-word; text-align:left; }
+    table.pr-mat tr{ break-inside:avoid; }
+    .pr-status{ font-size:8px; font-weight:700; letter-spacing:0.02em; text-transform:uppercase; white-space:nowrap; }
+    /* Tabela "envelope" de 1 linha — o `<tfoot>` repete em toda página
+       impressa (mesma técnica do `<thead>` de `table.pr-mat` acima),
+       fazendo o rodapé aparecer em TODAS as páginas, não só na última. */
+    table.pr-page{ width:100%; border-collapse:collapse; }
+    table.pr-page > tbody > tr > td{ padding:0; }
+    table.pr-page tfoot{ display:table-footer-group; }
+    .pr-foot{ margin-top:18px; padding-top:6px; border-top:1px solid #000; font-size:8.5px; color:#000; display:flex; justify-content:space-between; }
+    .pr-foot b{ color:#980000; }
+    @page{
+      @bottom-right{ content:"página " counter(page) " de " counter(pages); font-family:'IBM Plex Sans', sans-serif; font-size:8px; color:#000; }
+    }
+  }
 </style>
 </head>
 <body>
@@ -371,21 +459,31 @@ const OBRAS = [
     // (consolidado) e "C.O." isolado saíram do seletor; só "PPU" e "Estudo"
     // continuam. `curva` acima (chave PADRÃO usada fora do seletor) NÃO
     // mudou — segue 'NOVO NORDISK - AP' (mantém o vínculo com o resto do
-    // painel); o 1º item de `curvas` (agora "PPU") vira o default só DENTRO
+    // painel); o 1º item de `curvas` (agora "Estudo", pedido explícito
+    // 2026-08-31: "é para abrir em Estudo") vira o default só DENTRO
     // do seletor de Curva S (`curvaChaveAtual` cai pro `curvas?.[0]?.chave`
     // quando nada foi clicado ainda).
     curvas: [
-      { chave: 'NOVO NORDISK - AP - PPU',   label: 'PPU' },
       { chave: 'NOVO NORDISK - AP - Estudo', label: 'Estudo' },
+      { chave: 'NOVO NORDISK - AP - PPU',   label: 'PPU' },
     ] },
   { id: 108, nome: 'Novo Nordisk - AP - Reforço',    curva: 'NOVO NORDISK - REFORÇO AP', origemTV: 'NN - REFORÇO EST. METÁLICAS',                                  origemCP: 'CP261' },
   { id: 91,  nome: 'Novo Nordisk - UB/SP',           curva: 'NOVO NORDISK - UB SP',      origemTV: 'NN - UB/SP - ELETROMECÂNICA',    origemPTS: 'Novo Nordisk UB',  origemCP: 'CP236',
     // NN - UB/SP ganhou 2ª curva (Take-Off) em 2026-08-26, mesmo padrão do
     // seletor de botões criado pro NN - AP. `curva` acima continua PADRÃO.
+    // Take-Off é o 1º item (pedido explícito 2026-08-31: "é para abrir em
+    // Take-off") — vira o default do seletor.
     curvas: [
-      { chave: 'NOVO NORDISK - UB SP',           label: 'Original' },
       { chave: 'NOVO NORDISK - UB SP - Take Off', label: 'Take-Off' },
+      { chave: 'NOVO NORDISK - UB SP',           label: 'Original' },
     ] },
+  // IPEN (2026-08-28): só tem itens_rmi (RMI 304) sincronizado até agora —
+  // sem EAP/cards_ativos/restricoes_obra ainda. `curva`/`origemTV`/`origemCP`
+  // ficam de fora de propósito (nenhum dado real pra mapear); os módulos que
+  // dependem deles (Curva S, Encarregados, Medições) degradam graciosamente
+  // pra "sem dado" — mesmo padrão já usado em toda a base pra obra sem fonte
+  // mapeada. Só Suprimentos funciona hoje (ver CONFIG_SUPRIMENTOS_POR_OBRA).
+  { id: 114, nome: 'IPEN' },
 ];
 
 // Substituído em 2026-08-19 pelas tabelas reais `contratos_medicao` +
@@ -2575,7 +2673,12 @@ function ModuloEncarregados({ obraId, obraNome }){
       const resumoColab = {};
       Object.entries(colabPorEnc).forEach(([nome, set]) => { resumoColab[nome] = set.size; });
       if (!cancelado) setColaboradoresEnc(resumoColab);
-      if (!cancelado) setNumColabObra(new Set(Object.values(nomesPorCard).flatMap(s => [...s])).size);
+      // Soma dos valores por encarregado (não dedup global) — pedido
+      // explícito 2026-08-28: o balão do topo deve bater com a soma da
+      // coluna "Colaboradores" abaixo. Um dedup por obra inteira poderia
+      // ser menor que a soma se a mesma pessoa aparecesse em cards de mais
+      // de um encarregado no mesmo dia.
+      if (!cancelado) setNumColabObra(Object.values(resumoColab).reduce((a, b) => a + b, 0));
 
       // Produtividade (Hh Previsto ÷ Hh Real) — NOVO indicador (pedido
       // explícito, 2026-08-27), independente da "Performance" acima. Mesma
@@ -4403,14 +4506,21 @@ function corStatusRestricao(label){
 // desfecho, marcar "Atrasado" nela seria enganoso (mesmo racional do
 // balão "Abertas" já existente, que também isola por status). Retorna
 // `null` nesse caso, exibido como "—" na tabela.
-function monitoramentoRestricao(dataConclusao, statusLabel){
+// Criticidade ALTA força no mínimo "Em risco" (pedido explícito,
+// 2026-08-28) — nunca aparece "No prazo" pra uma restrição de
+// criticidade alta, mesmo que faltem mais de 7 dias pra data limite.
+// Não sobrepõe "Atrasado" (confirmado com o usuário antes de
+// implementar): se já venceu, continua mostrando "Atrasado" — esse
+// estado é mais grave e não devia ser escondido atrás de "Em risco".
+function monitoramentoRestricao(dataConclusao, statusLabel, criticidade){
   if (!(statusLabel || '').toLowerCase().includes('abert')) return null;
   if (!dataConclusao) return null;
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const limite = new Date(dataConclusao + 'T00:00:00');
   const diasRestantes = Math.round((limite - hoje) / 86400000);
   if (diasRestantes < 0) return { texto:'Atrasado', cor:T.red, bg:'rgba(210,59,59,0.13)', ordem:0 };
-  if (diasRestantes <= 7) return { texto:'Em risco', cor:T.amber, bg:'rgba(217,145,26,0.13)', ordem:1 };
+  const criticidadeAlta = (criticidade || '').trim().toLowerCase() === 'alta';
+  if (diasRestantes <= 7 || criticidadeAlta) return { texto:'Em risco', cor:T.amber, bg:'rgba(217,145,26,0.13)', ordem:1 };
   return { texto:'No prazo', cor:T.green, bg:'rgba(31,157,87,0.13)', ordem:2 };
 }
 // `onClick`/`ativo` são opcionais — sem eles, continua o mesmo badge
@@ -4573,7 +4683,7 @@ function ModuloRestricoes({ obraId, obraNome }){
         case 'responsavel': return (r.nome_responsavel || '').toLowerCase();
         case 'inicio': return r.data_inicio || '';
         case 'conclusao': return r.data_conclusao || '';
-        case 'monitoramento': return monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label)?.ordem ?? 3;
+        case 'monitoramento': return monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label, r.criticidade)?.ordem ?? 3;
         default: return 0;
       }
     };
@@ -4649,7 +4759,7 @@ function ModuloRestricoes({ obraId, obraNome }){
               {restricoes.map(r => {
                 const cc = corCriticidade(r.criticidade);
                 const cs = corStatusRestricao(r.status_cadastro_label);
-                const cm = monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label);
+                const cm = monitoramentoRestricao(r.data_conclusao, r.status_cadastro_label, r.criticidade);
                 const temTarefa = r.id_eap != null && !!r.edt;
                 return (
                   <tr key={r.id} onClick={() => temTarefa && setRestricaoSelecionada(r)}
@@ -5338,13 +5448,30 @@ function classificarMaterialRmi(descNorm, catalogo = CATALOGO_MATERIAIS_RMI){
 // Mescla o catálogo base com as categorias extras de UMA obra — chaves
 // repetidas somam as palavras (união), nunca substituem, então nada do
 // catálogo base se perde nem pra quem tem extra.
-function catalogoEfetivoRmi(catalogoExtra){
+// `prioridade` (opcional, array de nomes de categoria): acha achado no
+// "pente fino" da IPEN (2026-08-28) — `classificarMaterialRmi` sempre
+// retorna a 1ª categoria que bate, na ordem do objeto; categorias do
+// catálogo BASE (compartilhado, nunca reordenado) vêm sempre antes das
+// categorias novas de `catalogoExtra` (só entram no fim). Um item cuja
+// palavra-chave BASE mais genérica bate primeiro (ex. "Rede/Cabeamento
+// Estruturado": ['CONECTOR']) nunca alcança uma categoria mais
+// específica do `catalogoExtra` da obra, mesmo que ela também bata (ex.
+// "CONECTOR MACHO | AISI 316 TUBE FITTING..." caindo em "Rede/
+// Cabeamento" em vez de "Válvulas e acessórios"). `prioridade` reordena
+// só o catálogo EFETIVO desta obra (categorias já mescladas, não o
+// `CATALOGO_MATERIAIS_RMI` original) pra checar as categorias listadas
+// ANTES de qualquer outra — isolado por obra, não afeta a ordem de
+// nenhuma outra.
+function catalogoEfetivoRmi(catalogoExtra, prioridade){
   if (!catalogoExtra) return CATALOGO_MATERIAIS_RMI;
   const combinado = { ...CATALOGO_MATERIAIS_RMI };
   Object.entries(catalogoExtra).forEach(([categoria, palavras]) => {
     combinado[categoria] = combinado[categoria] ? [...combinado[categoria], ...palavras] : palavras;
   });
-  return combinado;
+  if (!prioridade || !prioridade.length) return combinado;
+  const reordenado = {};
+  prioridade.forEach(categoria => { if (combinado[categoria]) { reordenado[categoria] = combinado[categoria]; delete combinado[categoria]; } });
+  return { ...reordenado, ...combinado };
 }
 // Extrai a "família" de um material a partir da descrição — 1ª tentativa
 // é bater no catálogo padrão acima; sem match, cai no corte por
@@ -5578,7 +5705,21 @@ function ehItemCanteiroRmi(descricao){
 // verdade, "Change Order" já bate o regex de balde existente): 71% do
 // valor coberto SEM NENHUM ajuste. Só 2 achados pontuais (ver
 // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
-const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91]);
+const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91, 114]);
+
+// Status MANUAL desativado por obra (pedido explícito, 2026-09-02: "IPEN
+// ainda exibe as flags manuais? Descarte-as por hora") — a IPEN (114) já
+// tinha 26 overrides manuais gravados em `suprimentos_status_manual` (todos
+// de 2026-08-31, quando o manual era a ÚNICA forma de status real —
+// anterior à requisição). Agora que a IPEN tem status automático de
+// verdade vindo de `status_requisicao` (`statusAutomaticoItem`), esses
+// overrides antigos ficariam escondendo o automático novo por baixo, sem
+// motivo. Enquanto a obra estiver aqui: não busca `suprimentos_status_manual`
+// (fica sempre `{}`) e o badge da tabela principal não vira `<select>`
+// editável — só mostra o automático, decorativo. Os 26 registros
+// continuam intactos no Supabase (não apagados, "por hora" = reversível),
+// só deixam de ser lidos/editáveis por essa obra.
+const OBRAS_STATUS_MANUAL_DESATIVADO = new Set([114]);
 // Ajustes específicos por obra, além da régua padrão (desenhada e
 // validada pro CP029) — cada obra nova entra aqui só com o que
 // realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
@@ -5632,6 +5773,136 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
       'Eletrodutos e Infraestrutura Elétrica': ['PERF FGF', 'PARALEITO'],
     },
   }, // Hitachi
+  114: {
+    // IPEN (2026-08-28) — obra pequena: nível 0 = disciplina de verdade
+    // (Mecânica/Elétrica/Isolamento Térmico), resolvido sem ajuste
+    // estrutural via `resolverDisciplinasRmi` (validado local com o dump
+    // completo antes de habilitar). Ajustes necessários — todos por
+    // pedido explícito:
+    //
+    // `trocarAreaDisciplina: true` — 2 pedidos explícitos em sequência
+    // (2026-08-28): "precisa da disciplina no grupo 0" (grupo de TOPO da
+    // árvore, hoje rotulado "Área") + "o segundo nível será os [itens] da
+    // RMI também" (nível 1 de verdade, ex. "Conjunto Geral"/"Trecho 1" —
+    // sub-divisão real da RMI, não uma Área física). O padrão do CP029
+    // (`areaObrigatoria: true` sozinho) põe a área (nível 1) no topo e a
+    // disciplina (nível 0) dentro — o INVERSO do que a IPEN precisa.
+    // `trocarAreaDisciplina` troca os 2 campos na hora de montar a árvore
+    // (ver `useMemo` grande do `ModuloSuprimentos`): grupo 0 (campo
+    // `area`) vira a disciplina de verdade (nível 0), grupo 1 (campo
+    // `disciplina`) vira o nível 1 da RMI. `areaObrigatoria` continua
+    // `true` (default, não precisou mexer) — ainda exige que o material
+    // tenha um nível 1 pra entrar (100% dos 214 materiais têm).
+    trocarAreaDisciplina: true,
+    // Rótulo do grupo 1 (nível 1 da RMI, ex. "Conjunto Geral"/"Trecho 1")
+    // no header da tabela — "Área" (default) ficaria factualmente errado
+    // aqui, já que não é uma área física.
+    rotuloArea: 'Detalhamento',
+    //
+    // 6 escopos (nível 0) na RMI 304: Mecânica/Elétrica/Isolamento Térmico
+    // (materiais de obra de verdade) + Indiretos - Geral/Mão de Obra/IPI
+    // (custo indireto/administrativo). Pedido explícito (2026-08-28): "o
+    // primeiro nível será a disciplina... apenas filtrar os indiretos e
+    // custos de MO" — trocado de `escoposPermitidos` (allowlist só dos 3
+    // reais) pra `escoposExcluidos` (bloqueia só Indiretos/MO), mais
+    // robusto se a RMI ganhar disciplina nova de verdade depois (a
+    // allowlist sumiria com ela sem avisar). "IPI" não precisou entrar
+    // na lista — já sai sozinho pelo pipeline padrão (valor zero), e "Mão
+    // de Obra" também já saía sozinha (unidade VB) ANTES desta mudança;
+    // mantido aqui só por clareza/robustez (defesa em profundidade, caso
+    // ganhe algum item com unidade diferente de VB no futuro). O achado
+    // real é só "Indiretos - Geral": 6 dos seus 7 itens (Frete, Km carro,
+    // Pedágio, Hotel, Alimentação, Locação veículo — R$18.850) têm
+    // unidade KM/UN em vez de VB/SERV, então o filtro de material não
+    // pegava (são despesa de viagem/frete/serviço terceirizado, não
+    // material).
+    escoposExcluidos: ['INDIRETOS', 'MAO DE OBRA'],
+    // Curva A (corte dos 80% acumulado) desligada — pedido explícito
+    // (2026-08-28): "não precisa da regra da curva A". Mostra todos os
+    // 214 materiais dos escopos válidos, não só os que somam 80% do valor.
+    curvaAObrigatoria: false,
+    // Catálogo de materiais validado (2026-08-28) contra os 214 materiais
+    // dos 3 escopos permitidos (R$552.320,55) — perfil de obra bem
+    // diferente das outras (nuclear/processo industrial: tubulação em
+    // AISI 316L/1020, conexões rosqueadas/compressão, suportes de
+    // tubulação LISEGA, resistências de mica, instrumentação, fabricação
+    // de reservatório/trocador de calor). Catálogo base (CP029) sozinho
+    // cobria só 21%; 1ª rodada de categorias foi pra 100% dos itens
+    // acima de R$150 (R$552.120,36 de R$552.320,55). 2ª rodada
+    // (2026-08-28, pedido explícito "vamos criar categorias para todos
+    // os itens") cobriu os últimos 5 itens de cauda (R$200,19: variante
+    // de digitação "Junção"/"Junta" Plana, insumos de montagem genéricos,
+    // termo-retrátil, tubulação de cobre, terminal ilhós) — **100,00%
+    // real, 0 itens fora do catálogo** nos 214 materiais/R$552.320,55.
+    catalogoExtra: {
+      'Fabricação de Equipamentos (Reservatórios/Trocadores)': ['FABRICACAO - RESERVATORIO', 'FABRICACAO - TROCADOR DE CALOR'],
+      'Resistências Elétricas': ['RESISTENCIA 15 KW', 'RESISTENCIA COLEIRA DE MICA'],
+      'Tubulação Inox': ['TUBO - AISI 316', 'TUBULACAO DE INOX'],
+      'Tubulação Aço Carbono': ['TUBO - AISI 1020'],
+      // `BANDEJA DE RETENCAO` (pente-fino, 2026-08-28): a genérica
+      // `BANDEJA` da categoria base "Eletrodutos e Infraestrutura
+      // Elétrica" (pensada pra bandeja de CABOS) batia essa bandeja de
+      // CONTENÇÃO mecânica (aço ASTM A36, sob equipamento) por engano —
+      // resolvido com `catalogoPrioritario` abaixo, junto com esta
+      // palavra mais específica.
+      'Estrutura e Suportação Metálica': ['CHAPA DE APOIO', 'SAPATA', 'PERFIL C ', 'TUBO QUADRADO', 'APOIO ESTRUTURAL', 'BASE SUPORTE', 'PLACA BASE', 'CHAPA SACRIFICIO', 'CHAPA DESLIZAMENTO', 'CHAPA 77', 'ESTRUTURA SP', 'OLHAL FIXO SUPORTE', 'PINO DE MOVIMENTACAO', 'CHAPA PORTA REFRATARIO', 'BANDEJA DE RETENCAO'],
+      'Suportes e Acessórios de Tubulação': ['LISEGA', 'GRADETEC', 'TIRANTE OLHAL', 'BRACADEIRA / BLOCO METALICO TERMOPAR', 'ABRACADEIRA ESPECIFICA', 'SUPORTE PARA PISO E PAREDE', 'SUPORTE MF', 'JUNCAO ARTICULADA', 'FIXADOR DUPLO', 'SUPORTE CAIXA DE TOMADA'],
+      // `JUNCAO PLANA` (2ª rodada, 2026-08-28 — "vamos criar categorias
+      // para todos os itens"): variante de digitação de `JUNTA PLANA`
+      // logo acima ("Junção" em vez de "Junta") — mesma família, só não
+      // batia por causa da palavra diferente.
+      // `CONECTOR MACHO` (pente-fino): tube fitting AISI 316 da Linha de
+      // Argônio — sem essa palavra específica, caía na categoria base
+      // "Rede/Cabeamento Estruturado" (palavra genérica `CONECTOR`,
+      // pensada pra rede de dados) por engano; corrigido junto com
+      // `catalogoPrioritario` abaixo.
+      // `SEPTO DIVISOR`/`TAMPA E PRESSAO`/`UNIAO PARA DIVISOR` SAÍRAM
+      // daqui (pente-fino, 2026-08-28): não eram conexão de tubulação —
+      // são acessório de bandeja/canaleta ELÉTRICA (Septo divisor,
+      // União para divisor, Tampa de pressão), 3 itens que eu tinha
+      // classificado errado na 1ª rodada por associação de palavra.
+      // Movidos pra "Eletrodutos e Infraestrutura Elétrica" abaixo.
+      'Válvulas e acessórios': ['TEE UNIAO', 'CRUZETA | AISI', 'COTOVELO UNIAO', 'MEIA LUVA ROSCADA', 'LUVA ROSCADA', 'BUJAO', 'REDUCAO CONECNTRICA', 'JUNTA DE VEDACAO', 'JUNTA PLANA', 'JUNCAO PLANA', 'POCO DE PROTECAO', 'TUBO PILOTO', 'CONECTOR MACHO', 'FILTRO SINTERIZADO'],
+      'Instrumentação': ['TERMOPAR', 'TRANSMISSOR DE VAZAO', 'TRANSDUTOR PROPORCIONAL', 'PRESOSTATO', 'PRESSOSTATO', 'ESPAGUETE', 'TERMO ENCOLHIVEL'],
+      'Painéis': ['QUADRO DE MONITORAMENTO', 'QUADRO DE COMANDO'],
+      'Isolamento térmico': ['LA DE ROCHA', 'PRODUTO REVESTIMENTO'],
+      // `SEPTO DIVISOR`/`UNIAO PARA DIVISOR`/`TAMPA E PRESSAO` (pente-
+      // fino, 2026-08-28): acessórios de canaleta/bandeja elétrica —
+      // corrigido de "Válvulas e acessórios" (ver nota lá) pra aqui.
+      'Eletrodutos e Infraestrutura Elétrica': ['SEPTO DIVISOR', 'UNIAO PARA DIVISOR', 'TAMPA E PRESSAO'],
+      // `INSUMOS DE MONTAGEM` (2ª rodada): descrição genérica de
+      // fixadores/ancoragem metálica/vedantes térmicos — mesma família de
+      // fixação, sem SKU próprio na origem.
+      'Parafusos e Fixação': ['PARAFUSO', 'PARFUSO', 'PORCA', 'ARRUELA', 'PRISIONEIRO', 'CONTRAPORCA', 'INSUMOS DE MONTAGEM'],
+      'Equipamentos de TI': ['COMPUTADOR', 'MONITOR 22'],
+      'Dispositivos Elétricos (Tomadas/Plugues)': ['TOMADA STECK', 'PLUG STECK', 'PLUGUE MACHO TRIANGULAR'],
+      // 2 categorias novas (2ª rodada, 2026-08-28 — "vamos criar
+      // categorias para todos os itens, liste os itens que ficaram sem
+      // categoria"): últimos 2 itens da cauda, cada um metal/acessório
+      // diferente dos já cobertos (cobre é metal distinto de inox/aço
+      // carbono/alumínio já catalogados; ilhós é acessório de
+      // terminação de cabo, mesma família de "Terminal de Compressão").
+      'Tubulação de Cobre': ['TUBULACAO DE COBRE'],
+      'Cabos': ['TERMINAL TIPO ILHOIS'],
+    },
+    // Pente-fino (2026-08-28, pedido explícito "vamos fazer um pente
+    // fino"): `classificarMaterialRmi` sempre bate a 1ª categoria da
+    // ordem do objeto — categorias do catálogo BASE (compartilhado)
+    // vêm SEMPRE antes das novas de `catalogoExtra` (só entram no
+    // fim), então uma palavra-chave base genérica intercepta um item
+    // antes de ele alcançar uma categoria mais específica desta obra.
+    // 3 achados reais: "CONECTOR MACHO..." (tube fitting AISI 316) e
+    // "CONECTOR U - GRADETEC..." caindo em "Rede/Cabeamento
+    // Estruturado" (`CONECTOR` genérico, pensado pra rede de dados) em
+    // vez de "Válvulas e acessórios"/"Suportes..."; "BANDEJA DE
+    // RETENÇÃO..." (aço ASTM A36, contenção mecânica) caindo em
+    // "Eletrodutos e Infraestrutura Elétrica" (`BANDEJA` genérico,
+    // pensado pra bandeja de cabos) em vez de "Estrutura e
+    // Suportação Metálica". `catalogoPrioritario` reordena o catálogo
+    // EFETIVO desta obra (só a obra, não afeta nenhuma outra) pra
+    // checar essas 3 categorias ANTES de qualquer categoria base.
+    catalogoPrioritario: ['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação'],
+  }, // IPEN — 100% de cobertura (R$552.320,55), nenhum item fora do catálogo, revisado item a item
   94: {
     // Achado investigando o dump real (2026-08-26, script descartável
     // baixar-rmi-obra.js + inspeção manual, não fica no repo):
@@ -6176,27 +6447,44 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
   }, // Novo Nordisk - UB/SP
 };
 
+// Campo agrupador do PNG "Gráficos" (`.slide-export`) por obra, quando não
+// é o default (`it.disciplina`, ou `it.area` pra obra com
+// `trocarAreaDisciplina`) — ver comentário grande em `donutsPorDisciplina`
+// (`ModuloSuprimentos`) pra cada obra/motivo. Só entra aqui obra que
+// precisa de `it.area` SEM `trocarAreaDisciplina` (a IPEN já cai no default
+// via esse mecanismo, não precisa de entrada aqui).
+const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = {
+  107: 'area', // Novo Nordisk - AP — pedido explícito (2026-09-01); área = nome da RMI (`usarNomeRmiComoArea`)
+  108: 'area', // Novo Nordisk - AP - Reforço — pedido explícito (2026-09-01)
+  // Hitachi — pedido explícito (2026-09-01): "primeiro nível". Entrada
+  // NA PRÁTICA redundante com o default (`areaObrigatoria:false` faz
+  // `it.area` e `it.disciplina` saírem IDÊNTICOS pra essa obra — não
+  // existe camada de área separada, ver `areaArvore`/`disciplinaArvore`
+  // no `useMemo` de `arvore`) — mantida explícita mesmo assim, documenta
+  // a regra da obra e blinda contra o dia em que Hitachi ganhar uma
+  // camada de área de verdade (deixaria de ser redundante sem avisar).
+  110: 'area',
+};
+
+// Obra sem regra de exportação de gráficos (botão "Gráficos PNG" nem
+// aparece) — pedido explícito (2026-09-01: "Porto não vai ter botão do
+// png"). Mesmo espírito de "cada obra tem sua própria regra, não é
+// padrão": Porto Itapoá ainda não teve seu layout de exportação definido,
+// então não expõe um botão que cairia no agrupamento genérico por
+// adivinhação.
+const OBRAS_SEM_EXPORTACAO_GRAFICOS = new Set([94]); // Porto Itapoá
+
 // Coluna "Status" — pedido explícito (2026-08-24): "vamos chamar de
 // coluna de status e classificar em finalizado, em andamento e
-// pendente. Em andamento será para itens que já tiveram algo
-// finalizado, pendente será nada finalizado". Vem de `raw.finalizado`
-// (booleano por item de RMI), contado por linha (uma linha pode ser
-// consolidação de várias peças da mesma categoria — catálogo de itens
-// padrão): nenhuma finalizada = Pendente; todas finalizadas =
-// Finalizado; só parte = Em andamento. A contagem "X/Y" aparece ao
-// passar o mouse — mas como TROCA DE TEXTO dentro do próprio badge
-// (classe `.status-badge-rmi`, CSS logo abaixo do `<head>`), não como
-// tooltip nativo (`title`): pedido explícito, "havia pensado na
-// exibição ao passar o mouse como uma mudança no cartão do status, não
-// uma informação acima".
-function statusRmiConsolidado(qtdFinalizados, qtdTotal){
-  return qtdTotal > 0 && qtdFinalizados === qtdTotal ? 'Finalizado' : qtdFinalizados === 0 ? 'Pendente' : 'Em andamento';
-}
-function configStatusRmi(status){
-  if (status === 'Finalizado') return { cor:T.green, bg:'rgba(31,157,87,0.13)' };
-  if (status === 'Em andamento') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
-  return { cor:T.mut, bg:'#eef0f3' };
-}
+// pendente" — a régua ORIGINAL era baseada em `raw.finalizado` (booleano
+// por item de RMI) + prazo vencido ("Atrasado"). Substituída em
+// 2026-09-02 (pedido explícito: "atribua os status dos itens com base no
+// status da requisição, os sem status de requisição ficarão como
+// pendentes") por `statusAutomaticoItem` (ver `ModuloSuprimentos`), que
+// usa `requisicoes_mapa_compras.status_requisicao` — `statusRmiConsolidado`/
+// `configStatusRmi` (a régua antiga) foram removidas por não terem mais
+// nenhum chamador.
+//
 // `activeStatus`/`onStatusClick` são opcionais — mesma lógica de clique
 // pra filtrar já usada no badge de Status/Execução do OC/CO (pedido
 // explícito, 2026-08-25: "aplicar a mesma lógica aos status da tela de
@@ -6204,16 +6492,152 @@ function configStatusRmi(status){
 // `activeStatus` a partir da pizza/legenda (clicar de novo no mesmo
 // status limpa). Sem esses props (uso no pop-up de itens aninhados), o
 // badge continua só decorativo, sem cursor de clique.
-function StatusBadgeRmi({ qtdFinalizados, qtdTotal, activeStatus, onStatusClick }){
-  const status = statusRmiConsolidado(qtdFinalizados, qtdTotal);
-  const cfg = configStatusRmi(status);
+function StatusBadgeRmi({ status, activeStatus, onStatusClick }){
+  const cfg = configStatusItem(status);
   const clicavel = typeof onStatusClick === 'function';
   return (
     <span onClick={clicavel ? (e) => { e.stopPropagation(); onStatusClick(status); } : undefined}
       className="mono status-badge-rmi" style={{ display:'inline-block', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:cfg.bg, color:cfg.cor, cursor: clicavel ? 'pointer' : 'default', boxShadow: clicavel && activeStatus === status ? `0 0 0 2px ${cfg.cor}` : 'none' }}>
-      <span className="status-badge-rmi-texto">{status}</span>
-      <span className="status-badge-rmi-fracao">{qtdFinalizados}/{qtdTotal}</span>
+      {status}
     </span>
+  );
+}
+
+// Status manual por item (pedido explícito, 2026-08-31, depois ajustado
+// no mesmo dia — "o status manual deverá substituir o automático,
+// inclusive, podemos utilizar o mesmo badge"): enquanto o status
+// automático (`statusAutomaticoItem`, baseado na requisição) não está
+// regularizado pra todas as obras (só a IPEN tem requisição hoje),
+// permite marcar à mão o estágio real de compra de cada item. Quando tem
+// override manual, ele SUBSTITUI o
+// badge automático por completo (não fica um badge em cima do outro) —
+// ver `BadgeStatusSuprimento` abaixo, que decide qual dos dois mostrar.
+// Persistido em `suprimentos_status_manual` (Supabase, RLS igual à
+// tabela `suprimentos`: anon lê/escreve/apaga) — compartilhado entre
+// todo mundo que abre o painel, não por navegador.
+const STATUS_MANUAL_OPCOES = ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
+// 4 destes 5 nomes (todos exceto "Em cotação") COINCIDEM com o vocabulário
+// automático novo (`configStatusItem`, ver abaixo) — mesmo status, seja ele
+// vindo de override manual ou calculado da requisição. Achado ao ajustar a
+// paleta (pedido explícito, 2026-09-02: "cores mais vibrantes e mais
+// distintas"): o gráfico de pizza/donuts decide a cor só pelo TEXTO
+// (`STATUS_MANUAL_OPCOES.includes(status)`), sem saber se aquele "Comprado
+// Parcial" específico veio do manual ou do automático — então, se as duas
+// funções tivessem cores diferentes pro mesmo nome, o MESMO status pintava
+// diferente dependendo de onde a pizza achou ele primeiro (e o badge da
+// linha, que sabe a origem de verdade, ainda pintaria diferente da pizza).
+// Delega pra `configStatusItem` nesses 4 — única fonte de cor por nome, sem
+// ambiguidade. Só "Em cotação" (sem equivalente automático) mantém cor
+// própria aqui.
+function configStatusManual(status){
+  if (status === 'Em cotação') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
+  if (STATUS_MANUAL_OPCOES.includes(status)) return configStatusItem(status);
+  return { cor:T.mut, bg:'#eef0f3' }; // fallback
+}
+
+// Status da REQUISIÇÃO (`requisicoes_mapa_compras.status_requisicao`) — é a
+// fonte do status AUTOMÁTICO do item desde 2026-09-02 (pedido explícito:
+// "atribua os status dos itens com base no status da requisição, os sem
+// status de requisição ficarão como pendentes"), substituindo o antigo
+// `statusRmiConsolidado` (baseado em datas/RMI, removido). Ver
+// `statusAutomaticoItem` em `ModuloSuprimentos` pra regra completa —
+// inclusive o desempate quando o item tem mais de 1 requisição com status
+// diferente. Valores confirmados ao vivo na base (IPEN, id_obra 114):
+// EmAprovacao, Comprado, "Em Aberto", Aprovado — + "Pendente" (sem
+// requisição ativa) e "Atrasado" (sobreposto localmente, não vem da base —
+// ver `statusAtrasadoOuPendente`). "Cancelado" existe na base mas nunca
+// chega aqui: filtrado na origem, pedido explícito 2026-09-02 ("as
+// canceladas não precisam ser exibidas") — mapeado abaixo só de propósito,
+// caso algum consumidor futuro passe o valor cru sem passar pelo filtro.
+// Outro valor não mapeado aqui cai no fallback cinza.
+function configStatusRequisicao(status){
+  if (status === 'Comprado') return { cor:T.green, bg:'rgba(31,157,87,0.13)' };
+  if (status === 'Aprovado') return { cor:T.blue, bg:'rgba(37,99,235,0.13)' };
+  if (status === 'EmAprovacao') return { cor:T.amber, bg:'rgba(217,145,26,0.13)' };
+  if (status === 'Em Aberto') return { cor:T.mut, bg:'#eef0f3' };
+  if (status === 'Cancelado') return { cor:T.red, bg:'rgba(210,59,59,0.13)' };
+  return { cor:T.mut, bg:'#eef0f3' }; // fallback
+}
+// Cores do status AGREGADO do item/família (`statusAutomaticoItem`,
+// vocabulário próprio: Entregue/Comprado (+ Parcial)/Em Andamento/
+// Requisitado/Atrasado/Pendente) — DIFERENTE de `configStatusRequisicao`
+// acima, que colore o status CRU de uma requisição específica (badges
+// "RM<número>", pop-up da requisição).
+// Paleta VALIDADA (pedido explícito, 2026-09-02: "cores mais vibrantes e
+// mais distintas uma das outras", depois "o em andamento ficou muito
+// similar ao entregue" — tentativas anteriores reprovadas: gradiente
+// cinza→verde interpolado — tons intermediários próximos demais; laranja+
+// âmbar adjacentes — ΔE 13,7 < piso 15; aqua (Em Andamento) vs verde
+// (Entregue) — não eram nem vizinhos na ordem e ainda ficaram próximos,
+// ΔE 9-11 < piso 15). Validado com `node scripts/validate_palette.js`
+// (skill `dataviz`) na ORDEM real de exibição (Atrasado, Pendente,
+// Requisitado, Em cotação, Em Andamento, Comprado Parcial, Comprado,
+// Entregue Parcial, Entregue): pior par adjacente ΔE 13,2 (daltonismo,
+// piso 8 ✓) / 16,1 (visão normal, piso 15 ✓). Único "FAIL" que sobra é a
+// Pendente (cinza) não ter croma — INTENCIONAL, é o estado "nada
+// aconteceu ainda", não devia competir visualmente com os outros; mesma
+// isenção que a paleta de Status de referência da própria skill usa pros
+// tons neutros. Alguns tons ficam abaixo de 3:1 de contraste no fundo
+// branco — mitigado pelo texto do próprio badge, sempre visível em
+// negrito (mesmo padrão da paleta de referência: "warning"/"serious" dela
+// também ficam abaixo de 3:1 por design, com o rótulo como mitigação).
+function configStatusItem(status){
+  if (status === 'Atrasado') return { cor:'#e34948', bg:'rgba(227,73,72,0.13)' };
+  if (status === 'Pendente') return { cor:'#98a1b0', bg:'rgba(152,161,176,0.13)' };
+  if (status === 'Requisitado') return { cor:'#2a78d6', bg:'rgba(42,120,214,0.13)' };
+  // "Em Andamento" era aqua (#1baf7a) — trocado (pedido explícito, 2026-09-02:
+  // "o em andamento ficou muito similar ao entregue"): mesmo não sendo
+  // vizinhos na ordem de exibição, aqua e o verde do Entregue são da MESMA
+  // família (ΔE ~9-11, perto do piso 15) — magenta testado contra o verde:
+  // ΔE 38,2 (visão normal), sem risco de confusão.
+  if (status === 'Em Andamento') return { cor:'#db2777', bg:'rgba(219,39,119,0.13)' };
+  if (status === 'Comprado Parcial') return { cor:'#eb6834', bg:'rgba(235,104,52,0.13)' };
+  if (status === 'Comprado') return { cor:'#4a3aa7', bg:'rgba(74,58,167,0.13)' };
+  // Era rosa/magenta (#e87ba4) — trocado pro mesmo motivo acima, já que "Em
+  // Andamento" passou a usar magenta (não podem ficar parecidos entre si).
+  if (status === 'Entregue Parcial') return { cor:'#0891b2', bg:'rgba(8,145,178,0.13)' };
+  if (status === 'Entregue') return { cor:'#008300', bg:'rgba(0,131,0,0.13)' };
+  return { cor:T.mut, bg:'#eef0f3' }; // fallback
+}
+// Rótulo de EXIBIÇÃO do status — separado do valor usado pra comparação/
+// filtro/contagem (pedido explícito, 2026-09-02: "deveria ser Em
+// Aprovação, não EmAprovacao"). Só `EmAprovacao` (valor cru da API,
+// camelCase sem espaço) precisa de tradução; os demais já vêm/ficam em
+// português legível e passam direto. NUNCA usar isso como chave de
+// `counts`/`activeStatus`/`STATUS_MANUAL_OPCOES.includes` — só na hora de
+// desenhar o texto na tela.
+function rotuloStatusRequisicao(status){
+  if (status === 'EmAprovacao') return 'Em Aprovação';
+  return status;
+}
+// Um `<select>` só, com a MESMA aparência do `StatusBadgeRmi` (badge
+// arredondado, mono, uppercase) — "podemos utilizar o mesmo badge":
+// em vez de um badge automático + um controle separado embaixo, o
+// badge inteiro VIRA o controle de edição. Fechado, mostra só o texto
+// do status (manual, se tiver, senão o automático) — SEM a fração
+// `finalizados/total` junto no texto: um `<select>` fechado não
+// consegue trocar de conteúdo no hover feito o badge antigo (CSS de
+// `.status-badge-rmi-fracao`/`-texto` — removida junto com `StatusBadgeRmi`
+// antigo em 2026-09-02 — só funcionava com 2 `<span>`
+// separados, não com o texto de uma `<option>`), então "STATUS ·
+// FRAÇÃO" sempre junto ficava largo demais pra coluna de largura fixa
+// (`colgroup` em %) e vazava da rolagem lateral da tabela (achado
+// testando no navegador, 2026-08-31). Fração agora só no `title`
+// (tooltip ao passar o mouse), igual o badge antigo mostrava só no
+// hover — mesmo comportamento, sem estourar a largura. `appearance:none`
+// tira a seta nativa do <select> pra parecer o badge de sempre.
+// `stopPropagation` porque a linha da tabela tem `onClick` próprio (abrir
+// o pop-up de material — toda linha abre, ver `setMaterialAberto`).
+function BadgeStatusSuprimento({ statusAutomatico, qtdFinalizados, qtdTotal, statusManual, onSalvar }){
+  const cfg = statusManual ? configStatusManual(statusManual) : configStatusItem(statusAutomatico);
+  return (
+    <select value={statusManual || ''} onClick={e => e.stopPropagation()}
+      onChange={e => onSalvar(e.target.value)}
+      title={statusManual ? 'Status manual — escolher \'Automático\' volta a calcular pela data' : `${statusAutomatico} · ${qtdFinalizados}/${qtdTotal} — escolher uma opção define manual e substitui o automático`}
+      className="mono status-badge-rmi" style={{ display:'inline-block', maxWidth:'100%', boxSizing:'border-box', overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', padding:'3px 9px', borderRadius:8, fontSize:10, fontWeight:700, letterSpacing:'0.03em', textTransform:'uppercase', background:cfg.bg, color:cfg.cor, border:'none', appearance:'none', WebkitAppearance:'none', MozAppearance:'none', textAlign:'center', textAlignLast:'center', cursor:'pointer' }}>
+      <option value="">{statusAutomatico}</option>
+      {STATUS_MANUAL_OPCOES.map(s => <option key={s} value={s}>{s}</option>)}
+    </select>
   );
 }
 
@@ -6335,10 +6759,110 @@ function CriticidadeBadgeRmi({ dataLimite, finalizado }){
   );
 }
 
+// Match de `codigo_seq` entre um item de `itens_mapa_compras` (requisição)
+// e um item de `itens_rmi` (RMI) — exato OU grupo-pai (tira sufixo
+// `-\d+$`, convenção de sub-itens de uma mesma linha de compra, ex.
+// "4.1.1-2" pertence ao grupo "4.1.1"). Trazida de volta (2026-09-02,
+// pedido explícito: "vamos voltar a lógica") — tinha sido removida junto
+// com `itens_mapa_compras` quando o n8n não estava dando conta do volume;
+// agora esse endpoint ganhou um fluxo n8n PRÓPRIO, separado do de
+// requisições, com paginação (ver `n8n/itens-mapa-compras-suprimentos.workflow.json`).
+function codigoSeqBate(codigoSeqReq, codigoSeqAlvo){
+  if (!codigoSeqAlvo) return false;
+  if (codigoSeqReq === codigoSeqAlvo) return true;
+  return (codigoSeqReq || '').replace(/-[0-9]+$/, '') === codigoSeqAlvo;
+}
+
+// Campos de `itens_rmi.raw` (jsonb) realmente lidos em algum ponto de
+// `ModuloSuprimentos` — levantado varrendo todo `.raw.<campo>` do módulo
+// (2026-09-02, junto do corte de egress: ver comentário no fetch). `raw`
+// bruto tem 20+ campos (payload inteiro da API do PortalMSE); só estes 13
+// chegam a ser usados. Manter esta lista em dia se algum trecho novo
+// passar a ler outro campo de `raw` — senão ele vem `undefined`.
+const FIELDS_RAW_ITENS_RMI = [
+  'id_rmi', 'codigo_seq', 'nivel', 'descricao', 'unidade', 'nome_rmi',
+  'subtotal_custo_meta_orcamento', 'saldo_orcamentario', 'desvio_saldo_orcamentario',
+  'total_consumido', 'finalizado', 'data_necessidade_compra', 'prazo_entrega',
+];
+
 function ModuloSuprimentos({ obraId, obraNome }){
   const [todosItens, setTodosItens] = useState(null); // null = carregando; senão array com raw de TODOS os níveis
   const [erro, setErro] = useState(false);
   const obraValidada = OBRAS_SUPRIMENTOS_VALIDADAS.has(obraId);
+  // Status manual por item (ver `BadgeStatusSuprimento`/`configStatusManual`
+  // acima) — mapa `{ [id_item]: status }`, carregado 1x por obra de
+  // `suprimentos_status_manual`. `id_item` é o `id` de `itens_rmi` do
+  // material/família exibido na árvore (mesmo `id` usado como `key` da
+  // linha), NÃO o `id_rmi` (esse é da requisição inteira).
+  const [statusManualPorItem, setStatusManualPorItem] = useState({});
+  const statusManualDesativado = OBRAS_STATUS_MANUAL_DESATIVADO.has(obraId);
+  useEffect(() => {
+    if (!obraValidada || statusManualDesativado) return;
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    fetch(`${SUPABASE_URL}/rest/v1/suprimentos_status_manual?id_obra=eq.${obraId}&select=id_item,status`, { headers })
+      .then(r => r.ok ? r.json() : [])
+      .then(rows => setStatusManualPorItem(Object.fromEntries(rows.map(r => [r.id_item, r.status]))))
+      .catch(() => {});
+  }, [obraId, obraValidada, statusManualDesativado]);
+  // Requisições associadas aos itens RMI — busca de requisicoes_mapa_compras
+  // e itens_mapa_compras pra montar o nível "Requisições" do pop-up de
+  // material. Trazida de volta (2026-09-02, pedido explícito: "vamos voltar
+  // a lógica") — tinha sido retirada quando o n8n não estava dando conta do
+  // volume de `/v1/itens`; agora esse endpoint tem um fluxo n8n PRÓPRIO,
+  // separado do de requisições, com paginação de 20 em 20 (ver
+  // `n8n/itens-mapa-compras-suprimentos.workflow.json`).
+  // `select` nomeado (não `select=*`) — só os campos que este módulo lê,
+  // sem o `raw` jsonb (achado de egress, 2026-09-02: CNPEM sozinha tinha
+  // 5,6MB de `raw` aqui — o corte continua valendo mesmo com o fluxo
+  // separado, o motivo era o TAMANHO da resposta, não o volume de chamadas).
+  const [requisicoesPorItemRmi, setRequisicoesPorItemRmi] = useState({});
+  useEffect(() => {
+    if (!obraValidada) return;
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    // Busca todas as requisições da obra + seus itens. Join via id_mapa_compras.
+    Promise.all([
+      fetchPaginado(`${SUPABASE_URL}/rest/v1/requisicoes_mapa_compras?id_obra=eq.${obraId}&select=id,id_rmi,nome_rmi,requisicao,requisicao_tipo,tipo,grupo,categoria,descricao,status_requisicao,data_cadastro,data_necessidade,requisitante,data_cronograma_fechado,solicitacao_enviada,necessario_contrato,necessario_art,total_itens`, headers),
+      fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_mapa_compras?id_obra=eq.${obraId}&select=id,id_mapa_compras,codigo_seq,descricao,unidade,quantidade,tem_pedido,fornecedor_ref,subtotal_referencia_bd_s1`, headers),
+    ])
+      .then(([requisicoes, itens]) => {
+        if (!requisicoes || !itens) { setRequisicoesPorItemRmi({}); return; }
+        // Monta mapa: { id_rmi: [lista de requisições com seus itens] }
+        // Requisição Cancelada fica de fora daqui — filtro na ORIGEM (pedido
+        // explícito, 2026-09-02: "as canceladas não precisam ser exibidas"),
+        // não em cada consumidor.
+        const porRmi = {};
+        requisicoes.filter(req => req.status_requisicao !== 'Cancelado').forEach(req => {
+          const idRmi = req.id_rmi;
+          if (!idRmi) return;
+          const itensReq = itens.filter(it => it.id_mapa_compras === req.id);
+          if (!porRmi[idRmi]) porRmi[idRmi] = [];
+          porRmi[idRmi].push({ ...req, itens: itensReq });
+        });
+        setRequisicoesPorItemRmi(porRmi);
+      })
+      .catch(() => setRequisicoesPorItemRmi({}));
+  }, [obraId, obraValidada]);
+  // Salva/apaga (valor '' limpa, volta pro status automático) — otimista
+  // na tela (não espera a resposta do Supabase pra atualizar o badge) e
+  // com `upsert` (on_conflict id_obra,id_item) pra editar 2x o mesmo item
+  // sem dar erro de chave duplicada.
+  const salvarStatusManual = (idItem, novoStatus) => {
+    if (statusManualDesativado) return; // defensivo — o `<select>` nem aparece nessas obras
+    setStatusManualPorItem(prev => {
+      const next = { ...prev };
+      if (novoStatus) next[idItem] = novoStatus; else delete next[idItem];
+      return next;
+    });
+    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    if (!novoStatus) {
+      fetch(`${SUPABASE_URL}/rest/v1/suprimentos_status_manual?id_obra=eq.${obraId}&id_item=eq.${idItem}`, { method:'DELETE', headers }).catch(() => {});
+    } else {
+      fetch(`${SUPABASE_URL}/rest/v1/suprimentos_status_manual?on_conflict=id_obra,id_item`, {
+        method:'POST', headers: { ...headers, Prefer:'resolution=merge-duplicates' },
+        body: JSON.stringify([{ id_obra:obraId, id_item:idItem, status:novoStatus, atualizado_em:new Date().toISOString() }]),
+      }).catch(() => {});
+    }
+  };
   // Ajustes específicos desta obra (ver `CONFIG_SUPRIMENTOS_POR_OBRA` e
   // a nota grande acima) — obra sem entrada usa a régua padrão do CP029
   // (área obrigatória, disciplina resolvida por `resolverDisciplinasRmi`).
@@ -6346,8 +6870,28 @@ function ModuloSuprimentos({ obraId, obraNome }){
   const areaObrigatoria = cfgObraSuprimentos.areaObrigatoria !== false;
   const escopoNivel0 = !!cfgObraSuprimentos.escopoNivel0;
   const rotuloDisciplina = cfgObraSuprimentos.rotulo || 'Disciplina';
+  // Rótulo do grupo 0 quando `trocarAreaDisciplina` está ativo (o campo
+  // `area` deixa de ser uma área física de verdade) — só usado no header
+  // da tabela, não afeta nenhum cálculo. Default 'Área' preserva o texto
+  // de sempre pras obras que não trocam nada.
+  const rotuloArea = cfgObraSuprimentos.rotuloArea || 'Área';
   const curvaAObrigatoria = cfgObraSuprimentos.curvaAObrigatoria !== false;
   const escoposPermitidos = cfgObraSuprimentos.escoposPermitidos || null;
+  // Inverso de `escoposPermitidos` — em vez de allowlist (só entram os
+  // escopos listados), bloqueia só os escopos listados e deixa QUALQUER
+  // outro passar. Mais robusto que allowlist quando a obra pode ganhar
+  // disciplina nova de verdade depois (a allowlist sumiria com ela sem
+  // avisar); usado quando o pedido é "filtre só X e Y", não "só deixe
+  // passar X e Y". Ver CONFIG_SUPRIMENTOS_POR_OBRA[114] (IPEN).
+  const escoposExcluidos = cfgObraSuprimentos.escoposExcluidos || null;
+  // Troca qual nível vira "área" (grupo 0, topo) e qual vira "disciplina"
+  // (grupo 1, dentro) — pedido explícito (2026-08-28, IPEN): "o primeiro
+  // nível será a disciplina" (nível 0 da RMI) + "o segundo nível será os
+  // da RMI também" (nível 1 da RMI, ex. "Conjunto Geral"/"Trecho 1" —
+  // sub-divisão real da RMI, não uma Área física). Sem essa troca, o
+  // padrão do CP029 põe a área (nível 1) no topo e a disciplina (nível 0)
+  // dentro — o inverso do que a IPEN precisa. Ver CONFIG_SUPRIMENTOS_POR_OBRA[114].
+  const trocarAreaDisciplina = !!cfgObraSuprimentos.trocarAreaDisciplina;
   // Porto Itapoá (ver CONFIG_SUPRIMENTOS_POR_OBRA[94]): `rmisExcluidos`
   // tira uma RMI inteira (duplicata/rascunho) antes de qualquer outro
   // filtro; `codigoNivel0Min/Max` restringe o nível 0 a um range
@@ -6385,7 +6929,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // render; só recalcula se o extra da obra mudar de referência (obras
   // sem entrada sempre caem no `null`, então nunca recalcula à toa).
   const catalogoExtraObra = cfgObraSuprimentos.catalogoExtra || null;
-  const catalogoMateriaisObra = useMemo(() => catalogoEfetivoRmi(catalogoExtraObra), [catalogoExtraObra]);
+  const catalogoPrioritarioObra = cfgObraSuprimentos.catalogoPrioritario || null;
+  const catalogoMateriaisObra = useMemo(() => catalogoEfetivoRmi(catalogoExtraObra, catalogoPrioritarioObra), [catalogoExtraObra, catalogoPrioritarioObra]);
   // Catálogo pra simplificar o nome da DISCIPLINA (2º nível) — pedido
   // explícito (2026-08-26: "podemos trabalhar uma lógica similar para
   // simplificar as descrições do segundo nível?"). Reaproveita o MESMO
@@ -6423,13 +6968,110 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (next.has(chave)) next.delete(chave); else next.add(chave);
     return next;
   });
-  // Pop-up com os itens ORIGINAIS por trás de uma linha consolidada —
-  // pedido explícito (2026-08-24): "pop-up que permita verificar quais
-  // são os itens que estão aninhados, ao clicar na linha de resumo
-  // dele". Guarda o material inteiro (já traz `itensOriginais` de
-  // `consolidarMateriaisSemelhantes`); só abre pra linha com mais de 1
-  // item (linha de item único não tem nada "aninhado" pra mostrar).
+  // Pop-up com os itens ORIGINAIS por trás de uma linha (RMI) — pedido
+  // explícito (2026-08-24): "pop-up que permita verificar quais são os
+  // itens que estão aninhados, ao clicar na linha de resumo dele". Guarda
+  // o material inteiro (já traz `itensOriginais` de
+  // `consolidarMateriaisSemelhantes`). TODA linha abre, mesmo item único
+  // (pedido explícito, 2026-09-02: "todos os itens terão que ter pop-up,
+  // até os que só possuem um item") — antes só abria pra família com mais
+  // de 1 item; badge de requisição (ver `requisicoesDaLinha` abaixo) só
+  // existia lá dentro, não fazia sentido esconder o pop-up de quem tinha 1
+  // item só.
   const [materialAberto, setMaterialAberto] = useState(null);
+  // Pop-up da requisição (tela cheia com todos os campos + status) —
+  // aberto ao clicar num badge "RM<número>" dentro do pop-up de material.
+  // Guarda a requisição inteira (já vem com `.itens` montado em
+  // `requisicoesPorItemRmi`), não só o id.
+  const [requisicaoAberta, setRequisicaoAberta] = useState(null);
+  // Requisições associadas a uma linha (item RMI, seja a linha CONSOLIDADA
+  // da tabela principal — várias peças fundidas na mesma família — ou o
+  // item FOLHA sozinho dentro do pop-up de material). Match por
+  // `codigo_seq` exato ou grupo-pai (tira sufixo `-\d+$`, mesma regra de
+  // sempre) — trazido de volta (2026-09-02, pedido explícito: "vamos
+  // voltar a lógica"). Tinha virado match só por `id_rmi` (obra/RMI
+  // inteira) quando `itens_mapa_compras` foi retirada por volume; agora
+  // que esse endpoint tem fluxo n8n próprio, o match volta a ser por
+  // material específico. 1 badge "RM<número>" por requisição associada,
+  // dentro do pop-up de material, por linha.
+  const requisicoesDaLinha = (it) => {
+    const vistos = new Set();
+    const lista = [];
+    (it.itensOriginais || [it]).forEach(sub => {
+      const idRmiSub = sub.id_rmi;
+      const codigoSeqSub = sub.codigo_seq || '';
+      const reqsSub = idRmiSub ? (requisicoesPorItemRmi[idRmiSub] || []) : [];
+      reqsSub.forEach(req => {
+        if ((req.itens || []).some(itReq => codigoSeqBate(itReq.codigo_seq, codigoSeqSub)) && !vistos.has(req.id)) {
+          vistos.add(req.id);
+          lista.push(req);
+        }
+      });
+    });
+    return lista;
+  };
+  // "Atrasado" sobrepõe SÓ o "Pendente" (sem requisição ativa OU só com
+  // Cancelada) quando `dataNecessidadeCompra` já venceu (pedido explícito,
+  // 2026-09-02: "o status atrasado, com base na data da expectativa de
+  // compra é necessário também") — status que já indica alguma requisição
+  // em andamento NÃO vira Atrasado só por causa da data, só a ausência
+  // completa de requisição ativa.
+  const statusAtrasadoOuPendente = (it) => {
+    if (it.dataNecessidadeCompra && parseDataFlexivel(it.dataNecessidadeCompra) < new Date(new Date().toDateString())) return 'Atrasado';
+    return 'Pendente';
+  };
+  // Status de UM item FOLHA só (nunca uma família — `requisicoesDaLinha`
+  // aqui sempre recebe um objeto sem `itensOriginais`, cai pra `[folha]`,
+  // fica escopado só a ele). Pedido explícito (2026-09-02): "Entregue e
+  // comprado são status mais relevantes... para o entregue... o status
+  // será entregue caso o item esteja com o check finalizado na RMI" — ou
+  // seja, "Entregue" NÃO vem de `status_requisicao` (esse vocabulário nem
+  // tem esse valor — confirmado, só existem EmAprovacao/Comprado/Em
+  // Aberto/Cancelado/Aprovado), vem do flag `finalizado` que já existia
+  // desde a régua antiga (`raw.finalizado`, removida em outro pedido —
+  // mas o CAMPO nunca saiu de `curvaA`/`itensOriginais`, só parou de ser
+  // usado). Sem requisição ativa e sem finalizado, cai no
+  // Atrasado/Pendente de sempre. Desempate quando o item tem MAIS de 1
+  // requisição (não-Cancelada) com status diferente: usa a de
+  // `data_cadastro` mais recente — mesma regra provisória de antes,
+  // continua sem regra oficial de desempate definida.
+  const statusItemFolha = (folha) => {
+    if (folha.finalizado) return 'Entregue';
+    const reqs = requisicoesDaLinha(folha);
+    if (reqs.length === 0) return statusAtrasadoOuPendente(folha);
+    const vencedora = reqs.reduce((melhor, r) => (!melhor || (r.data_cadastro || '') > (melhor.data_cadastro || '')) ? r : melhor, null);
+    const st = vencedora.status_requisicao;
+    // Em Aprovação/Aprovado viram "Em Andamento", Em Aberto vira
+    // "Requisitado" (pedido explícito: "Em Aprovação e Aprovado Exibirá
+    // 'Em Andamento', 'Em aberto' será 'Requisitado'").
+    if (st === 'Comprado') return 'Comprado';
+    if (st === 'EmAprovacao' || st === 'Aprovado') return 'Em Andamento';
+    if (st === 'Em Aberto') return 'Requisitado';
+    return statusAtrasadoOuPendente(folha);
+  };
+  // Ordem de estágio (do mais pro menos avançado) — usada só pra achar o
+  // "mais próximo do final" abaixo, não é exibida.
+  const RANK_STATUS_ITEM = { 'Entregue':4, 'Comprado':3, 'Em Andamento':2, 'Requisitado':1, 'Atrasado':0, 'Pendente':0 };
+  // Status do MACRO/agrupado — pedido explícito (2026-09-02): "para o
+  // agrupado vamos sempre exibir o mais próximo do final, da compra e
+  // entrega" + regras de "parcial": 1 item comprado (dos vários da
+  // família) → Comprado Parcial; TODOS comprados → Comprado; mesma lógica
+  // pro Entregue. Em Andamento/Requisitado/Atrasado/Pendente não têm
+  // variante parcial (não pedida) — o estágio mais avançado alcançado por
+  // QUALQUER item da família já define o status inteiro nesses casos.
+  // Funciona igual pra família consolidada (`itensOriginais`, tabela
+  // principal) e pro item FOLHA sozinho (dentro do pop-up) — com 1 item
+  // só, "algum"/"todos" coincidem, cai direto no status dele.
+  const statusAutomaticoItem = (it) => {
+    const folhas = it.itensOriginais || [it];
+    const statusPorFolha = folhas.map(statusItemFolha);
+    const melhorRank = Math.max(...statusPorFolha.map(s => RANK_STATUS_ITEM[s] ?? 0));
+    if (melhorRank === 4) return statusPorFolha.every(s => s === 'Entregue') ? 'Entregue' : 'Entregue Parcial';
+    if (melhorRank === 3) return statusPorFolha.every(s => s === 'Comprado') ? 'Comprado' : 'Comprado Parcial';
+    if (melhorRank === 2) return 'Em Andamento';
+    if (melhorRank === 1) return 'Requisitado';
+    return statusPorFolha.includes('Atrasado') ? 'Atrasado' : 'Pendente';
+  };
   // Pop-up do Farol Financeiro (Valor/Total Consumido/Saldo) — pedido
   // explícito (2026-08-24): "vamos trocar o tooltip por um pop-up".
   // Era um card que expandia no hover (correção anterior, mesmo dia);
@@ -6449,6 +7091,36 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // MESMA base já filtrada por busca (`curvaABuscada`/`arvoreBuscada`
   // abaixo) — digitar já reflete nos 2 ao mesmo tempo, não só na tabela.
   const [busca, setBusca] = useState('');
+  // Modo de exportação: 'completo' (padrão, todas as linhas abertas) ou
+  // 'resumo' (só gráfico, sem itens com status "Sem Informação"). Controla
+  // qual versão do relatório `.print-report` fica
+  // visível durante window.print().
+  const [modoExportacao, setModoExportacao] = useState(null);
+  // Exportar gráficos (donuts por disciplina) como PNG em tamanho de slide —
+  // pedido explícito (2026-09-01): "vamos reaproveitar isso [os donuts por
+  // disciplina] num mecanismo de exportação... botão para exportação dos
+  // gráficos, em tamanho de slide, pode ser png". `slideExportRef` aponta
+  // pro nó oculto (`.slide-export`, renderizado sempre no DOM via portal,
+  // só fora da tela) que serve de origem pro PNG — ver `exportarGraficosPNG`.
+  const slideExportRef = useRef(null);
+  const [exportandoPng, setExportandoPng] = useState(false);
+  // Logo em data URI (base64), não URL — um `<img src="...">` por caminho/
+  // URL dentro do SVG do PNG "tainta" o canvas (`toBlob` lança
+  // SecurityError), mesmo sendo same-origin; só embutido como data: escapa
+  // dessa checagem. Buscado 1x (a logo não muda) e cacheado em estado.
+  const [logoDataUri, setLogoDataUri] = useState('');
+  useEffect(() => {
+    fetch(new URL('assets/images/mselogo.png', document.baseURI).href)
+      .then(r => r.blob())
+      .then(blob => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }))
+      .then(setLogoDataUri)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!obraValidada) return;
@@ -6460,8 +7132,30 @@ function ModuloSuprimentos({ obraId, obraNome }){
     // comentário acima). Volume por obra confirmado pequeno o bastante
     // (~500 a ~8.000 linhas) pra isso valer mais que ficar buscando
     // nível por nível sob demanda.
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&select=id,raw`, headers)
-      .then(rows => { if (rows === null) { setErro(true); setTodosItens([]); } else setTodosItens(rows); })
+    //
+    // `select` pede só os campos de `raw` REALMENTE usados por
+    // `ModuloSuprimentos` (`FIELDS_RAW_ITENS_RMI`), em vez da coluna
+    // inteira — pedido explícito (2026-09-02: "acredito que estamos
+    // estourando o egress" → confirmado, 6,6GB no plano free, 5GB inclusos).
+    // `raw` é o payload bruto da API do PortalMSE (20+ campos, alguns
+    // grandes) e essa tela só lê 13 deles. Testado ao vivo (Porto Itapoá,
+    // maior obra): 11MB → 2,8MB por carga, ~75% menor — sem mudar nenhum
+    // outro trecho do código, porque o `.then` abaixo remonta o mesmo
+    // formato `{ id, raw: {...} }` que todo o resto do módulo já espera
+    // (dezenas de `.raw.<campo>` espalhados). `raw->campo` (1 seta, não
+    // `->>`) preserva o TIPO original do JSON (número/boolean/string) —
+    // com `->>` tudo viraria string e quebraria comparações como
+    // `raw.nivel === 0` e `!!raw.finalizado`.
+    const selectItensRmi = `id,${FIELDS_RAW_ITENS_RMI.map(c => `${c}:raw->${c}`).join(',')}`;
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&select=${encodeURIComponent(selectItensRmi)}`, headers)
+      .then(rows => {
+        if (rows === null) { setErro(true); setTodosItens([]); return; }
+        setTodosItens(rows.map(r => {
+          const raw = {};
+          FIELDS_RAW_ITENS_RMI.forEach(c => { raw[c] = r[c]; });
+          return { id: r.id, raw };
+        }));
+      })
       .catch(() => { setErro(true); setTodosItens([]); });
   }, [obraId, obraValidada]);
 
@@ -6501,6 +7195,10 @@ function ModuloSuprimentos({ obraId, obraNome }){
       if (escoposPermitidos) {
         const norm = normalizarNomeParaMatch(r.raw.descricao);
         if (!escoposPermitidos.some(cod => norm.includes(normalizarNomeParaMatch(cod)))) return false;
+      }
+      if (escoposExcluidos) {
+        const norm = normalizarNomeParaMatch(r.raw.descricao);
+        if (escoposExcluidos.some(cod => norm.includes(normalizarNomeParaMatch(cod)))) return false;
       }
       const cod = Number(r.raw.codigo_seq);
       if (codigoNivel0Min != null && (isNaN(cod) || cod < codigoNivel0Min)) return false;
@@ -6564,9 +7262,25 @@ function ModuloSuprimentos({ obraId, obraNome }){
         // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
         const areaFinal = usarNomeRmiComoArea ? (m.raw.nome_rmi || '').trim() || null : area;
         if (areaObrigatoria && !areaFinal) { qtdSemArea++; valorSemArea += valor; return; }
+        // `trocarAreaDisciplina` (IPEN): grupo 0 (topo, campo `area`) vira
+        // a disciplina de verdade (`nome`, nível 0 da RMI); grupo 1 (campo
+        // `disciplina`) vira o nível 1 da RMI (`areaFinal`) — inverso do
+        // padrão CP029 (área/nível1 no topo, disciplina/nível0 dentro).
+        const disciplinaArvore = trocarAreaDisciplina ? areaFinal : nome;
+        const areaArvore = trocarAreaDisciplina ? nome : (areaObrigatoria ? areaFinal : nome);
         brutos.push({
           id: m.id, descricao: m.raw.descricao, unidade: m.raw.unidade,
-          disciplina: nome, area: areaObrigatoria ? areaFinal : nome, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
+          disciplina: disciplinaArvore, area: areaArvore, nome_rmi: m.raw.nome_rmi, id_rmi: m.raw.id_rmi,
+          // `codigo_seq` exposto no topo (não só dentro de `raw`, que nem é
+          // guardado aqui) — pedido explícito (2026-09-02: "ipen ficou com
+          // tudo pendente, não deveria ter status?"). Causa raiz: o match de
+          // requisição (`requisicoesDaLinha`) sempre leu `it.raw?.id_rmi`/
+          // `it.raw?.codigo_seq`, mas esse objeto NUNCA teve um campo `raw`
+          // — só os campos escolhidos aqui — então o match nunca achava
+          // nada, pra NENHUMA obra, desde a criação da feature original
+          // (antes de qualquer mudança desta sessão). `id_rmi` já escapava
+          // por acaso (campo próprio, linha acima); faltava só `codigo_seq`.
+          codigo_seq: m.raw.codigo_seq,
           saldo_orcamentario: m.raw.saldo_orcamentario,
           desvio_saldo_orcamentario: m.raw.desvio_saldo_orcamentario,
           totalConsumido: Number(m.raw.total_consumido) || 0,
@@ -6608,7 +7322,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       semArea: { qtd: qtdSemArea, valor: valorSemArea },
       totalObra,
     };
-  }, [todosItens, areaObrigatoria, escopoNivel0, curvaAObrigatoria, escoposPermitidos, catalogoMateriaisObra, rmisExcluidos, codigoNivel0Min, codigoNivel0Max, zonaCodigoMax, mapaAreaCanonica, catalogoDisciplinaObra, usarNomeRmiComoArea, descricoesExcluidas, linhasExcluidas]);
+  }, [todosItens, areaObrigatoria, escopoNivel0, curvaAObrigatoria, escoposPermitidos, escoposExcluidos, trocarAreaDisciplina, catalogoMateriaisObra, rmisExcluidos, codigoNivel0Min, codigoNivel0Max, zonaCodigoMax, mapaAreaCanonica, catalogoDisciplinaObra, usarNomeRmiComoArea, descricoesExcluidas, linhasExcluidas]);
 
   const restanteValor = soma(restante, 'valor') || 0;
   // `curvaABuscada` — filtro de texto sobre descrição/disciplina/área
@@ -6620,41 +7334,139 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (!busca) return curvaA;
     const alvo = normalizarNomeParaMatch(busca);
     // Status entra na busca também (pedido explícito 2026-08-26) — digitar
-    // "pendente"/"finalizado"/"andamento" bate o mesmo texto do badge
-    // (`statusRmiConsolidado`), não só material/disciplina/área.
-    return curvaA.filter(it => [it.descricao, it.disciplina, it.area, statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada)]
+    // "pendente"/"comprado"/"cancelado" etc. bate o mesmo texto do badge
+    // (`statusAutomaticoItem`), não só material/disciplina/área.
+    // `requisicoesPorItemRmi` entrou nas deps deste `useMemo` (e dos outros
+    // 3 que também chamam `statusAutomaticoItem`: `pieSlices`,
+    // `donutsPorDisciplina`, `arvoreExibida`) — bug achado com dado real
+    // (pedido explícito, 2026-09-02: "Em aprovação deixou de estar sendo
+    // exibido no gráfico"). Sem essa dependência, o `useMemo` fica com o
+    // valor de ANTES da busca assíncrona de `requisicoesPorItemRmi`
+    // terminar (sempre `{}` nesse instante, então todo item calculava
+    // "Pendente"/"Atrasado") — só recalculava se `curvaA`/`busca` mudassem
+    // por outro motivo depois, daí o sintoma ser intermitente, não sempre
+    // quebrado.
+    return curvaA.filter(it => [it.descricao, it.disciplina, it.area, statusAutomaticoItem(it)]
       .some(c => c && normalizarNomeParaMatch(c).includes(alvo)));
-  }, [curvaA, busca]);
+  }, [curvaA, busca, requisicoesPorItemRmi]);
   // Filtragem CRUZADA (pedido explícito) — gráfico e tabela partem da
   // MESMA base já filtrada por busca: `pieSlices` conta status só dos
   // itens buscados, `arvoreBuscada` monta a árvore só com eles. Clicar
   // numa fatia do gráfico (`activeStatus`) continua filtrando a tabela
   // por cima disso — as 2 filtragens combinam, não se substituem.
+  // Considera status manual quando atribuído (mesma lógica do badge/PDF).
   const pieSlices = useMemo(() => {
     const counts = {};
     curvaABuscada.forEach(it => {
-      const status = statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada);
+      const statusManual = statusManualPorItem[it.id];
+      const statusAutomatico = statusAutomaticoItem(it);
+      const status = statusManual || statusAutomatico;
       counts[status] = (counts[status] || 0) + 1;
     });
-    return ['Pendente', 'Em andamento', 'Finalizado']
+    // Lista todos os status possíveis (automáticos + manuais), na ordem desejada
+    // Ordem valida no `dataviz` (ver `configStatusItem`) — "Em cotação"
+    // (só manual) fica entre Requisitado e Em Andamento de propósito: entre
+    // Em Andamento (aqua) e Comprado Parcial (laranja), que é onde estava
+    // antes, o par aqui (âmbar `Em cotação` vs laranja `Comprado Parcial`)
+    // reprovava a checagem de distinção (ΔE 4,2 CVD / 10,1 visão normal,
+    // ambos abaixo do piso 8/15) — reordenado, não recolorido.
+    const todosStatus = ['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
+    return todosStatus
       .filter(status => counts[status])
       .map(status => {
-        const cfg = configStatusRmi(status);
+        // Usa a config correta dependendo se é status manual ou automático
+        const ehManual = STATUS_MANUAL_OPCOES.includes(status);
+        const cfg = ehManual ? configStatusManual(status) : configStatusItem(status);
         return { status, label: status, value: counts[status], cor: cfg.cor };
       });
-  }, [curvaABuscada]);
+  }, [curvaABuscada, statusManualPorItem, requisicoesPorItemRmi]);
+  // Gráfico de pizza filtrado (sem "Sem Informação") para exportação resumida
+  const pieSlicesResumo = useMemo(() => {
+    return pieSlices.filter(sl => sl.status !== 'Sem Informação');
+  }, [pieSlices]);
+
+  // Donuts por macrogrupo (disciplina) — pedido explícito (2026-08-31):
+  // "vão ter 3, 1 para cada macrogrupo (disciplina)". Substitui o donut
+  // único de todos os materiais por UM donut por disciplina (mesmo
+  // cálculo de fatias do donut único, mas escopado aos itens daquela
+  // disciplina). Considera status manual quando atribuído, igual a
+  // tabela/PDF. Agrupa a MESMA base já filtrada por busca (`curvaABuscada`)
+  // e ordena as disciplinas por nº de itens (maior primeiro).
+  //
+  // Fonte de `exportarGraficosPNG`/`.slide-export` (mais abaixo). Pedido
+  // explícito (2026-09-01): "cada obra vai ter uma regra de exportação
+  // específica, não vai ser padrão" — quando outra obra pedir seu próprio
+  // layout de exportação (regra ainda não definida), não generalizar
+  // `.slide-export` por adivinhação; criar o layout dela à parte quando o
+  // pedido chegar.
+  //
+  // Campo agrupador por obra, todas pedido explícito (2026-09-01):
+  // - CP029 (CNPEM) e Novo Nordisk UB/SP (91): "por disciplina, que estão
+  //   no segundo nível" — já é o DEFAULT abaixo (`it.disciplina`, nenhuma
+  //   das duas usa `trocarAreaDisciplina`/override, não precisaram de nada).
+  // - IPEN: "o nível será o primeiro, que tem as disciplinas" — usa
+  //   `it.area`, mas via `trocarAreaDisciplina` (mecanismo que já existia
+  //   pra trocar os 2 campos na árvore inteira da IPEN, não só na
+  //   exportação — ver comentário grande em `disciplinaArvore`/`areaArvore`
+  //   no `useMemo` de `arvore` acima).
+  // - Novo Nordisk AP (107) e AP - Reforço (108): "será o primeiro nível"
+  //   — também `it.area`, mas SEM `trocarAreaDisciplina` (nenhuma das 2
+  //   troca nada na árvore, `it.area` já É o nível 1 de verdade: o nome da
+  //   própria RMI de origem na AP via `usarNomeRmiComoArea`, "Estrutura"/
+  //   "Cobertura Telhado" no Reforço). Por isso um override PRÓPRIO
+  //   (`NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA`, escopo de módulo), separado do
+  //   mecanismo da IPEN — chegam em "usar `it.area`" por motivos diferentes.
+  const campoExportacaoGraficos = NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[obraId] || (trocarAreaDisciplina ? 'area' : 'disciplina');
+  const donutsPorDisciplina = useMemo(() => {
+    const fatiasDe = (itens) => {
+      const counts = {};
+      itens.forEach(it => {
+        const statusManual = statusManualPorItem[it.id];
+        const statusAutomatico = statusAutomaticoItem(it);
+        const status = statusManual || statusAutomatico;
+        counts[status] = (counts[status] || 0) + 1;
+      });
+      // Ordem valida no `dataviz` (ver `configStatusItem`) — "Em cotação"
+    // (só manual) fica entre Requisitado e Em Andamento de propósito: entre
+    // Em Andamento (aqua) e Comprado Parcial (laranja), que é onde estava
+    // antes, o par aqui (âmbar `Em cotação` vs laranja `Comprado Parcial`)
+    // reprovava a checagem de distinção (ΔE 4,2 CVD / 10,1 visão normal,
+    // ambos abaixo do piso 8/15) — reordenado, não recolorido.
+    const todosStatus = ['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
+      return todosStatus
+        .filter(status => counts[status])
+        .map(status => {
+          const cfg = STATUS_MANUAL_OPCOES.includes(status) ? configStatusManual(status) : configStatusItem(status);
+          return { status, label: status, value: counts[status], cor: cfg.cor };
+        });
+    };
+    const porDisciplina = new Map();
+    curvaABuscada.forEach(it => {
+      const disc = it[campoExportacaoGraficos] || 'Sem disciplina';
+      if (!porDisciplina.has(disc)) porDisciplina.set(disc, []);
+      porDisciplina.get(disc).push(it);
+    });
+    return Array.from(porDisciplina.entries())
+      .map(([disciplina, itens]) => ({ disciplina, total: itens.length, slices: fatiasDe(itens) }))
+      .sort((a, b) => b.total - a.total || a.disciplina.localeCompare(b.disciplina, 'pt', { sensitivity:'base' }));
+  }, [curvaABuscada, statusManualPorItem, campoExportacaoGraficos, requisicoesPorItemRmi]);
   const arvoreBuscada = useMemo(() => busca ? agruparPorAreaDisciplina(curvaABuscada) : arvore, [arvore, curvaABuscada, busca]);
   const arvoreExibida = useMemo(() => {
     if (!activeStatus) return arvoreBuscada;
     return arvoreBuscada.map(grupoArea => {
       const disciplinas = grupoArea.disciplinas.map(grupoDisc => {
-        const materiais = grupoDisc.materiais.filter(it => statusRmiConsolidado(it.qtdFinalizados, it.qtdConsolidada) === activeStatus);
+        const materiais = grupoDisc.materiais.filter(it => {
+          const statusManual = statusManualPorItem[it.id];
+          const statusAutomatico = statusAutomaticoItem(it);
+          const status = statusManual || statusAutomatico;
+          return status === activeStatus;
+        });
         return { ...grupoDisc, materiais, valor: soma(materiais, 'valor') || 0, ...farolAgregado(materiais) };
       }).filter(grupoDisc => grupoDisc.materiais.length);
       const materiaisArea = disciplinas.flatMap(d => d.materiais);
       return { ...grupoArea, disciplinas, valor: soma(materiaisArea, 'valor') || 0, ...farolAgregado(materiaisArea) };
     }).filter(grupoArea => grupoArea.disciplinas.length);
-  }, [arvoreBuscada, activeStatus]);
+  }, [arvoreBuscada, activeStatus, statusManualPorItem, requisicoesPorItemRmi]);
 
   useEffect(() => {
     if (fechadosInicializados || !arvore.length) return;
@@ -6683,6 +7495,106 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (nivel === 2) { setFechados(todasDisciplinas); return; }
     const todasAreas = new Set(arvoreExibida.map(g => g.area));
     setFechados(new Set([...todasAreas, ...todasDisciplinas]));
+  };
+
+  // Exporta o nó oculto `.slide-export` (grade de donuts por disciplina,
+  // 1920×1080 = 16:9) como PNG. Testado no navegador local: a técnica
+  // "HTML + <foreignObject> → canvas" TAINTA o canvas no Chrome sempre que
+  // o SVG contém um `<foreignObject>` — confirmado isolando o caso mínimo
+  // (só um `<div>Hello World</div>` dentro do foreignObject, sem imagem
+  // nenhuma, já tainta `toDataURL`/`toBlob`); não é algo do nosso conteúdo,
+  // é a política do próprio Chrome pra foreignObject (não dá pra confiar
+  // que tudo dentro seja seguro de exportar). Por isso `.slide-export` é
+  // um `<svg>` de VERDADE (sem HTML/foreignObject nenhum — cabeçalho,
+  // cards e legenda todos em elementos SVG nativos: rect/text/svg
+  // aninhado), reaproveitando `<DonutStatusRmi>` sem mudança nenhuma nele
+  // (é só um `<svg viewBox="0 0 400 400">`, aninha limpo dentro de um
+  // `<svg x/y/width/height>` posicionador). SVG puro + `<image>` com data
+  // URI (não URL) NÃO tainta — só o `<foreignObject>` tainta. Serializa o
+  // nó direto (já é um SVG válido standalone) e desenha num `<canvas>` em
+  // 2× (nitidez) antes de baixar.
+  const exportarGraficosPNG = () => {
+    const node = slideExportRef.current;
+    if (!node || exportandoPng) return;
+    setExportandoPng(true);
+    const LARGURA = 1920, ALTURA = 1080, ESCALA = 2;
+    try {
+      const svgString = new XMLSerializer().serializeToString(node);
+      const svgUrl = URL.createObjectURL(new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = LARGURA * ESCALA;
+        canvas.height = ALTURA * ESCALA;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(ESCALA, ESCALA);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, LARGURA, ALTURA);
+        ctx.drawImage(img, 0, 0, LARGURA, ALTURA);
+        URL.revokeObjectURL(svgUrl);
+        // `toDataURL` (síncrono) em vez de `toBlob` (assíncrono) — 1 hop a
+        // menos entre o clique original e `a.click()`; testado no navegador
+        // local que o hop extra do `toBlob` deixava o download intermitente
+        // (a "ativação" do gesto do usuário no Chrome não é garantida além
+        // de poucos hops assíncronos).
+        const dataUrl = canvas.toDataURL('image/png');
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        const dataHoje = new Date().toISOString().slice(0, 10);
+        a.download = `suprimentos-graficos-${obraNome.replace(/\s+/g, '_')}-${dataHoje}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setExportandoPng(false);
+      };
+      img.onerror = () => { URL.revokeObjectURL(svgUrl); setExportandoPng(false); };
+      img.src = svgUrl;
+    } catch (e) {
+      console.error('Falha ao exportar PNG dos gráficos', e);
+      setExportandoPng(false);
+    }
+  };
+
+  // Layout do slide SVG (1920×1080) — grade de cards por disciplina, até 4
+  // colunas. Tudo em unidades do próprio SVG (sem CSS grid/flex — não
+  // existe fora de HTML), calculado aqui pra manter o JSX de baixo legível.
+  const SLIDE_PAD = 56, SLIDE_GAP = 24, SLIDE_HEADER_H = 150;
+  const slideCols = Math.min(Math.max(donutsPorDisciplina.length, 1), 4);
+  const slideRows = Math.max(1, Math.ceil(donutsPorDisciplina.length / slideCols));
+  const slideCardW = (1920 - SLIDE_PAD * 2 - SLIDE_GAP * (slideCols - 1)) / slideCols;
+  const slideCardH = (1080 - SLIDE_HEADER_H - SLIDE_PAD * 2 - SLIDE_GAP * (slideRows - 1)) / slideRows;
+
+  // Quebra o título do card em até 2 linhas (3ª linha vira "…") — achado
+  // testando no navegador local: título de área/disciplina longo (ex. nome
+  // de RMI concatenado tipo "Elétrica/Telecom/Instrumentação/SDAI/
+  // Automação", Novo Nordisk AP) vazava pra fora do card em SVG — `<text>`
+  // não quebra linha sozinho como HTML (a versão antiga em HTML/flexbox
+  // tinha `overflowWrap:'anywhere'`, de graça; SVG puro não tem
+  // equivalente). SEMPRE reserva o mesmo nº de linhas (2) pra todo card da
+  // grade, mesmo título curto — mesmo motivo do bloco fixo título+donut já
+  // documentado abaixo: altura variável por card desalinharia os donuts
+  // entre cards da MESMA linha. Largura de caractere aproximada pro
+  // IBM Plex Sans em negrito maiúsculo (sem medir de verdade — não dá pra
+  // usar `getBBox` num nó fora da tela ainda não commitado no layout).
+  const quebrarTituloSlide = (texto, larguraMax, fontSize) => {
+    const charW = fontSize * 0.62;
+    const porLinha = Math.max(4, Math.floor(larguraMax / charW));
+    const palavras = texto.split(/\s+/);
+    const linhas = [];
+    let atual = '';
+    palavras.forEach(p => {
+      const teste = atual ? `${atual} ${p}` : p;
+      if (teste.length > porLinha && atual) { linhas.push(atual); atual = p; }
+      else atual = teste;
+    });
+    if (atual) linhas.push(atual);
+    if (linhas.length > 2) {
+      let l2 = linhas[1];
+      while (l2.length > porLinha - 1 && l2.length > 1) l2 = l2.slice(0, -1);
+      linhas[1] = l2.replace(/\s+$/, '') + '…';
+      linhas.length = 2;
+    }
+    return linhas;
   };
 
   return (
@@ -6764,6 +7676,31 @@ function ModuloSuprimentos({ obraId, obraNome }){
                 </button>
               ))}
             </div>
+            {/* Exportar PDF — pedido explícito (2026-08-28): "mecanismo de
+                exportação... exportado aberto". Sem estado nenhum pra
+                preparar antes do print: `.print-report` (mais abaixo)
+                já renderiza a partir de `arvoreExibida`, que não depende
+                de `fechados` — sai sempre todo aberto, sem precisar
+                mexer no estado de colapso da tela antes de imprimir.
+                `window.print()` aciona o "Salvar como PDF" nativo do
+                navegador (ver CSS `@media print` grande no <style>). */}
+            <button onClick={() => { setModoExportacao('completo'); setTimeout(() => { window.print(); setModoExportacao(null); }, 100); }} title="Exportar o mapa de suprimentos completo como PDF"
+              style={{ display:'flex', alignItems:'center', gap:6, background:T.ink, border:'none', color:'#fff', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:600, flexShrink:0 }}>
+              PDF Completo ↓
+            </button>
+            {/* Exportar gráficos (donuts por disciplina) como PNG em tamanho
+                de slide — pedido explícito (2026-09-01). Ver
+                `exportarGraficosPNG`/`.slide-export` (nó oculto logo
+                abaixo, fora da tela) pra como o PNG é montado. Some por
+                completo (não só desabilitado) pra obra sem regra de
+                exportação definida — ver `OBRAS_SEM_EXPORTACAO_GRAFICOS`. */}
+            {!OBRAS_SEM_EXPORTACAO_GRAFICOS.has(obraId) && (
+              <button onClick={exportarGraficosPNG} disabled={exportandoPng || !donutsPorDisciplina.length}
+                title="Exportar os gráficos de status por disciplina como PNG (tamanho de slide, 1920×1080)"
+                style={{ display:'flex', alignItems:'center', gap:6, background:T.blue, border:'none', color:'#fff', padding:'7px 14px', borderRadius:8, cursor: exportandoPng || !donutsPorDisciplina.length ? 'default' : 'pointer', fontSize:12, fontWeight:600, flexShrink:0, opacity: exportandoPng || !donutsPorDisciplina.length ? 0.6 : 1 }}>
+                {exportandoPng ? 'Gerando…' : 'Gráficos PNG ↓'}
+              </button>
+            )}
           </div>
           <div className="table-scroll-x" style={{ overflow:'auto', flex:1 }}>
             {/* `tableLayout:fixed` + `colgroup` em %, sem `minWidth`/
@@ -6781,16 +7718,16 @@ function ModuloSuprimentos({ obraId, obraNome }){
             ) : (
             <table style={{ width:'100%', tableLayout:'fixed', textAlign:'left', borderCollapse:'collapse' }}>
               <colgroup>
-                <col style={{ width:'34%' }} />
-                <col style={{ width:'12%' }} />
-                <col style={{ width:'16%' }} />
-                <col style={{ width:'12%' }} />
-                <col style={{ width:'16%' }} />
-                <col style={{ width:'10%' }} />
+                <col style={{ width:'28%' }} />
+                <col style={{ width:'11%' }} />
+                <col style={{ width:'15%' }} />
+                <col style={{ width:'11%' }} />
+                <col style={{ width:'15%' }} />
+                <col style={{ width:'20%' }} />
               </colgroup>
               <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fafbfc' }}>
                 <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.08em', color:T.mut, fontWeight:600, overflowWrap:'anywhere' }}>
-                  <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>{areaObrigatoria ? 'Área / Disciplina / Material' : `${rotuloDisciplina} / Material`}</th>
+                  <th style={{ padding:'10px 14px', borderBottom:'2px solid var(--line)' }}>{areaObrigatoria ? (trocarAreaDisciplina ? `${rotuloDisciplina} / ${rotuloArea} / Material` : 'Área / Disciplina / Material') : `${rotuloDisciplina} / Material`}</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Farol Financeiro</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Data da Necessidade de Compra</th>
                   <th style={{ padding:'10px 14px', textAlign:'right', borderBottom:'2px solid var(--line)' }}>Prazo de Entrega</th>
@@ -6820,13 +7757,13 @@ function ModuloSuprimentos({ obraId, obraNome }){
                       <React.Fragment key={chaveDisc}>
                         {/* Sem camada de Área na RMI (`!areaObrigatoria`,
                             ver AREA_OPCIONAL_SUPRIMENTOS): a linha de
-                            Área acima JÁ é a disciplina (mesmo nome) —
+                            Área acima já é a disciplina (mesmo nome) —
                             essa 2ª linha idêntica ficaria redundante, só
                             renderiza pra obra com área de verdade. */}
                         {areaObrigatoria && (
                         <tr className="hoverable" onClick={() => alternarFechado(chaveDisc)} style={{ background:'#f7f8fa', borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
                           <td className="mono" style={{ padding:'7px 14px 7px 30px', fontSize:11, fontWeight:600, color:T.body, overflowWrap:'anywhere' }}>
-                            <span style={{ display:'inline-block', width:14, color:T.blue }}>{discFechada ? '▸' : '▾'}</span>
+                            <span style={{ display:'inline-block', width:14, color:T.blue}}>{discFechada ? '▸' : '▾'}</span>
                             {grupoDisc.disciplina}
                           </td>
                           <td style={{ padding:'7px 14px', textAlign:'right' }}>
@@ -6836,13 +7773,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
                         </tr>
                         )}
                         {(!areaObrigatoria || !discFechada) && grupoDisc.materiais.map(it => {
-                          const temAninhados = it.qtdConsolidada > 1;
                           return (
-                            <tr key={it.id} className="hoverable" onClick={temAninhados ? () => setMaterialAberto(it) : undefined}
-                              style={{ borderBottom:'1px solid var(--line)', cursor: temAninhados ? 'pointer' : 'default' }}>
+                            <tr key={it.id} className="hoverable" onClick={() => setMaterialAberto(it)}
+                              style={{ borderBottom:'1px solid var(--line)', cursor:'pointer' }}>
                               <td style={{ padding:'9px 14px 9px 46px', fontSize:12.5, color:T.ink, fontWeight:600, whiteSpace:'normal', lineHeight:1.35, wordBreak:'break-word' }}>
                                 {it.descricao || '—'}
-                                {temAninhados && <span style={{ marginLeft:6, fontSize:11, color:T.mut, fontWeight:400 }}>›</span>}
+                                <span style={{ marginLeft:6, fontSize:11, color:T.mut, fontWeight:400 }}>›</span>
                               </td>
                               <td style={{ padding:'9px 14px', textAlign:'right' }}>
                                 <FarolFinanceiroRmi desvio={it.desvio_saldo_orcamentario} onClick={e => { e.stopPropagation(); setFarolDetalhe({ titulo: it.descricao, valor: it.valor, totalConsumido: it.totalConsumido, saldo: it.saldo_orcamentario, desvio: it.desvio_saldo_orcamentario }); }} />
@@ -6851,8 +7787,11 @@ function ModuloSuprimentos({ obraId, obraNome }){
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums', overflowWrap:'anywhere' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
                               <td className="mono" style={{ padding:'9px 14px', textAlign:'right', fontSize:12, color:T.body, fontVariantNumeric:'tabular-nums', overflowWrap:'anywhere' }}>{fmtDataObjRmi(it.materialEmObra)}</td>
                               <td style={{ padding:'9px 14px', textAlign:'center' }}>
-                                <StatusBadgeRmi qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada}
-                                  activeStatus={activeStatus} onStatusClick={status => setActiveStatus(prev => prev === status ? null : status)} />
+                                {statusManualDesativado
+                                  ? <StatusBadgeRmi status={statusAutomaticoItem(it)} />
+                                  : <BadgeStatusSuprimento statusAutomatico={statusAutomaticoItem(it)}
+                                      qtdFinalizados={it.qtdFinalizados} qtdTotal={it.qtdConsolidada}
+                                      statusManual={statusManualPorItem[it.id]} onSalvar={novoStatus => salvarStatusManual(it.id, novoStatus)} />}
                               </td>
                             </tr>
                           );
@@ -6872,7 +7811,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
 
       {materialAberto && (
         <div onClick={() => setMaterialAberto(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10001, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
-          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:640, maxHeight:'78vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:900, maxHeight:'78vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
             <div style={{ padding:'14px 20px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>{areaObrigatoria ? `${materialAberto.area} — ${materialAberto.disciplina}` : materialAberto.disciplina}</div>
@@ -6880,29 +7819,125 @@ function ModuloSuprimentos({ obraId, obraNome }){
               </div>
               <button onClick={() => setMaterialAberto(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
             </div>
-            <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
-              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-                <tbody>
-                  {(materialAberto.itensOriginais || []).map((it, i) => {
-                    const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
-                    return (
-                    <tr key={it.id || i} style={{ borderBottom:'1px solid #eef0f3' }}>
-                      <td style={{ padding:'9px 18px', textAlign:'left', fontSize:12, color:T.ink, fontWeight:500 }}>{it.descricao || '—'}</td>
-                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
-                      <td className="mono" style={{ padding:'9px 18px', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums' }}>{fmtDataObjRmi(calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias))}</td>
-                      <td style={{ padding:'9px 18px', textAlign:'center' }}>
-                        <StatusBadgeRmi qtdFinalizados={it.finalizado ? 1 : 0} qtdTotal={1} />
-                      </td>
-                    </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div style={{ overflowY:'auto', overflowX:'auto', flex:1, minHeight:0, padding:'6px 20px 20px' }}>
+              {/* Layout ADAPTATIVO (pedido explícito, 2026-09-02: "achei que a
+                  coluna ficou muito próxima da do status, faça um layout
+                  adaptável") — substitui a tentativa anterior de % fixo no
+                  `colgroup` (que exigia reajustar na mão toda vez: gap sobrando,
+                  coluna espremida...) por um `display:grid` ÚNICO cobrindo TODAS
+                  as linhas (não 1 grid por linha — precisa ser um só pra as
+                  colunas ficarem alinhadas entre os itens). Descrição usa `1fr`
+                  (some o espaço sobrando); as outras 4 usam `max-content` (cada
+                  coluna só fica tão larga quanto o maior conteúdo dela, em
+                  QUALQUER linha) — sem número mágico de % pra ajustar de novo
+                  quando o conteúdo mudar. `minmax(...)` só evita a coluna
+                  colapsar demais com texto curto (ex.: "—"). */}
+              <div style={{ display:'grid', gridTemplateColumns:'minmax(160px, 1fr) minmax(72px, max-content) minmax(52px, max-content) minmax(72px, max-content) minmax(110px, max-content)', columnGap:14 }}>
+                {(materialAberto.itensOriginais || []).map((it, i) => {
+                  const materialEmObraItem = calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias);
+                  // Requisições associadas a este item RMI específico —
+                  // `requisicoesDaLinha` filtra por `codigo_seq`. 1 badge
+                  // "RM<número>" por requisição, junto do status na MESMA
+                  // célula (pedido explícito: "não precisa ficar em baixo" /
+                  // "existe um GAP entre o badge da RM e o status").
+                  const requisicoesItem = requisicoesDaLinha(it);
+                  return (
+                  <React.Fragment key={it.id || i}>
+                    <div style={{ padding:'9px 0', borderBottom:'1px solid #eef0f3', fontSize:12, color:T.ink, fontWeight:500, whiteSpace:'normal', lineHeight:1.35, wordBreak:'break-word' }}>{it.descricao || '—'}</div>
+                    <div className="mono" style={{ padding:'9px 0', borderBottom:'1px solid #eef0f3', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</div>
+                    <div className="mono" style={{ padding:'9px 0', borderBottom:'1px solid #eef0f3', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</div>
+                    <div className="mono" style={{ padding:'9px 0', borderBottom:'1px solid #eef0f3', textAlign:'right', fontSize:11.5, color:T.body, fontVariantNumeric:'tabular-nums', whiteSpace:'nowrap' }}>{fmtDataObjRmi(calcularMaterialEmObra(it.dataNecessidadeCompra, it.prazoEntregaDias))}</div>
+                    <div style={{ padding:'9px 0', borderBottom:'1px solid #eef0f3' }}>
+                      <div style={{ display:'flex', flexWrap:'wrap', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+                        <StatusBadgeRmi status={statusAutomaticoItem(it)} />
+                        {requisicoesItem.map((req, rIdx) => {
+                          const cfgStatusReq = configStatusRequisicao(req.status_requisicao);
+                          return (
+                          <span key={req.id || rIdx} onClick={() => setRequisicaoAberta(req)}
+                            title={`Requisição ${req.requisicao || '—'} — ${req.status_requisicao ? rotuloStatusRequisicao(req.status_requisicao) : 'Sem status'}`}
+                            className="mono" style={{ cursor:'pointer', fontSize:10, fontWeight:700, letterSpacing:'0.02em', padding:'3px 7px', borderRadius:6, background:cfgStatusReq.bg, color:cfgStatusReq.cor, border:`1px solid ${cfgStatusReq.cor}`, whiteSpace:'nowrap' }}>
+                            RM{req.requisicao || '—'}
+                          </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </React.Fragment>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {requisicaoAberta && (() => {
+        const req = requisicaoAberta;
+        const cfgStatusReq = configStatusRequisicao(req.status_requisicao);
+        return (
+        <div onClick={() => setRequisicaoAberta(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10003, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+          <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:680, maxHeight:'68vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+            <div style={{ padding:'11px 18px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:12, flexShrink:0 }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:3 }}>{req.nome_rmi || 'Requisição'}{req.tipo ? ` — ${req.tipo}` : ''}</div>
+                <div style={{ fontSize:14, fontWeight:700, color:T.ink, display:'flex', alignItems:'center', gap:8 }}>
+                  Requisição {req.requisicao || '—'}
+                  <span className="mono" style={{ fontSize:9.5, fontWeight:700, letterSpacing:'0.04em', textTransform:'uppercase', padding:'2px 8px', borderRadius:6, background:cfgStatusReq.bg, color:cfgStatusReq.cor }}>{req.status_requisicao ? rotuloStatusRequisicao(req.status_requisicao) : 'Sem status'}</span>
+                </div>
+              </div>
+              <button onClick={() => setRequisicaoAberta(null)} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'7px 12px', cursor:'pointer', fontSize:15, lineHeight:1, flexShrink:0 }}>✕</button>
+            </div>
+            <div style={{ overflowY:'auto', flex:1, minHeight:0, padding:'10px 18px 14px' }}>
+              {req.descricao && (
+                <div style={{ fontSize:12, color:T.body, marginBottom:8 }}>{req.descricao}</div>
+              )}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:'6px 12px', marginBottom:10, padding:'8px 10px', background:'#f7f8fa', borderRadius:8, border:'1px solid #e4e7ec' }}>
+                {[
+                  ['Requisitante', req.requisitante || '—'],
+                  ['Grupo', req.grupo || '—'],
+                  ['Categoria', req.categoria || '—'],
+                  ['Tipo de requisição', req.requisicao_tipo || '—'],
+                  ['Data de cadastro', req.data_cadastro ? fmtDataCompleta(req.data_cadastro) : '—'],
+                  ['Data de necessidade', req.data_necessidade ? fmtDataCompleta(req.data_necessidade) : '—'],
+                  ['Cronograma fechado', req.data_cronograma_fechado ? fmtDataCompleta(req.data_cronograma_fechado) : '—'],
+                  ['Total de itens', req.total_itens ?? (req.itens || []).length],
+                ].map(([rot, val]) => (
+                  <div key={rot}>
+                    <div className="mono" style={{ fontSize:8.5, letterSpacing:'0.07em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:1 }}>{rot}</div>
+                    <div style={{ fontSize:11.5, color:T.ink, fontWeight:500 }}>{val}</div>
+                  </div>
+                ))}
+              </div>
+              {(req.solicitacao_enviada || req.necessario_contrato || req.necessario_art) && (
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:10 }}>
+                  {req.solicitacao_enviada && <span className="mono" style={{ fontSize:9.5, fontWeight:600, padding:'2px 7px', borderRadius:6, background:'rgba(37,99,235,0.1)', color:T.blue }}>Solicitação enviada</span>}
+                  {req.necessario_contrato && <span className="mono" style={{ fontSize:9.5, fontWeight:600, padding:'2px 7px', borderRadius:6, background:'rgba(217,145,26,0.13)', color:T.amber }}>Necessário contrato</span>}
+                  {req.necessario_art && <span className="mono" style={{ fontSize:9.5, fontWeight:600, padding:'2px 7px', borderRadius:6, background:'rgba(217,145,26,0.13)', color:T.amber }}>Necessário ART</span>}
+                </div>
+              )}
+              <div className="mono" style={{ fontSize:9.5, letterSpacing:'0.14em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>Itens da Requisição ({(req.itens || []).length})</div>
+              {(req.itens || []).map((itReq, itIdx) => (
+                <div key={itReq.id || itIdx} style={{ padding:'5px 0', borderBottom:'1px solid #eef0f3', display:'flex', justifyContent:'space-between', gap:12 }}>
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontSize:11.5, fontWeight:500, color:T.ink }}>{itReq.descricao || '—'}</div>
+                    <div className="mono" style={{ fontSize:9.5, color:T.mut, marginTop:1 }}>
+                      Seq: {itReq.codigo_seq || '—'} · Qtd: {itReq.quantidade || '—'} {itReq.unidade || ''}
+                      {itReq.fornecedor_ref ? ` · Fornecedor: ${itReq.fornecedor_ref}` : ''}
+                    </div>
+                  </div>
+                  <div style={{ flexShrink:0, textAlign:'right' }}>
+                    <span className="mono" style={{ fontSize:9, fontWeight:700, padding:'2px 6px', borderRadius:6, background: itReq.tem_pedido ? 'rgba(31,157,87,0.13)' : '#eef0f3', color: itReq.tem_pedido ? T.green : T.mut }}>{itReq.tem_pedido ? 'Com pedido' : 'Sem pedido'}</span>
+                    {parseValNum(itReq.subtotal_referencia_bd_s1) != null && (
+                      <div className="mono" style={{ fontSize:10, color:T.body, marginTop:3 }}>{fmtReais(parseValNum(itReq.subtotal_referencia_bd_s1))}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {farolDetalhe && (
         <div onClick={() => setFarolDetalhe(null)} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10002, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
@@ -6928,6 +7963,274 @@ function ModuloSuprimentos({ obraId, obraNome }){
             </div>
           </div>
         </div>
+      )}
+
+      {/* Relatório de impressão (PDF) — pedido explícito (2026-08-28):
+          "mecanismo de exportação... exportado aberto, use e abuse do
+          front end design". Fica sempre no DOM (invisível na tela via
+          `.print-report{display:none}`), só aparece dentro de
+          `@media print` (ver <style> grande no topo do arquivo) —
+          window.print() do botão "Baixar PDF" aciona o "Salvar como
+          PDF" nativo do navegador. Construído a partir de
+          `arvoreExibida` (não de `arvore`) — respeita busca/filtro de
+          status já aplicados na tela, sempre TOTALMENTE aberto (não
+          depende de `fechados`, que só controla o colapso da tabela
+          na tela).
+
+          `ReactDOM.createPortal` pro FIM de `document.body` — achado
+          testando no navegador local (2026-08-28, "está ficando uma
+          margem grande superior na primeira página"): sem o portal,
+          essa div nascia bem aninhada dentro da árvore do app (dentro
+          de `.painel-gutter` > `.screen-slide.app-main` > ...), e
+          `.screen-slide.app-main` tem `transform:` aplicado (animação
+          de entrada de tela) — um ancestral com `transform` vira o
+          "containing block" de qualquer `position:absolute` dentro
+          dele, ENTÃO o `top:0` do `.print-report` passava a ser
+          relativo ao topo de `.app-main`, não ao topo da página. Como
+          o header/abas (ANTES de `.app-main` no DOM) continuam
+          ocupando espaço mesmo escondidos (`visibility:hidden`, não
+          `display:none`), isso empurrava o relatório pra baixo — dava
+          exatamente a margem grande no topo da 1ª página. Portal pro
+          `document.body` tira `.print-report` dessa cadeia de
+          ancestrais por completo — vira filho direto do `<body>`,
+          sem `transform` no meio, `top:0` relativo à página de verdade. */}
+      {ReactDOM.createPortal(
+      <div className="print-report" style={{ display: modoExportacao === 'completo' || modoExportacao === null ? 'block' : 'none' }}>
+        {/* Visual refeito (2026-08-28, pedido explícito) a partir de um
+            laudo técnico real da MSE como referência — sem farol
+            financeiro (removido, pedido explícito) e sem os "cartões"
+            arredondados de antes ("não precisa de tantas formas"): só
+            regra fina vermelha + título + linha de rodapé, no espírito
+            de um documento formal, não um dashboard.
+
+            Estrutura em `<table>` (thead vazio, tbody com TODO o
+            conteúdo, tfoot com o rodapé) — pedido explícito (2026-08-28):
+            "o rodapé deverá ser exibido em todas as páginas". `<tfoot>`
+            com `display:table-footer-group` (ver CSS) é a MESMA técnica
+            já usada pro `<thead>` das tabelas de material (repete em
+            toda página impressa) — só que aqui numa tabela "envelope"
+            de 1 linha só, porque o rodapé precisa repetir por cima de
+            VÁRIAS seções (Área/Disciplina/tabelas de material), não só
+            dentro de uma tabela. Sem isso, o rodapé (um `<div>` solto no
+            fim) só aparecia 1x, no fim da última página. */}
+        <table className="pr-page">
+          <tbody>
+            <tr><td>
+              {/* Capa em 2 colunas — pedido explícito (2026-08-28): "o
+                  ícone poderá ficar acima da data, mas precisa ter
+                  altura até o texto do mapa de suprimentos". Coluna
+                  direita (`pr-cover-right`) vira logo GRANDE em cima +
+                  data embaixo, com altura casada com a coluna esquerda
+                  inteira (regrinha + título + obra), não mais um ícone
+                  pequeno do lado da data. `mselogo2.png` é literalmente
+                  o arquivo do favicon (`<link rel="icon" .../>` no
+                  `<head>`) — mesmo logo quadrado vermelho, não o
+                  logotipo largo do header do app (`mselogo.png`). */}
+              <div className="pr-cover">
+                <div className="pr-cover-left">
+                  <div className="pr-rule" />
+                  <h1 className="pr-title">Mapa de Suprimentos</h1>
+                  <span className="pr-eyebrow">{obraNome}</span>
+                </div>
+                <div className="pr-cover-right">
+                  <img className="pr-logo" src="assets/images/mselogo2.png" alt="" />
+                  <span className="pr-meta-text">
+                    {`atualizado em ${new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' })}`}
+                    {busca && <> · Filtro: "{busca}"</>}
+                    {activeStatus && <> · Status: {activeStatus}</>}
+                  </span>
+                </div>
+              </div>
+
+
+              {arvoreExibida.map(grupoArea => (
+                <div key={grupoArea.area}>
+                  <div className="pr-area">
+                    <span className="nome">{grupoArea.area}</span>
+                  </div>
+                  {grupoArea.disciplinas.map(grupoDisc => (
+                    <div key={grupoDisc.disciplina}>
+                      {areaObrigatoria && (
+                        <div className="pr-disc">
+                          <span className="nome">{grupoDisc.disciplina}</span>
+                        </div>
+                      )}
+                      <table className="pr-mat">
+                        <colgroup>
+                          <col style={{ width:'45%' }} /><col style={{ width:'14%' }} /><col style={{ width:'12%' }} />
+                          <col style={{ width:'15%' }} /><col style={{ width:'14%' }} />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th>Descrição</th>
+                            <th className="num">Data de Compra</th>
+                            <th className="num">Prazo</th>
+                            <th className="num">Limite em Obra</th>
+                            <th>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {grupoDisc.materiais.map(it => {
+                            // Status manual tem prioridade sobre o automático (mesma lógica de BadgeStatusSuprimento)
+                            const statusManual = statusManualPorItem[it.id];
+                            const statusAutomatico = statusAutomaticoItem(it);
+                            const statusFinal = statusManual || statusAutomatico;
+                            // Usa a config correta: manual ou automática
+                            const cfgStatus = statusManual ? configStatusManual(statusManual) : configStatusItem(statusAutomatico);
+                            return (
+                              <tr key={it.id}>
+                                <td className="desc">{it.descricao || '—'}</td>
+                                <td className="num">{it.dataNecessidadeCompra ? fmtDataCompleta(it.dataNecessidadeCompra) : '—'}</td>
+                                <td className="num">{it.prazoEntregaDias != null ? `${it.prazoEntregaDias} dias` : '—'}</td>
+                                <td className="num">{fmtDataObjRmi(it.materialEmObra)}</td>
+                                <td><span className="pr-status" style={{ color:cfgStatus.cor }}>{statusFinal}</span></td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td className="pr-foot">
+              <span><b>mse</b>.com.br · Painel de Obra</span>
+              <span>{obraNome}</span>
+            </td></tr>
+          </tfoot>
+        </table>
+      </div>,
+      document.body,
+      )}
+
+      {/* Exportação Resumida para Slides — gráfico de status sem itens
+          "Sem Informação", formato landscape A4, otimizado para apresentação.
+          Só renderiza quando `modoExportacao === 'resumo'` (ao clicar em
+          "PDF Resumo"), invisível no resto do tempo. */}
+      {ReactDOM.createPortal(
+      <div className="print-resumo" style={{ display: modoExportacao === 'resumo' ? 'block' : 'none' }}>
+        <div className="pr-resumo-cover">
+          <div className="pr-resumo-header">
+            <img src="assets/images/mselogo2.png" alt="MSE" style={{ height:40, width:'auto' }} />
+            <div>
+              <h1 style={{ margin:0, fontSize:28, fontWeight:800, color:'#192231' }}>Mapa de Suprimentos</h1>
+              <div style={{ fontSize:14, color:'#4d5868', marginTop:4 }}>{obraNome} · {`atualizado em ${new Date().toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' })}`}</div>
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:450, padding:'40px 0' }}>
+            <DonutStatusRmi slices={pieSlicesResumo} activeStatus={null} onSliceClick={() => {}} />
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:16, marginTop:32 }}>
+            {pieSlicesResumo.map(sl => (
+              <div key={sl.status} style={{ display:'flex', alignItems:'center', gap:12, padding:12, background:'#f7f8fa', borderRadius:10, border:'1px solid #e4e7ec' }}>
+                <div style={{ width:14, height:14, borderRadius:'50%', background:sl.cor, flexShrink:0 }} />
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:'#192231' }}>{sl.label}</div>
+                  <div className="mono" style={{ fontSize:20, fontWeight:800, color:sl.cor, marginTop:2 }}>{sl.value}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>,
+      document.body,
+      )}
+
+      {/* Nó oculto de origem do PNG "Gráficos" (`exportarGraficosPNG`) —
+          pedido explícito (2026-09-01). `<svg>` de VERDADE, não HTML — ver
+          o comentário grande em `exportarGraficosPNG` sobre por que
+          `<foreignObject>` tainta o canvas no Chrome mesmo sem imagem/
+          recurso externo nenhum dentro. Fica SEMPRE renderizado (nunca
+          `display:none`, senão não haveria layout pra medir/serializar),
+          só fora da tela via o WRAPPER externo (`position:fixed,
+          left:-99999`) — puro posicionamento de portal, não entra na
+          serialização (só o `<svg ref=...>` de dentro entra). Logo em data
+          URI (`logoDataUri`, buscado 1x no mount) — `<image>` com URL
+          (mesmo same-origin) tainta igual, só data: escapa. */}
+      {ReactDOM.createPortal(
+        <div style={{ position:'fixed', top:0, left:-99999, width:1920, height:1080, overflow:'hidden', pointerEvents:'none' }}>
+          <svg ref={slideExportRef} className="slide-export" xmlns="http://www.w3.org/2000/svg"
+            width={1920} height={1080} viewBox="0 0 1920 1080" fontFamily="'IBM Plex Sans','Segoe UI',Arial,sans-serif">
+            <defs>
+              <linearGradient id="slideHeaderGrad" x1="0%" y1="0%" x2="100%" y2="15%">
+                <stop offset="0%" stopColor="#13223b" />
+                <stop offset="62%" stopColor="#13223b" />
+                <stop offset="84%" stopColor="#6a2942" />
+                <stop offset="100%" stopColor="#B42C39" />
+              </linearGradient>
+            </defs>
+            <rect width={1920} height={1080} fill="#fff" />
+            <rect width={1920} height={SLIDE_HEADER_H} fill="url(#slideHeaderGrad)" />
+            <text x={SLIDE_PAD} y={44} fontSize={13} fontWeight={700} fill="rgba(255,255,255,0.6)" style={{ letterSpacing:'0.18em', textTransform:'uppercase' }}>MSE Engenharia</text>
+            <text x={SLIDE_PAD} y={92} fontSize={32} fontWeight={800} fill="#fff">Status de Suprimentos por Disciplina</text>
+            <text x={SLIDE_PAD} y={124} fontSize={16} fill="#c9d3e8">{obraNome} · atualizado em {new Date().toLocaleDateString('pt-BR')}</text>
+            {logoDataUri && <image href={logoDataUri} x={1920 - SLIDE_PAD - 160} y={52} width={160} height={44} preserveAspectRatio="xMidYMid meet" />}
+
+            {donutsPorDisciplina.map((dg, i) => {
+              const col = i % slideCols, row = Math.floor(i / slideCols);
+              const x = SLIDE_PAD + col * (slideCardW + SLIDE_GAP);
+              const y = SLIDE_HEADER_H + SLIDE_PAD + row * (slideCardH + SLIDE_GAP);
+              // Escala o conteúdo do card (fonte/donut/legenda) pelo espaço
+              // realmente disponível — pedido explícito (2026-09-01): "ficaram
+              // só 3 gráficos, precisam se adaptar para ocupar todo o
+              // layout". Card de referência 420×480 (onde os tamanhos fixos
+              // de antes já ficavam bons) — menos cards (grade com só 1
+              // linha, cada card bem mais alto/largo) dá `escala` > 1, mais
+              // cards (grade cheia) tende a ~1.
+              const escala = Math.min(Math.max(slideCardW / 420, slideCardH / 480, 1), 2.6);
+              const donutSize = Math.min(200 * escala, slideCardW * 0.72, slideCardH * 0.5);
+              const tituloFonte = 18 * escala, subFonte = 13 * escala;
+              const legendaFonte = 13.5 * escala, legendaLinha = 26 * escala, legendaR = 6 * escala;
+              const tituloLinhaH = tituloFonte * 1.15;
+              // Sempre reserva 2 linhas de título (mesmo card com título
+              // curto de 1 linha só) — mesmo motivo do bloco fixo abaixo:
+              // altura variável desalinharia os cards da mesma linha. Ver
+              // `quebrarTituloSlide` (bem acima) pro porquê da quebra manual.
+              const blocoTituloH = 62 * escala + tituloLinhaH, gapDonutLegenda = 30 * escala;
+              // Centraliza só título+donut (altura FIXA, igual em todo card
+              // da grade) — de propósito NÃO soma a legenda aqui: ela varia
+              // de card pra card (nº de status diferente por disciplina), e
+              // se entrasse na conta cada card centralizaria numa altura
+              // diferente, desalinhando donut/título entre os cards da MESMA
+              // linha (achado testando no navegador local — "Elétrica e
+              // Sistemas", com 3 status, ficava visivelmente mais baixo que
+              // "HVAC"/"Civil", com 1 só). A legenda só continua abaixo do
+              // donut, curta ou longa — sobra embaixo do card é esperada.
+              const blocoFixoH = blocoTituloH + donutSize + gapDonutLegenda;
+              const startY = y + Math.max(24, (slideCardH - blocoFixoH) / 2);
+              const donutX = x + slideCardW / 2 - donutSize / 2;
+              const donutY = startY + blocoTituloH;
+              const legendY0 = donutY + donutSize + gapDonutLegenda;
+              const linhasTitulo = quebrarTituloSlide(dg.disciplina, slideCardW - 48 * escala, tituloFonte);
+              return (
+                <g key={dg.disciplina}>
+                  <rect x={x} y={y} width={slideCardW} height={slideCardH} rx={18} fill="#fff" stroke="#e4e7ec" />
+                  {linhasTitulo.map((linha, li) => (
+                    <text key={li} x={x + slideCardW / 2} y={startY + 24 * escala + li * tituloLinhaH} textAnchor="middle" fontSize={tituloFonte} fontWeight={700} fill={T.ink} style={{ letterSpacing:'0.03em', textTransform:'uppercase' }}>{linha}</text>
+                  ))}
+                  <text x={x + slideCardW / 2} y={startY + 45 * escala + tituloLinhaH} textAnchor="middle" fontSize={subFonte} fill={T.mut}>{dg.total} itens</text>
+                  <svg x={donutX} y={donutY} width={donutSize} height={donutSize} viewBox="0 0 400 400" overflow="visible">
+                    <DonutStatusRmi slices={dg.slices} activeStatus={null} onSliceClick={() => {}} />
+                  </svg>
+                  {dg.slices.map((sl, si) => {
+                    const ly = legendY0 + si * legendaLinha;
+                    return (
+                      <g key={sl.status}>
+                        <circle cx={x + 28 * escala} cy={ly} r={legendaR} fill={sl.cor} />
+                        <text x={x + 44 * escala} y={ly + 5 * escala} fontSize={legendaFonte} fontWeight={600} fill={T.ink}>{sl.label}</text>
+                        <text x={x + slideCardW - 18 * escala} y={ly + 5 * escala} textAnchor="end" fontSize={legendaFonte} fontWeight={800} fill={sl.cor}>{sl.value}</text>
+                      </g>
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </svg>
+        </div>,
+        document.body,
       )}
     </div>
   );

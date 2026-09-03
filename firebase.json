@@ -1,12 +1,23 @@
 {
-  "hosting": {
-    "site": "painel-mse-prototipo",
-    "public": "prototipo",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**",
-      "combinado/**"
-    ]
-  }
+  "hosting": [
+    {
+      "target": "prototipo",
+      "public": "prototipo",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**",
+        "combinado/**"
+      ]
+    },
+    {
+      "target": "apresentacao",
+      "public": "apresentacao",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ]
+    }
+  ]
 }
