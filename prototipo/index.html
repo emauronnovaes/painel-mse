@@ -539,8 +539,12 @@ const OBRA_TOUR_360 = {
 // a partir de assets/images/ORTOFOTO.jpg) no lugar do Tour 360° — só a
 // Porto Itapoá (id 94) tem ortofoto cadastrada por ora. Checada ANTES de
 // `OBRA_TOUR_360` dentro de `ModuloTour360` (pedido explícito, 2026-08-25).
+// `data` = data em que a foto foi tirada (pedido explícito, 2026-09-03:
+// "coloque uma badge da data da foto") — exibida em `ModuloOrtofoto`, ISO
+// (`YYYY-MM-DD`) pra passar direto por `fmtDataLonga`. Atualizar aqui
+// sempre que uma ortofoto nova substituir a atual.
 const OBRA_ORTOFOTO = {
-  94: 'assets/ortofoto-porto/ortofoto.dzi',
+  94: { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' },
 };
 
 // Nome da aba "Tour 360°" vira "Ortofoto" pra quem tem ortofoto cadastrada
@@ -9923,7 +9927,7 @@ function SetorPlaceholder({ setor, obraId }){
 // componente React — a integração é via ref + useEffect, igual qualquer
 // lib imperativa). `destroy()` no cleanup evita acumular viewers/listeners
 // ao trocar de obra ou desmontar a tela.
-function ModuloOrtofoto({ dziUrl, obraNome }){
+function ModuloOrtofoto({ dziUrl, data, obraNome }){
   const elRef = useRef(null);
   const viewerRef = useRef(null);
   useEffect(() => {
@@ -9945,7 +9949,23 @@ function ModuloOrtofoto({ dziUrl, obraNome }){
     });
     return () => { viewerRef.current?.destroy(); viewerRef.current = null; };
   }, [dziUrl]);
-  return <div ref={elRef} className="ortofoto-viewer" title={`Ortofoto — ${obraNome}`} />;
+  return (
+    <div style={{ position:'relative', width:'100%', height:'100%' }}>
+      <div ref={elRef} className="ortofoto-viewer" title={`Ortofoto — ${obraNome}`} />
+      {/* Badge da data da foto (pedido explícito, 2026-09-03) — canto
+          superior esquerdo pra não brigar com o navigator do OpenSeadragon
+          (fixo no BOTTOM_RIGHT). `pointerEvents:none` pra não atrapalhar
+          pan/zoom por baixo, mesmo padrão já usado no hint de zoom da
+          Curva S. */}
+      {data && (
+        <div style={{ position:'absolute', top:12, left:12, background:'rgba(16,24,40,0.72)', backdropFilter:'blur(4px)', borderRadius:8, padding:'5px 10px', pointerEvents:'none', zIndex:1 }}>
+          <span className="mono" style={{ fontSize:11, color:'rgba(255,255,255,0.85)', fontWeight:600, letterSpacing:'0.04em' }}>
+            Foto de {fmtDataLonga(data)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Setor 9, provisório — Tour 360° (Constructin, embutido via iframe) ──────
@@ -9956,11 +9976,11 @@ function ModuloOrtofoto({ dziUrl, obraNome }){
 // existe pra 1 obra por enquanto, sem conflito real, mas o gate deixa
 // explícito qual ganha se algum dia as duas existirem pra mesma obra.
 function ModuloTour360({ obraId, obraNome }){
-  const dziUrl = OBRA_ORTOFOTO[obraId];
-  if (dziUrl) {
+  const ortofoto = OBRA_ORTOFOTO[obraId];
+  if (ortofoto) {
     return (
       <div className="card tour-360-frame painel-gutter">
-        <ModuloOrtofoto dziUrl={dziUrl} obraNome={obraNome} />
+        <ModuloOrtofoto dziUrl={ortofoto.dzi} data={ortofoto.data} obraNome={obraNome} />
       </div>
     );
   }
