@@ -429,6 +429,9 @@ Commit desta etapa: `23798b9`.
 - Criado o comando `npm run test:supply-works` para repetir essa validação de
   forma explícita no fluxo de implantação.
 
+- Criado o comando `npm run test:all`, que executa a validação unitária, as
+  rotas gerais e as sete obras de Suprimentos em sequência.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
