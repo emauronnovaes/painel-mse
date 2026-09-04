@@ -79,6 +79,28 @@ Adicionar tipos para cada resposta e validar JSONB/nullable explicitamente.
 Executar build, testes, smoke test local, deploy no site isolado e validação
 remota. Fazer deploy de produção somente após aprovação visual e funcional.
 
+## Registro de execução
+
+### 2026-09-04 — Fases 0, 1 e início da Fase 2
+
+- Criada a branch `refactor/prototipo-incremental` e preservado o backup em
+  `backups/pre-refactor-20260904-133720/`.
+- Adicionado o baseline Playwright das 9 rotas do Painel de Obra.
+- Centralizadas as requisições HTTP do protótipo com timeout, paginação e falha
+  integral quando uma página intermediária falha.
+- Consultas do módulo de Efetivo, Encarregados, Restrições, OC/CO, Suprimentos
+  e Medições migradas para o cliente central.
+- Extraídos `parseValNum`, `parseDataFlexivel`,
+  `normalizarNomeParaMatch` e `corDesvio` para
+  `prototipo/lib/domain-utils.js`, com testes unitários.
+- Validação atual: 4 testes unitários e 9 testes de rotas aprovados.
+
+Commits: `ee45143`, `5688e54`, `e4bd02a`, `b677ace`, `8420cac`, `7d22df7`,
+`45685c7` e `17598b4`.
+
+Próximo passo: extrair as regras de aderência, dia de referência, metas
+semanais e criticidade, preservando as fórmulas já validadas no dashboard.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
