@@ -402,6 +402,12 @@ Commit desta etapa: `23798b9`.
   externo, mantendo o merge por categoria.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Desativação do legado do Novo Nordisk AP
+
+- Isolado por comentário o bloco legado da obra `id_obra=107`, após concluir
+  a migração de suas regras e categorias de catálogo.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
