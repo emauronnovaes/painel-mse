@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const config = require('../../prototipo/lib/panel-config.js');
 
 const obras = [{ id: 106 }, { id: 110 }];
@@ -80,6 +81,12 @@ test('Porto expõe catálogo externo de disciplinas', () => {
   const disciplinas = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoDisciplinaExtra;
   assert.deepEqual(disciplinas['Caixas e Eletrodutos'], ['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS']);
   assert.deepEqual(disciplinas['Cercamento'], ['VIGA BALDRAME']);
+});
+test('obras integralmente migradas não mantêm bloco ativo duplicado no HTML', () => {
+  const html = fs.readFileSync(require('node:path').join(__dirname, '../../prototipo/index.html'), 'utf8');
+  for (const id of [110, 108, 91, 114]) {
+    assert.equal((html.match(new RegExp(`^  ${id}: \\{`, 'gm')) || []).length, 0, `obra ${id} ainda possui bloco ativo`);
+  }
 });
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);

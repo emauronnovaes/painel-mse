@@ -318,6 +318,12 @@ Commit desta etapa: `23798b9`.
   integralmente pela configuração externa.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Proteção contra duplicidade de configuração
+
+- Adicionado teste estático que impede o retorno acidental de blocos ativos
+  para obras já integralmente migradas (110, 108, 91 e 114).
+- Validação: 28 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
