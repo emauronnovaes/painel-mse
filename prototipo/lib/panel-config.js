@@ -151,6 +151,21 @@
         'APOIO CIVIL': 'Apoio Civil',
         'OBRAS COMPLEMENTARES': 'Obras Complementares',
       }),
+      catalogoDisciplinaExtra: Object.freeze({
+        'Caixas e Eletrodutos': Object.freeze(['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS']),
+        'Sistema de Combate a Incêndio': Object.freeze(['SISTEMA DE COMBATE A INCEND', 'SISTEMAS DE COMBATE A INCEND']),
+        'Blocos e Pilares de Fundação': Object.freeze(['BLOCOS', 'BLOCO EM CONCRETO SOBRE SUBMARINOS']),
+        'Caixa Hidrante': Object.freeze(['CAIXA HIDRANTE']),
+        'Caixa de Passagem/Manobra': Object.freeze(['CAIXA DE PASSAGEM']),
+        'Vala para Tubulação': Object.freeze(['VALA PARA PASSAGEM']),
+        'Portão de Acesso': Object.freeze(['PORTAO']),
+        'Piso de Contenção': Object.freeze(['PISO DE CONTENCAO']),
+        'Edificação e Obras Complementares': Object.freeze(['EDIFICACAO E OBRAS COMPLEMENTARES']),
+        'Sinalização': Object.freeze(['SINALIZACAO']),
+        'Esgoto Sanitário': Object.freeze(['ESGOTO SANITARIO']),
+        'Cancela': Object.freeze(['CANCELA']),
+        'Cercamento': Object.freeze(['VIGA BALDRAME']),
+      }),
     }),
   });
   function validarConfiguracao(obras, setores) {

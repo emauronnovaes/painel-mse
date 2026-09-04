@@ -273,6 +273,13 @@ Commit desta etapa: `23798b9`.
   migrada perca categorias ainda não externalizadas.
 - Validação: 26 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Catálogo de disciplinas do Porto externalizado
+
+- Externalizado o `catalogoDisciplinaExtra` do Porto Itapoá, preservando as
+  13 famílias de normalização de disciplinas.
+- O merge profundo garante coexistência com o catálogo de materiais legado.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
