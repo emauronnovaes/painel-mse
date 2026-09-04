@@ -251,6 +251,13 @@ Commit desta etapa: `23798b9`.
   evitando substituir parcialmente listas de palavras-chave.
 - Validação: 23 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Configuração do Novo Nordisk UB/SP externalizada
+
+- Externalizada a configuração da obra `id_obra=91`, incluindo a exclusão da
+  RMI Geral e o catálogo específico de perfis, tubulação, instrumentação,
+  combate a incêndio e demais famílias.
+- Validação: 24 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

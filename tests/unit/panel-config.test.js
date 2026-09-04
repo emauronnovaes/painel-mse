@@ -57,6 +57,11 @@ test('configuração do Novo Nordisk AP preserva regras globais de RMI', () => {
   assert.equal(ap.curvaAObrigatoria, false);
   assert.deepEqual(ap.descricoesExcluidas, ['CORTADORES DE TUBOS']);
 });
+test('configuração do Novo Nordisk UB/SP preserva RMI e catálogo', () => {
+  const ub = config.CONFIG_SUPRIMENTOS_POR_OBRA[91];
+  assert.deepEqual(ub.rmisExcluidos, [43]);
+  assert.deepEqual(ub.catalogoExtra['Cabos'], ['PROFIBUS', 'AS-I CABLE']);
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');

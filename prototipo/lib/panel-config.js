@@ -107,6 +107,25 @@
       curvaAObrigatoria: false,
       descricoesExcluidas: Object.freeze(['CORTADORES DE TUBOS']),
     }),
+    91: Object.freeze({
+      rmisExcluidos: Object.freeze([43]),
+      catalogoExtra: Object.freeze({
+        'Perfis Estruturais (W/CS/VS/L)': Object.freeze([/^(W|CS|VS|L)\s*\d+[Xx]/, 'TERCAS']),
+        'Estrutura e Suportação Metálica': Object.freeze(['ESTRUTURA LEVE', 'ESTRUTURA MEDIA', 'ESTRUTURA PESADA', 'ESTRUTURA EXTRA PESADA', 'STEEL DECK', 'CHUMBADOR', 'CA 50', 'TELA Q', 'CALHA METALICA', 'ASTM A 572']),
+        'Concreto e Impermeabilização': Object.freeze(['POLIUREIA', 'JUNTA JEENE']),
+        'Telhas e Cobertura': Object.freeze(['TELHA']),
+        'Suportes de Tubulação': Object.freeze(['SUPORTE PESADO DE TUBULACAO', 'SUPORTE LEVE DE TUBULACAO']),
+        'Tubulação Aço Carbono': Object.freeze(['TUBOS DE ACO CARBONO', 'TUBULACOES EM ACO CARBONO', 'TUBO EM ACO CARBONO']),
+        'Tubulação Inox': Object.freeze(['TUBO ACO INOXIDAVEL']),
+        'Tubulação Polipropileno': Object.freeze(['POLIPROPILENO']),
+        'Tubulação PVC': Object.freeze(['PVC']),
+        'Combate a Incêndio': Object.freeze(['ABRIGO PARA HIDRANTE', 'MANGUEIRAS COM COMPRIMENTO', 'STORZ']),
+        'Instrumentação': Object.freeze(['ANALISADOR DE', 'TRANSMISSOR INDICADOR DE', 'ELEMENTO DE TEMPERATURA', 'MEDIDOR DE VAZAO', 'CHAVE DE SEGURANCA', 'CHAVE DE NIVEL', 'CHAVE DE FLUXO', 'PRESSAO MANOMETRICA']),
+        'Válvulas e acessórios': Object.freeze(['ELIMINADOR DE AR', 'VISOR DE NIVEL', 'VISOR DE FLUXO']),
+        'Cabos': Object.freeze(['PROFIBUS', 'AS-I CABLE']),
+        'Retificadores e Transformadores': Object.freeze(['RETIFICADOR', 'TRANSFORMADOR AUXILIAR']),
+      }),
+    }),
   });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
