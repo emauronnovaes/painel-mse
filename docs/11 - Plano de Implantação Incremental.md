@@ -280,6 +280,14 @@ Commit desta etapa: `23798b9`.
 - O merge profundo garante coexistência com o catálogo de materiais legado.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Validação profunda dos mapas de catálogo
+
+- O contrato agora verifica categorias, listas de palavras-chave (incluindo
+  expressões regulares) e `catalogoPrioritario` em cada configuração.
+- Adicionados casos negativos para impedir mapas escalares ou prioridades com
+  tipos inválidos antes das próximas extrações.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

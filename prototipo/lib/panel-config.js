@@ -190,6 +190,21 @@
           throw new Error(`Configuração de Suprimentos inválida: ${campo} da obra ${id}`);
         }
       }
+      for (const campo of ['catalogoExtra', 'catalogoDisciplinaExtra']) {
+        if (config[campo] !== undefined) {
+          if (!config[campo] || typeof config[campo] !== 'object' || Array.isArray(config[campo])) {
+            throw new Error(`Configuração de Suprimentos inválida: ${campo} da obra ${id}`);
+          }
+          for (const [categoria, palavras] of Object.entries(config[campo])) {
+            if (!categoria || !Array.isArray(palavras) || palavras.some(palavra => typeof palavra !== 'string' && !(palavra instanceof RegExp))) {
+              throw new Error(`Configuração de Suprimentos inválida: categoria ${categoria || '(sem nome)'} da obra ${id}`);
+            }
+          }
+        }
+      }
+      if (config.catalogoPrioritario !== undefined && (!Array.isArray(config.catalogoPrioritario) || config.catalogoPrioritario.some(categoria => typeof categoria !== 'string'))) {
+        throw new Error(`Configuração de Suprimentos inválida: catalogoPrioritario da obra ${id}`);
+      }
     }
     return true;
   }
