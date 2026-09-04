@@ -306,6 +306,12 @@ Commit desta etapa: `23798b9`.
 - Removido o bloco legado da obra `id_obra=108`, já integralmente externalizado.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Desativação do legado do UB/SP
+
+- O bloco legado da obra `id_obra=91` foi isolado por comentário delimitado,
+  mantendo o histórico no HTML sem permitir duplicidade com o módulo externo.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
