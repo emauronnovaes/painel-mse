@@ -312,6 +312,12 @@ Commit desta etapa: `23798b9`.
   mantendo o histórico no HTML sem permitir duplicidade com o módulo externo.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Desativação do legado da IPEN
+
+- Isolado por comentário o bloco legado da obra `id_obra=114`, já coberto
+  integralmente pela configuração externa.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
