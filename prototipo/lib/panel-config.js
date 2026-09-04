@@ -68,6 +68,14 @@
         'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['PERF FGF', 'PARALEITO']),
       }),
     }),
+    108: Object.freeze({
+      rmisExcluidos: Object.freeze([262]),
+      linhasExcluidas: Object.freeze([147454]),
+      curvaAObrigatoria: false,
+      catalogoExtra: Object.freeze({
+        'Estrutura e Suportação Metálica': Object.freeze(['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET']),
+      }),
+    }),
   });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');

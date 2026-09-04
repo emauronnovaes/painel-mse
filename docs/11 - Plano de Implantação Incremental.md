@@ -226,6 +226,15 @@ Commit desta etapa: `23798b9`.
 - O validador passou a aceitar e verificar mapas `catalogoExtra`.
 - Validação: 20 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Segunda configuração de Suprimentos externalizada
+
+- Externalizada a configuração do Novo Nordisk — Reforço AP (`id_obra=108`),
+  preservando a RMI excluída, a linha com `codigo_seq` duplicado e o catálogo
+  de estrutura metálica.
+- O merge incremental continua permitindo rollback por obra, sem tocar nas
+  regras ainda mantidas no legado.
+- Validação: 21 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

@@ -37,6 +37,12 @@ test('configuração da Hitachi fica disponível no módulo externo', () => {
   assert.deepEqual(hitachi.catalogoExtra['Equipamentos de TI'], ['NOTEBOOK']);
   assert.equal(hitachi.catalogoExtra['Conectores e Ferragens de Linha (AT)'].length, 11);
 });
+test('configuração do reforço Novo Nordisk preserva exclusões e catálogo', () => {
+  const reforco = config.CONFIG_SUPRIMENTOS_POR_OBRA[108];
+  assert.deepEqual(reforco.rmisExcluidos, [262]);
+  assert.deepEqual(reforco.linhasExcluidas, [147454]);
+  assert.deepEqual(reforco.catalogoExtra['Estrutura e Suportação Metálica'], ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET']);
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
