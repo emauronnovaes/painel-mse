@@ -414,6 +414,12 @@ Commit desta etapa: `23798b9`.
   estruturais, catálogo de disciplinas e categorias de materiais.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Suíte funcional de Suprimentos estabilizada
+
+- Ajustado o teste de estado vazio para aceitar também a tabela quando a API
+  remota retorna dados reais.
+- A suíte funcional deixa de depender de um estado específico do ambiente.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
