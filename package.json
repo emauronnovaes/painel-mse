@@ -9,6 +9,7 @@
   "scripts": {
     "test": "playwright test",
     "test:chromium": "playwright test --project=chromium",
+    "test:supply-works": "playwright test --project=chromium tests/supply-works.spec.js",
     "test:ui": "playwright test --ui",
     "test:unit": "node --test tests/unit/*.test.js"
   },

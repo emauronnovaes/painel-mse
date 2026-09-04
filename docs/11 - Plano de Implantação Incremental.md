@@ -426,6 +426,9 @@ Commit desta etapa: `23798b9`.
   carregamento do setor Suprimentos, raiz da aplicação e ausência de erros de
   página.
 
+- Criado o comando `npm run test:supply-works` para repetir essa validação de
+  forma explícita no fluxo de implantação.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
