@@ -144,6 +144,17 @@ Commit desta etapa: `50ca963`.
 
 Commit desta etapa: `23798b9`.
 
+### 2026-09-04 — Contrato da configuração declarativa
+
+- Criado `prototipo/lib/panel-config.js` com validação independente do React.
+- O protótipo agora valida na inicialização IDs de obra, slugs de setor,
+  números e rótulos antes de renderizar.
+- Adicionados testes para configuração válida, IDs duplicados, slugs inválidos
+  e slugs duplicados.
+- A movimentação dos arrays de configuração para arquivo externo fica para a
+  próxima subetapa, após este contrato estar estabilizado.
+- Validação: 13 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

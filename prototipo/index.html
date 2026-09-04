@@ -26,6 +26,7 @@
      qualidade nem carregar o JPEG de 93MB inteiro de uma vez). -->
 <script src="https://unpkg.com/openseadragon@4/build/openseadragon/openseadragon.min.js"></script>
 <script src="lib/domain-utils.js"></script>
+<script src="lib/panel-config.js"></script>
 <style>
   :root{
     --bg:#e8eaee; --card:#fff; --line:#e4e7ec;
@@ -524,6 +525,7 @@ const SETORES = [
   // "pronto de verdade" com link por obra cadastrado à parte.
   { num: 9, slug: 'tour-360',                label: 'Tour 360°',                   estado: 'pronto' },
 ];
+MSEConfig.validarConfiguracao(OBRAS, SETORES);
 
 // Provisório — link do tour 360° (Constructin) por obra. Só a CNPEM - Faseado
 // (id 106) tem link cadastrado por enquanto; outras obras caem no estado
