@@ -112,7 +112,7 @@ test('Porto expõe primeira fatia externa do catálogo de materiais', () => {
 });
 test('obras integralmente migradas não mantêm bloco ativo duplicado no HTML', () => {
   const html = fs.readFileSync(require('node:path').join(__dirname, '../../prototipo/index.html'), 'utf8');
-  for (const id of [110, 108, 91, 114]) {
+  for (const id of [106, 110, 94, 107, 108, 91, 114]) {
     assert.equal((html.match(new RegExp(`^  ${id}: \\{`, 'gm')) || []).length, 0, `obra ${id} ainda possui bloco ativo`);
   }
 });
