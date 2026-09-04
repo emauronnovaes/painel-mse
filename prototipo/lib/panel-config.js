@@ -126,6 +126,32 @@
         'Retificadores e Transformadores': Object.freeze(['RETIFICADOR', 'TRANSFORMADOR AUXILIAR']),
       }),
     }),
+    94: Object.freeze({
+      rmisExcluidos: Object.freeze([182]),
+      codigoNivel0Min: 2,
+      codigoNivel0Max: 29,
+      zonaCodigoMax: 24,
+      curvaAObrigatoria: false,
+      mapaAreaCanonica: Object.freeze({
+        'PATIO G1 + PATIO G2': 'Pátio G1 + Pátio G2',
+        'PATIO G1': 'Pátio G1',
+        'OBRAS COMPLEMENTARES - PATIO G1': 'Pátio G1',
+        'PATIO G2': 'Pátio G2',
+        'OBRAS COMPLEMENTARES - PATIO G2': 'Pátio G2',
+        'PATIO G2 - 60.000 M²': 'Pátio G2',
+        'ACESSO AO PATIO G': 'Acesso ao Pátio G',
+        'GATE ACESSO AO PATIO G': 'Acesso ao Pátio G',
+        'ACESSO PATIO G': 'Acesso ao Pátio G',
+        'ACESSO NOROESTE': 'Acesso Noroeste',
+        'AREA DE RECUO - (MANOBRA CAMINHOES)': 'Área de Recuo (Manobra de Caminhões)',
+        'GATE DE ENTRADA': 'Gate de Entrada',
+        'PRE-PORTAL': 'Pré-Portal',
+        'VISTORIA': 'Vistoria',
+        'RELOCACOES': 'Relocações',
+        'APOIO CIVIL': 'Apoio Civil',
+        'OBRAS COMPLEMENTARES': 'Obras Complementares',
+      }),
+    }),
   });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');

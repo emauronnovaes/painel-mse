@@ -258,6 +258,14 @@ Commit desta etapa: `23798b9`.
   combate a incêndio e demais famílias.
 - Validação: 24 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Regras estruturais do Porto Itapoá externalizadas
+
+- Movidos para o módulo externo os filtros de RMI, limites de códigos, limite
+  de zona e mapa canônico de áreas da obra `id_obra=94`.
+- O catálogo de materiais permanece no legado para ser migrado integralmente
+  em etapa separada.
+- Validação: 25 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

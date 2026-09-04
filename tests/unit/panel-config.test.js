@@ -62,6 +62,15 @@ test('configuração do Novo Nordisk UB/SP preserva RMI e catálogo', () => {
   assert.deepEqual(ub.rmisExcluidos, [43]);
   assert.deepEqual(ub.catalogoExtra['Cabos'], ['PROFIBUS', 'AS-I CABLE']);
 });
+test('configuração do Porto preserva filtros estruturais e áreas canônicas', () => {
+  const porto = config.CONFIG_SUPRIMENTOS_POR_OBRA[94];
+  assert.deepEqual(porto.rmisExcluidos, [182]);
+  assert.equal(porto.codigoNivel0Min, 2);
+  assert.equal(porto.codigoNivel0Max, 29);
+  assert.equal(porto.zonaCodigoMax, 24);
+  assert.equal(porto.mapaAreaCanonica['PATIO G1'], 'Pátio G1');
+  assert.equal(porto.mapaAreaCanonica['GATE ACESSO AO PATIO G'], 'Acesso ao Pátio G');
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
