@@ -357,6 +357,11 @@ Commit desta etapa: `23798b9`.
   acoplamentos, sinalização e dispositivos elétricos.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Quinta fatia do catálogo de materiais do Porto
+
+- Externalizadas categorias de cabos, válvulas/acessórios e eletrodutos.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

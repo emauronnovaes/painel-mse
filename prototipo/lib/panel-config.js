@@ -181,6 +181,9 @@
         'Acoplamentos e Conexões Ranhuradas': Object.freeze(['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO']),
         'Sinalização de Segurança': Object.freeze(['PLACA FOTO', 'PLACA DE SINALIZACAO', 'PLACAS DE SINALIZACAO', 'PLACA SINALIZACAO', 'FAIXA DE PEDESTRE']),
         'Dispositivos Elétricos (Tomadas/Interruptores)': Object.freeze(['TOMADA', 'INTERRUPTOR', 'RABICHO']),
+        'Cabos': Object.freeze(['COND CU', 'COND COBRE', 'MUFLA', 'TERMINAL COMPRESSAO']),
+        'Válvulas e acessórios': Object.freeze(['LUVA REDUCAO', 'NIPLE', 'JUNTA EXPANSAO']),
+        'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['EMENDA INTERNA']),
       }),
     }),
   });
