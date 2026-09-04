@@ -61,6 +61,9 @@ test('configuração do Novo Nordisk AP preserva regras globais de RMI', () => {
   assert.equal(ap.catalogoExtra['Conexões e Acessórios de Tubulação'].length, 41);
   assert.equal(ap.catalogoExtra.Instrumentação.length, 10);
   assert.equal(ap.catalogoExtra.Painéis.length, 4);
+  assert.equal(ap.catalogoExtra['Detecção e Alarme'].length, 14);
+  assert.equal(ap.catalogoExtra['Sistema de Supressão a Gás (Cilindro Piloto)'].length, 8);
+  assert.deepEqual(ap.catalogoExtra['Poço de Visita'], ['POCO DE VISITA']);
 });
 test('configuração do Novo Nordisk UB/SP preserva RMI e catálogo', () => {
   const ub = config.CONFIG_SUPRIMENTOS_POR_OBRA[91];

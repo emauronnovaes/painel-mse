@@ -394,6 +394,14 @@ Commit desta etapa: `23798b9`.
 - Externalizadas categorias de painéis, instrumentação e iluminação.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Catálogo restante do Novo Nordisk AP externalizado
+
+- Externalizadas as categorias restantes do AP, incluindo detecção, combate,
+  automação, válvulas, supressão a gás, tubulações, aterramento e acabamentos.
+- Esta etapa conclui a migração do catálogo específico do AP para o módulo
+  externo, mantendo o merge por categoria.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
