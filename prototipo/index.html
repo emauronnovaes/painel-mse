@@ -6270,52 +6270,6 @@ const CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY = {
     // campo `descricoesExcluidas` — filtro por material individual.
     descricoesExcluidas: ['CORTADORES DE TUBOS'],
   }, // Novo Nordisk - AP
-  108: {
-    // Novo Nordisk - AP - Reforço (id_obra=108, CP261) entrou em
-    // 2026-08-26, partindo da régua do CP029 como start. Obra pequena e
-    // focada (478 linhas, 2 RMIs): "CP261 - GERAL" (id_rmi=262, 100%
-    // custo indireto — Mobilização, Combustível, EPIs, Caixa de
-    // Ferramentas, Fretes, Canteiro, Alojamento, Mobília, Equipamentos
-    // de Medição, Serviços Terceirizados, ASO/Qualificação/Treinamentos,
-    // Ferramentas, Consumíveis, Uniformes — mesmo padrão da RMI "Geral"
-    // do NN-AP) e "CP261 - ESTRUTURA METÁLICA" (id_rmi=263, o escopo de
-    // verdade: "Reforço Estrutural", R$3,49M). Diferente do NN-AP, aqui
-    // só sobra 1 RMI real depois de excluir a Geral — `usarNomeRmiComoArea`
-    // NÃO faz sentido (colapsaria tudo num único ramo); a estrutura
-    // padrão do CP029 já produz Área="Estrutura"/"Cobertura Telhado" a
-    // partir do 1º nível de código dentro da RMI, então usada sem
-    // ajuste.
-    rmisExcluidos: [262],
-    // **Bug de dado pego na validação local antes do deploy** (mesma
-    // classe dos bugs de merge-por-overwrite já documentados nesta
-    // obra): dentro da RMI Estrutura Metálica, 2 linhas nível 1
-    // DIFERENTES ("OMISSOS", subtotal zero, id=147454; e "ESTRUTURA",
-    // subtotal real R$3.011.837,63, id=145222) compartilham o MESMO
-    // `codigo_seq` "1.1" na origem. Como a árvore resolve os filhos de
-    // um nó pelo par `id_rmi::codigo_seq`, as duas "irmãs" caem no
-    // MESMO grupo de filhos de nível 2 — sem o `linhasExcluidas` abaixo,
-    // o valor de "ESTRUTURA" aparecia DUAS VEZES na árvore (uma sob a
-    // área "OMISSOS", outra sob "ESTRUTURA"), dobrando R$3,01M pra
-    // R$6,02M. Novo campo genérico `linhasExcluidas` (filtro por `id`
-    // exato da linha, aplicado ANTES de tudo — nível0/nível1/mapa de
-    // filhos) — primeira obra a precisar; reaproveitável se outra obra
-    // tiver o mesmo problema de `codigo_seq` duplicado na origem.
-    linhasExcluidas: [147454],
-    // Obra pequena (13 materiais no total, R$3,49M) — a Curva A (corte
-    // dos 80% acumulado, GLOBAL na obra) cortaria 7 dos 13 itens
-    // (~14,5% do valor, incluindo a maior parte da área "Cobertura
-    // Telhado"), demais demais pra uma lista já curta. Mesmo raciocínio
-    // da Hitachi/Porto/NN-AP: desligada.
-    curvaAObrigatoria: false,
-    // Catálogo validado (2026-08-26): todos os 13 materiais são peças de
-    // reforço estrutural (viga/coluna/treliça/gusset, preço por kg) —
-    // catálogo base do CP029 não tinha nenhuma dessas palavras (tem
-    // VIGA U/VERGALHÃO/CANTONEIRA/etc., não bate "VIGAMENTO"/"REFORÇO
-    // VIGAS"/"TRELIÇA"/"GUSSET"). 4 keywords cobrem 100% do valor.
-    catalogoExtra: {
-      'Estrutura e Suportação Metálica': ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET'],
-    },
-  }, // Novo Nordisk - AP - Reforço
   91: {
     // Novo Nordisk - UB/SP (id_obra=91, CP236) entrou em 2026-08-26,
     // partindo da régua do CP029. 4 RMIs: Tubulação (R$34,6M), Estruturas

@@ -301,6 +301,11 @@ Commit desta etapa: `23798b9`.
 - A configuração passa a ter uma única fonte no módulo `panel-config.js`.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Remoção do legado do Reforço AP
+
+- Removido o bloco legado da obra `id_obra=108`, já integralmente externalizado.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
