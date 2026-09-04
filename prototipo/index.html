@@ -25,6 +25,7 @@
      (pedido explícito, 2026-08-25: zoom "infinito" e navegável sem perder
      qualidade nem carregar o JPEG de 93MB inteiro de uma vez). -->
 <script src="https://unpkg.com/openseadragon@4/build/openseadragon/openseadragon.min.js"></script>
+<script src="lib/domain-utils.js"></script>
 <style>
   :root{
     --bg:#e8eaee; --card:#fff; --line:#e4e7ec;
@@ -625,11 +626,7 @@ function corDesvioTom(pp){
 }
 
 // ── Utilidades de dado (mesmo padrão do gerar_relatorio.py) ─────────────────
-function parseValNum(v){
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(',', '.'));
-  return isNaN(n) ? null : n;
-}
+const parseValNum = MSEDomain.parseValNum;
 
 function nomeOuFallback(v, fallback){
   const s = (v ?? '').toString().trim();
@@ -677,20 +674,7 @@ function grupoLocal(local){
   return i > 0 ? s.slice(0, i).trim() : s;
 }
 
-function parseDataFlexivel(s){
-  if (!s) return null;
-  const str = String(s).slice(0, 10);
-  if (str.includes('/')) {
-    const [d, m, a] = str.split('/');
-    const ano = a.length === 2 ? '20' + a : a;
-    return new Date(Number(ano), Number(m) - 1, Number(d));
-  }
-  if (str.includes('-')) {
-    const [a, m, d] = str.split('-');
-    return new Date(Number(a), Number(m) - 1, Number(d));
-  }
-  return null;
-}
+const parseDataFlexivel = MSEDomain.parseDataFlexivel;
 // Alias — mesma função usada no CurvaLegendChart do dashboard atual para achar
 // o corte "hoje" (assume dd/mm/aaaa, igual à convenção de curvas_s).
 const parseDataCorte = parseDataFlexivel;
@@ -772,9 +756,7 @@ async function fetchPaginadoCompat(url, headers, tamanhoPagina = 1000){
 // ── Helpers portados verbatim do dashboard atual (LoopEncSection e afins) —
 // usados pelo módulo de Encarregados. Funções puras, sem dependência de
 // estado/obra — dá pra colar sem tradução.
-function normalizarNomeParaMatch(s){
-  return String(s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-}
+const normalizarNomeParaMatch = MSEDomain.normalizarNomeParaMatch;
 function parsePTNumero(str){
   if (str === null || str === undefined || str === '') return 0;
   if (typeof str === 'number') return isNaN(str) ? 0 : str;

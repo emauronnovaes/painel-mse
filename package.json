@@ -9,7 +9,8 @@
   "scripts": {
     "test": "playwright test",
     "test:chromium": "playwright test --project=chromium",
-    "test:ui": "playwright test --ui"
+    "test:ui": "playwright test --ui",
+    "test:unit": "node --test tests/unit/*.test.js"
   },
   "keywords": [],
   "author": "",
