@@ -744,9 +744,11 @@ async function fetchPaginado(url, headers, tamanhoPagina = 1000){
   let inicio = 0;
   while (true) {
     const resp = await fetchComTimeout(url, { headers: { ...headers, 'Range-Unit': 'items', 'Range': `${inicio}-${inicio + tamanhoPagina - 1}` } });
-    if (!resp.ok) return inicio === 0 ? null : todas;
+    // Uma página intermediária com erro invalida o conjunto inteiro. Devolver
+    // `todas` aqui faria a tela parecer válida, mas esconderia registros.
+    if (!resp.ok) return null;
     const pagina = await resp.json();
-    if (!Array.isArray(pagina)) return inicio === 0 ? null : todas;
+    if (!Array.isArray(pagina)) return null;
     todas.push(...pagina);
     if (pagina.length < tamanhoPagina) break;
     inicio += tamanhoPagina;
