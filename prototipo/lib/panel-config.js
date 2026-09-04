@@ -209,14 +209,21 @@
     return true;
   }
   function mesclarConfiguracaoSuprimentos(legado, externo) {
+    const mesclarCatalogo = (base, adicional) => {
+      const resultado = { ...(base || {}) };
+      for (const [categoria, palavras] of Object.entries(adicional || {})) {
+        resultado[categoria] = [...(resultado[categoria] || []), ...palavras.filter(palavra => !(resultado[categoria] || []).includes(palavra))];
+      }
+      return resultado;
+    };
     const resultado = { ...(legado || {}) };
     for (const [obraId, regrasExternas] of Object.entries(externo || {})) {
       const regrasLegadas = resultado[obraId] || {};
       resultado[obraId] = {
         ...regrasLegadas,
         ...regrasExternas,
-        catalogoExtra: { ...(regrasLegadas.catalogoExtra || {}), ...(regrasExternas.catalogoExtra || {}) },
-        catalogoDisciplinaExtra: { ...(regrasLegadas.catalogoDisciplinaExtra || {}), ...(regrasExternas.catalogoDisciplinaExtra || {}) },
+        catalogoExtra: mesclarCatalogo(regrasLegadas.catalogoExtra, regrasExternas.catalogoExtra),
+        catalogoDisciplinaExtra: mesclarCatalogo(regrasLegadas.catalogoDisciplinaExtra, regrasExternas.catalogoDisciplinaExtra),
       };
     }
     return resultado;

@@ -324,6 +324,14 @@ Commit desta etapa: `23798b9`.
   para obras já integralmente migradas (110, 108, 91 e 114).
 - Validação: 28 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — União de palavras-chave por categoria
+
+- O merge passou a concatenar palavras-chave de categorias coincidentes,
+  removendo duplicatas, em vez de substituir listas legadas.
+- Essa regra permite externalizar catálogos grandes em fatias sem perda de
+  cobertura já validada.
+- Validação: 28 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
