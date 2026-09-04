@@ -50,6 +50,13 @@ test('configuração da IPEN preserva filtros, catálogo e prioridade', () => {
   assert.equal(ipen.catalogoExtra['Tubulação de Cobre'][0], 'TUBULACAO DE COBRE');
   assert.deepEqual(ipen.catalogoPrioritario, ['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação']);
 });
+test('configuração do Novo Nordisk AP preserva regras globais de RMI', () => {
+  const ap = config.CONFIG_SUPRIMENTOS_POR_OBRA[107];
+  assert.deepEqual(ap.rmisExcluidos, [217]);
+  assert.equal(ap.usarNomeRmiComoArea, true);
+  assert.equal(ap.curvaAObrigatoria, false);
+  assert.deepEqual(ap.descricoesExcluidas, ['CORTADORES DE TUBOS']);
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');

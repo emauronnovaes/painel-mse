@@ -101,6 +101,12 @@
       }),
       catalogoPrioritario: Object.freeze(['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação']),
     }),
+    107: Object.freeze({
+      rmisExcluidos: Object.freeze([217]),
+      usarNomeRmiComoArea: true,
+      curvaAObrigatoria: false,
+      descricoesExcluidas: Object.freeze(['CORTADORES DE TUBOS']),
+    }),
   });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');

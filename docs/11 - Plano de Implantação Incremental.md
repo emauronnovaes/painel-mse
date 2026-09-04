@@ -242,6 +242,15 @@ Commit desta etapa: `23798b9`.
   classificação.
 - Validação: 22 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Regras globais do Novo Nordisk AP externalizadas
+
+- Movidas para o módulo externo as regras estáveis da obra `id_obra=107`:
+  RMI Geral excluída, área derivada do nome da RMI, Curva A desativada e
+  exclusão de cortadores de tubos.
+- O catálogo detalhado permanece no legado até ser migrado integralmente,
+  evitando substituir parcialmente listas de palavras-chave.
+- Validação: 23 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
