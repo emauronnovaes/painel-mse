@@ -26,3 +26,19 @@ test('corDesvio mantém limiares do painel', () => {
   assert.equal(domain.corDesvio(-5), 'amber');
   assert.equal(domain.corDesvio(-5.01), 'red');
 });
+test('aderenciaSemanal aplica a convenção de 100% quando nada foi previsto', () => {
+  assert.equal(domain.aderenciaSemanal({ SemPrevisto: 0, SemRealizado: 0 }), 100);
+  assert.equal(domain.aderenciaSemanal({ SemPrevisto: 0, SemRealizado: 2 }), null);
+  assert.equal(domain.aderenciaSemanal({ SemPrevisto: 4, SemRealizado: 2 }), 50);
+});
+test('calcularMetaSemana usa o último corte realizado antes da janela', () => {
+  const curva = [
+    { semana: 1, data: '2026-08-01', Realizado: 0.2, Previsto: 0.2 },
+    { semana: 2, data: '2026-08-08', Realizado: 0.3, Previsto: 0.4 },
+    { semana: 3, data: '2026-08-15', Realizado: 0.4, Previsto: 1 },
+  ];
+  const meta = domain.calcularMetaSemana(curva, new Date(2026, 7, 10), 1.15);
+  assert.equal(meta.acumulado, 30);
+  assert.equal(meta.metaSemanal, 70);
+  assert.equal(meta.metaDiaria, 14);
+});

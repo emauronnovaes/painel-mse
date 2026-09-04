@@ -1542,12 +1542,7 @@ function Balao({ titulo, valor, cor, bg, borda, corte, sub, onClick }){
 // Mesma % usada na planilha de controle (aderência = semanal realizado /
 // semanal previsto) — quando os dois são 0 (nada previsto, nada feito),
 // convenção da planilha é considerar 100% (em dia).
-function aderenciaSemanal(r){
-  const p = r.SemPrevisto, rl = r.SemRealizado;
-  if (p == null && rl == null) return null;
-  if (!p) return (!rl) ? 100 : null;
-  return (rl || 0) / p * 100;
-}
+const aderenciaSemanal = MSEDomain.aderenciaSemanal;
 function corAderencia(v){
   if (v == null) return T.mut;
   if (v >= 100) return T.green;
@@ -1634,21 +1629,8 @@ function fmtDataISO(d){
 // último corte JÁ REALIZADO antes do início da janela da semana (nunca um
 // corte dentro/no fim da própria janela — a meta não pode depender de um
 // resultado que só existe no fim da semana que ela deveria medir).
-function calcularMetaSemana(linhasCurva, janelaInicio){
-  if (!linhasCurva || linhasCurva.length === 0) return { acumulado: null, metaSemanal: null, metaDiaria: null };
-  const comReal = linhasCurva.filter(r => (r.Realizado || 0) > 0);
-  const antes = comReal.filter(r => { const dt = parseDataCorte(r.data); return dt && dt < janelaInicio; });
-  const corte = antes.length ? antes[antes.length - 1] : (comReal[0] || null);
-  if (!corte) return { acumulado: null, metaSemanal: null, metaDiaria: null };
-  const acumulado = corte.Realizado * 100;
-  const prev100 = linhasCurva.find(r => (r.Previsto || 0) >= 0.999) || linhasCurva[linhasCurva.length - 1];
-  const semanasFaltantes = Math.max(0, (prev100.semana || 0) - (corte.semana || 0));
-  if (acumulado >= 100) return { acumulado, metaSemanal: 0, metaDiaria: 0 };
-  const saldo = 100 - acumulado;
-  let metaSemanal = semanasFaltantes <= 0 ? saldo * FATOR_META_PROD : (saldo / semanasFaltantes) * FATOR_META_PROD;
-  metaSemanal = Math.min(metaSemanal, saldo);
-  return { acumulado, metaSemanal, metaDiaria: metaSemanal / 5 };
-}
+const calcularMetaSemana = (linhasCurva, janelaInicio) =>
+  MSEDomain.calcularMetaSemana(linhasCurva, janelaInicio, FATOR_META_PROD);
 
 function ModuloCurvaS({ linhas, info, carregando, erro, obraId, obraNome, curvas, curvaAtual, onTrocarCurva }){
   const [hiddenLines, setHiddenLines] = useState(new Set());

@@ -101,6 +101,22 @@ Commits: `ee45143`, `5688e54`, `e4bd02a`, `b677ace`, `8420cac`, `7d22df7`,
 Próximo passo: extrair as regras de aderência, dia de referência, metas
 semanais e criticidade, preservando as fórmulas já validadas no dashboard.
 
+### 2026-09-04 — Regras puras de aderência e metas
+
+- Criado `prototipo/lib/domain-utils.js` como módulo UMD, reutilizável pelo
+  navegador e pelos testes Node.
+- `parseValNum`, `parseDataFlexivel` e `normalizarNomeParaMatch` foram retirados
+  do HTML e passaram a ser importados do módulo.
+- `aderenciaSemanal` preserva a convenção da planilha: 100% quando previsto e
+  realizado são zero; realizado sem previsto não gera percentual.
+- `calcularMetaSemana` preserva o fator 1,15, o último corte realizado antes
+  da janela e o limite da meta pelo saldo restante.
+- Os testes de data validam componentes locais, pois a regra cria datas locais
+  e `toISOString()` desloca o valor conforme o fuso horário.
+- Validação: 6 testes unitários e 9 rotas Playwright aprovados.
+
+Commit: `17598b4` (utilitários iniciais) e alterações desta etapa em andamento.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
