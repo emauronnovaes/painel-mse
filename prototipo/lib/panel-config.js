@@ -2,6 +2,17 @@
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.MSEConfig = factory();
 }(typeof self !== 'undefined' ? self : this, function () {
+  const SETORES = Object.freeze([
+    { num: 1, slug: 'curva-s', label: 'Curva S', estado: 'pronto' },
+    { num: 2, slug: 'encarregados', label: 'Encarregados', estado: 'pronto' },
+    { num: 3, slug: 'desvios', label: 'Desvios', estado: 'pronto' },
+    { num: 4, slug: 'restricoes', label: 'Restrições', estado: 'pronto' },
+    { num: 5, slug: 'histograma', label: 'Histograma', estado: 'pronto' },
+    { num: 6, slug: 'suprimentos-criticos', label: 'Suprimentos', estado: 'pronto' },
+    { num: 7, slug: 'oc-co', label: 'OC / CO', estado: 'pronto' },
+    { num: 8, slug: 'medicoes', label: 'Medições', estado: 'pronto' },
+    { num: 9, slug: 'tour-360', label: 'Tour 360°', estado: 'pronto' },
+  ]);
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
     const ids = obras.map(obra => obra.id);
@@ -13,5 +24,5 @@
     if (setores.some(setor => !Number.isInteger(setor.num) || !setor.label)) throw new Error('Configuração do painel inválida: setor sem número ou rótulo');
     return true;
   }
-  return Object.freeze({ validarConfiguracao });
+  return Object.freeze({ SETORES, validarConfiguracao });
 }));

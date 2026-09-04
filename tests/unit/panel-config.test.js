@@ -8,6 +8,11 @@ const setores = [{ num: 1, slug: 'curva-s', label: 'Curva S' }];
 test('validarConfiguracao aceita configuração válida', () => {
   assert.equal(config.validarConfiguracao(obras, setores), true);
 });
+test('SETORES expõe a ordem declarativa do painel', () => {
+  assert.equal(config.SETORES.length, 9);
+  assert.equal(config.SETORES[0].slug, 'curva-s');
+  assert.equal(config.SETORES[8].slug, 'tour-360');
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });

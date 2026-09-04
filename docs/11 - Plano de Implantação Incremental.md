@@ -155,6 +155,14 @@ Commit desta etapa: `23798b9`.
   próxima subetapa, após este contrato estar estabilizado.
 - Validação: 13 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Setores em configuração externa
+
+- O array `SETORES` foi movido para `prototipo/lib/panel-config.js`.
+- A ordem e os nove slugs continuam declarativos e validados na inicialização.
+- O HTML deixou de duplicar a lista de navegação; rótulos especiais por obra
+  continuam na camada de apresentação.
+- Validação: 14 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

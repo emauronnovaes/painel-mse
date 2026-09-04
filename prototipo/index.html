@@ -505,26 +505,7 @@ const OBRA_FOTOS = {
   91:  'assets/images/UB.jpg',
 };
 
-const SETORES = [
-  { num: 1, slug: 'curva-s',               label: 'Curva S',                     estado: 'pronto' },
-  { num: 2, slug: 'encarregados',           label: 'Encarregados',                estado: 'pronto' },
-  { num: 3, slug: 'desvios',                label: 'Desvios',                     estado: 'pronto' },
-  { num: 4, slug: 'restricoes',             label: 'Restrições',                  estado: 'pronto' },
-  { num: 5, slug: 'histograma',             label: 'Histograma',                  estado: 'pronto' },
-  // Saiu do placeholder em 2026-08-21 — "crítico" virou Curva A (itens
-  // macro cujo valor acumulado, em ordem decrescente, soma 80% do valor
-  // da obra), não mais o cruzamento de prazo×impacto do rascunho original
-  // (a API rmi_api até tem campo de prazo, mas veio vazio pra todas as
-  // obras carregadas até agora — sem dado, não dava pra usar). Ver
-  // ModuloSuprimentos.
-  { num: 6, slug: 'suprimentos-criticos',   label: 'Suprimentos',                 estado: 'pronto' },
-  { num: 7, slug: 'oc-co',                  label: 'OC / CO',                     estado: 'pronto' },
-  { num: 8, slug: 'medicoes',               label: 'Medições',                    estado: 'pronto' },
-  // Provisório: teste de embutir o tour 360° do Constructin numa obra só
-  // (ver OBRA_TOUR_360). Tirar daqui se não vingar, ou promover pra
-  // "pronto de verdade" com link por obra cadastrado à parte.
-  { num: 9, slug: 'tour-360',                label: 'Tour 360°',                   estado: 'pronto' },
-];
+const SETORES = MSEConfig.SETORES;
 MSEConfig.validarConfiguracao(OBRAS, SETORES);
 
 // Provisório — link do tour 360° (Constructin) por obra. Só a CNPEM - Faseado
