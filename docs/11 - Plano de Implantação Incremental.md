@@ -199,6 +199,14 @@ Commit desta etapa: `23798b9`.
   pois contém regras e exceções específicas por obra.
 - Validação: 17 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Vocabulário de status externalizado
+
+- Movidos `STATUS_MANUAL_OPCOES` e `ORDEM_STATUS_RMI` para
+  `prototipo/lib/panel-config.js`.
+- Filtros, badges, donuts e exportações passam a compartilhar a mesma ordem
+  declarativa de status.
+- Validação: 18 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

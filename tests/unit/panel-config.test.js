@@ -31,6 +31,11 @@ test('configurações de Suprimentos preservam escopo e exportação', () => {
   assert.equal(config.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[107], 'area');
   assert.equal(config.OBRAS_SEM_EXPORTACAO_GRAFICOS.has(94), true);
 });
+test('vocabulário de status mantém opções e ordem do fluxo', () => {
+  assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
+  assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
+  assert.equal(config.ORDEM_STATUS_RMI.at(-1), 'Entregue');
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });

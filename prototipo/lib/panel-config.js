@@ -42,6 +42,8 @@
   const OBRAS_STATUS_MANUAL_DESATIVADO = Object.freeze(new Set([114]));
   const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = Object.freeze({ 107: 'area', 108: 'area', 110: 'area' });
   const OBRAS_SEM_EXPORTACAO_GRAFICOS = Object.freeze(new Set([94]));
+  const STATUS_MANUAL_OPCOES = Object.freeze(['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
+  const ORDEM_STATUS_RMI = Object.freeze(['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
     const ids = obras.map(obra => obra.id);
@@ -53,5 +55,5 @@
     if (setores.some(setor => !Number.isInteger(setor.num) || !setor.label)) throw new Error('Configuração do painel inválida: setor sem número ou rótulo');
     return true;
   }
-  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, validarConfiguracao });
+  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, validarConfiguracao });
 }));

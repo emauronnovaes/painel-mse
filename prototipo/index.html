@@ -6478,7 +6478,7 @@ function StatusBadgeRmi({ status, activeStatus, onStatusClick }){
 // Persistido em `suprimentos_status_manual` (Supabase, RLS igual à
 // tabela `suprimentos`: anon lê/escreve/apaga) — compartilhado entre
 // todo mundo que abre o painel, não por navegador.
-const STATUS_MANUAL_OPCOES = ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
+const STATUS_MANUAL_OPCOES = MSEConfig.STATUS_MANUAL_OPCOES;
 // 4 destes 5 nomes (todos exceto "Em cotação") COINCIDEM com o vocabulário
 // automático novo (`configStatusItem`, ver abaixo) — mesmo status, seja ele
 // vindo de override manual ou calculado da requisição. Achado ao ajustar a
@@ -6571,7 +6571,7 @@ function configStatusRequisicao(status){
 // vários cards, e duas listas separadas sairiam do ar uma da outra. A
 // ordem passou pela validação de cor do `dataviz` — ver o comentário
 // grande de `configStatusItem` logo abaixo, ela NÃO é arbitrária.
-const ORDEM_STATUS_RMI = ['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
+const ORDEM_STATUS_RMI = MSEConfig.ORDEM_STATUS_RMI;
 function configStatusItem(status){
   // Vermelho trocado (pedido explícito, 2026-09-03: "mais vibrante,
   // clássico") — era um vermelho meio rosado/salmão (#ec5660, L alto,
