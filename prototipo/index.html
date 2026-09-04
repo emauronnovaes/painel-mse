@@ -718,15 +718,35 @@ function ultimaLinhaComMudanca(rows, campo){
   return ultima;
 }
 
+// Cliente HTTP mínimo compartilhado por todas as consultas do painel.
+// Mantém a API Response para não exigir uma migração grande de uma vez, mas
+// garante timeout e erro consistente em vez de deixar cada módulo decidir.
+const FETCH_TIMEOUT_MS = 20000;
+async function fetchComTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS){
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (err) {
+    if (err?.name === 'AbortError') {
+      throw new Error(`Tempo esgotado ao consultar ${new URL(url, document.baseURI).pathname}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Pagina por Range (mesma correção do cap de 1000 linhas do dashboard atual).
 // Retorna null quando a 1ª página falha (sinal de erro real, não "sem dado").
 async function fetchPaginado(url, headers, tamanhoPagina = 1000){
   const todas = [];
   let inicio = 0;
   while (true) {
-    const resp = await fetch(url, { headers: { ...headers, 'Range-Unit': 'items', 'Range': `${inicio}-${inicio + tamanhoPagina - 1}` } });
+    const resp = await fetchComTimeout(url, { headers: { ...headers, 'Range-Unit': 'items', 'Range': `${inicio}-${inicio + tamanhoPagina - 1}` } });
     if (!resp.ok) return inicio === 0 ? null : todas;
     const pagina = await resp.json();
+    if (!Array.isArray(pagina)) return inicio === 0 ? null : todas;
     todas.push(...pagina);
     if (pagina.length < tamanhoPagina) break;
     inicio += tamanhoPagina;
@@ -3459,7 +3479,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? `vw_efetivo_${gran.view}_total` : `vw_efetivo_${gran.view}_moimod_total`;
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setDados(Array.isArray(rows) ? rows : []); setLoading(false); })
       .catch(() => { setDados([]); setLoading(false); });
@@ -3470,7 +3490,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_mensal_total' : 'vw_efetivo_previsto_mensal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => setPrevistoMensal(Array.isArray(rows) ? rows : []))
       .catch(() => setPrevistoMensal([]));
@@ -3481,7 +3501,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_semanal_total' : 'vw_efetivo_previsto_semanal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=2000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=2000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => setPrevistoSemanal(Array.isArray(rows) ? rows : []))
       .catch(() => setPrevistoSemanal([]));
@@ -3491,7 +3511,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     if (!obraId) { setRealHistorico([]); return; }
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_real_historico?obra_id=eq.${obraId}${filtroMoi}&select=mes,qtd,granularidade&order=mes.asc&limit=1000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_real_historico?obra_id=eq.${obraId}${filtroMoi}&select=mes,qtd,granularidade&order=mes.asc&limit=1000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => setRealHistorico(Array.isArray(rows) ? rows : []))
       .catch(() => setRealHistorico([]));
@@ -3505,7 +3525,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarDir('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_${gran.view}_pessoas?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=*&order=nome.asc&limit=1000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_${gran.view}_pessoas?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=*&order=nome.asc&limit=1000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setDetalhe(Array.isArray(rows) ? rows : []); setDetalheLoading(false); })
       .catch(() => { setDetalhe([]); setDetalheLoading(false); });
@@ -3519,7 +3539,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarDirPrevisto('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_previsto_mensal_detalhe?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=nome_funcao,moi_mod,qtd&order=qtd.desc&limit=500`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_previsto_mensal_detalhe?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=nome_funcao,moi_mod,qtd&order=qtd.desc&limit=500`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setPrevistoDetalhe(Array.isArray(rows) ? rows : []); setPrevistoDetalheLoading(false); })
       .catch(() => { setPrevistoDetalhe([]); setPrevistoDetalheLoading(false); });
@@ -3531,7 +3551,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setResumo(null); setResumoErro(false);
     if (!obraId) return;
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
-    const pega = (url) => fetch(url, { headers })
+    const pega = (url) => fetchComTimeout(url, { headers })
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(rows => (Array.isArray(rows) && rows[0]) ? rows[0] : null);
     Promise.all([
@@ -3557,7 +3577,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarCampoResumo('nome');
     setOrdenarDirResumo('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
-    fetch(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_diario_pessoas?obra_id=eq.${obraId}&periodo=eq.${resumo.periodo}&select=nome,nome_funcao,moi_mod&order=nome.asc&limit=1000`, { headers })
+    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_diario_pessoas?obra_id=eq.${obraId}&periodo=eq.${resumo.periodo}&select=nome,nome_funcao,moi_mod&order=nome.asc&limit=1000`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setResumoDetalhe(Array.isArray(rows) ? rows : []); setResumoDetalheLoading(false); })
       .catch(() => { setResumoDetalhe([]); setResumoDetalheLoading(false); });
@@ -6658,6 +6678,15 @@ function configStatusRequisicao(status){
 // Pendente/Em cotação ficam abaixo de 3:1 de contraste no fundo branco —
 // mitigado pelo texto do próprio badge, sempre visível em negrito (mesmo
 // padrão de antes).
+// Ordem de exibição dos status — é o fluxo real da compra (Atrasado → …
+// → Entregue) e vale pra TUDO que desenha status em sequência: fatias do
+// donut, legenda única do PNG e os chips de cada card. Estava declarada
+// dentro de `donutsPorDisciplina`; subiu pra escopo de módulo em
+// 2026-09-04 porque a legenda única precisa ordenar a união dos status de
+// vários cards, e duas listas separadas sairiam do ar uma da outra. A
+// ordem passou pela validação de cor do `dataviz` — ver o comentário
+// grande de `configStatusItem` logo abaixo, ela NÃO é arbitrária.
+const ORDEM_STATUS_RMI = ['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
 function configStatusItem(status){
   // Vermelho trocado (pedido explícito, 2026-09-03: "mais vibrante,
   // clássico") — era um vermelho meio rosado/salmão (#ec5660, L alto,
@@ -6726,7 +6755,13 @@ function BadgeStatusSuprimento({ statusAutomatico, qtdFinalizados, qtdTotal, sta
   );
 }
 
-function DonutStatusRmi({ slices, activeStatus, onSliceClick }){
+// `rotuloCentro` (opcional, default 'Total Geral' — o texto que a tela
+// sempre usou, nada muda lá): existe só pro PNG do "Mapa de Suprimentos",
+// onde o mesmo donut é desenhado UMA VEZ POR DISCIPLINA — ali "Total Geral"
+// mente, o número é o total daquela disciplina. Só o rótulo do estado
+// neutro é parametrizável; o de estado filtrado ('Filtrados') segue fixo,
+// porque no slide não existe filtro.
+function DonutStatusRmi({ slices, activeStatus, onSliceClick, rotuloCentro = 'Total Geral' }){
   const cx = 200, cy = 200, r = 152;
   const total = slices.reduce((s, sl) => s + sl.value, 0);
   if (!total) return <div className="mono" style={{ fontSize:12, color:T.mut, textAlign:'center' }}>Sem status para exibir</div>;
@@ -6772,7 +6807,7 @@ function DonutStatusRmi({ slices, activeStatus, onSliceClick }){
         {ativo ? ativo.value : total}
       </text>
       <text x={cx} y={cy + 22} textAnchor="middle" className="mono" style={{ fontSize:11, fontWeight:700, fill:T.mut, letterSpacing:'0.12em', textTransform:'uppercase' }}>
-        {ativo ? 'Filtrados' : 'Total Geral'}
+        {ativo ? 'Filtrados' : rotuloCentro}
       </text>
     </svg>
   );
@@ -7213,9 +7248,16 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // URL dentro do SVG do PNG "tainta" o canvas (`toBlob` lança
   // SecurityError), mesmo sendo same-origin; só embutido como data: escapa
   // dessa checagem. Buscado 1x (a logo não muda) e cacheado em estado.
+  //
+  // `mselogo-vermelha.png` (não `mselogo.png`): o slide agora segue o
+  // formulário PLJ-001-F2, que é branco — a logo branca do app (feita pro
+  // cabeçalho escuro) sumiria. O arquivo veio da própria planilha "Mapa de
+  // Suprimentos" que a obra entrega (`xl/media/image1.png`), recortado no
+  // conteúdo e redimensionado pra 540×157, então é a marca oficial e não
+  // uma recoloração nossa.
   const [logoDataUri, setLogoDataUri] = useState('');
   useEffect(() => {
-    fetch(new URL('assets/images/mselogo.png', document.baseURI).href)
+    fetch(new URL('assets/images/mselogo-vermelha.png', document.baseURI).href)
       .then(r => r.blob())
       .then(blob => new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -7537,8 +7579,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
     // antes, o par aqui (âmbar `Em cotação` vs laranja `Comprado Parcial`)
     // reprovava a checagem de distinção (ΔE 4,2 CVD / 10,1 visão normal,
     // ambos abaixo do piso 8/15) — reordenado, não recolorido.
-    const todosStatus = ['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue'];
-      return todosStatus
+      return ORDEM_STATUS_RMI
         .filter(status => counts[status])
         .map(status => {
           const cfg = STATUS_MANUAL_OPCOES.includes(status) ? configStatusManual(status) : configStatusItem(status);
@@ -7646,7 +7687,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
         const a = document.createElement('a');
         a.href = dataUrl;
         const dataHoje = new Date().toISOString().slice(0, 10);
-        a.download = `suprimentos-graficos-${obraNome.replace(/\s+/g, '_')}-${dataHoje}.png`;
+        a.download = `mapa-de-suprimentos-${obraNome.replace(/\s+/g, '_')}-${dataHoje}.png`;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -7660,14 +7701,156 @@ function ModuloSuprimentos({ obraId, obraNome }){
     }
   };
 
-  // Layout do slide SVG (1920×1080) — grade de cards por disciplina, até 4
-  // colunas. Tudo em unidades do próprio SVG (sem CSS grid/flex — não
-  // existe fora de HTML), calculado aqui pra manter o JSX de baixo legível.
-  const SLIDE_PAD = 56, SLIDE_GAP = 24, SLIDE_HEADER_H = 150;
+  // ── Moldura do slide: formulário PLJ-001-F2 "Mapa de Suprimentos" ─────
+  // Pedido explícito (2026-09-04): "este é o layout do slide da
+  // apresentação, utilize o mesmo padrão". Não é aproximação de olho — as
+  // medidas abaixo saíram pixel a pixel do PNG do Relatório Semanal
+  // (Semana 42, cp029) que o usuário mandou, que é 960×540; tudo aqui está
+  // dobrado pro slide de 1920×1080. O que foi medido:
+  //   barra lateral  x 0..27      → 0..54
+  //   título         x 46..324, baseline ~48  → x 92, baseline 96
+  //   régua vermelha x 45..222, y 59..62, #CC0000 → x 92 w 354, y 118 h 8
+  //   logo           y 24..51     → altura 54, alinhada à direita
+  //   "mse.com.br"   x 8..19, y 221..317 → girado -90°, centro (27, 538)
+  //   selo do form.  x 941..948, y 300..529 → girado -90°, sobe de y 1058
+  // Cores medidas: barra #003078 → #B42C39 (o degradê só acontece entre
+  // ~31% e ~62% da altura, chapado antes e depois), título #002060.
+  //
+  // O cabeçalho escuro em faixa que existia aqui antes (`SLIDE_HEADER_H`,
+  // degradê próprio, sobretítulo) saiu inteiro: era um layout nosso, e o
+  // padrão da empresa é este formulário.
+  const SLIDE_GAP = 24;
+  const SLIDE_BARRA_W = 54;
+  const SLIDE_X0 = 92, SLIDE_X1 = 1856;       // margens úteis (a barra come a esquerda)
+  // A grade começa depois da faixa de legenda (`SLIDE_LEGENDA_Y`), não
+  // logo depois da régua — ver `legendaSlide` mais abaixo.
+  const SLIDE_LEGENDA_Y = 226;
+  const SLIDE_Y0 = 268, SLIDE_Y1 = 1024;
+  const SLIDE_REGUA = { x: 92, y: 118, w: 354, h: 8, cor: '#CC0000' };
+  const SLIDE_AZUL = '#002060';               // azul do título, medido
+  const SLIDE_LOGO_H = 52, SLIDE_LOGO_W = 179; // 540×157 do arquivo, na altura do template
+  // Selo de controle do documento, na borda direita — é do formulário, não
+  // do conteúdo: mesmo código/revisão/emissão que o Relatório Semanal usa.
+  const SLIDE_SELO = 'Código: PLJ-001-F2    Revisão: 00    Emissão: 09/2025';
+  const slideAreaW = SLIDE_X1 - SLIDE_X0;
+  const slideAreaH = SLIDE_Y1 - SLIDE_Y0;
   const slideCols = Math.min(Math.max(donutsPorDisciplina.length, 1), 4);
   const slideRows = Math.max(1, Math.ceil(donutsPorDisciplina.length / slideCols));
-  const slideCardW = (1920 - SLIDE_PAD * 2 - SLIDE_GAP * (slideCols - 1)) / slideCols;
-  const slideCardH = (1080 - SLIDE_HEADER_H - SLIDE_PAD * 2 - SLIDE_GAP * (slideRows - 1)) / slideRows;
+  const slideCardW = (slideAreaW - SLIDE_GAP * (slideCols - 1)) / slideCols;
+  const slideCardH = (slideAreaH - SLIDE_GAP * (slideRows - 1)) / slideRows;
+
+  // Faixa de números ao lado do título — pedido explícito (2026-09-04):
+  // "exibir as informações do mapa de uma forma intuitiva e explicativa".
+  // Só agrega o que a própria grade já mostra (soma das fatias de todos os
+  // cards): nenhum cálculo, regra ou limiar novo — a leitura "quanto já
+  // chegou / quanto está atrasado" é a pergunta que o slide existe pra
+  // responder, e hoje só dava pra chegar nela somando donut por donut no
+  // olho. Fica na faixa livre entre a régua vermelha e a grade, à direita,
+  // porque o formulário não tem cabeçalho onde encaixar isso.
+  // Só CONTAGEM de itens — nada de valor em R$ no slide (pedido explícito,
+  // 2026-09-04: "o valor não deverá ser exibido"). Chegou a existir aqui um
+  // 4º número ("Valor em atraso") e uma linha de R$ por card; ambos saíram.
+  // O `valor` continua calculado normalmente na árvore/farol financeiro da
+  // TELA — a restrição é do PNG que sai da obra, não do dado.
+  const totalSlide = donutsPorDisciplina.reduce((s, d) => s + d.total, 0);
+  const somarStatusSlide = (status) => donutsPorDisciplina.reduce((s, d) =>
+    s + d.slices.filter(sl => sl.status === status).reduce((a, sl) => a + sl.value, 0), 0);
+  const pctSlide = (n) => totalSlide ? Math.round((n / totalSlide) * 100) + '%' : '0%';
+  const entreguesSlide = somarStatusSlide('Entregue');
+  const atrasadosSlide = somarStatusSlide('Atrasado');
+  const kpisSlide = [
+    { valor: totalSlide.toLocaleString('pt-BR'), rotulo: 'Materiais acompanhados', cor: null },
+    { valor: entreguesSlide.toLocaleString('pt-BR'), rotulo: 'Entregues (' + pctSlide(entreguesSlide) + ')', cor: configStatusItem('Entregue').cor },
+    { valor: atrasadosSlide.toLocaleString('pt-BR'), rotulo: 'Em atraso (' + pctSlide(atrasadosSlide) + ')', cor: configStatusItem('Atrasado').cor },
+  ];
+  const SLIDE_KPI_W = 196, SLIDE_KPI_GAP = 30;
+  const slideKpiX0 = SLIDE_X1 - (kpisSlide.length * SLIDE_KPI_W + (kpisSlide.length - 1) * SLIDE_KPI_GAP);
+
+  // ── Legenda única da grade (pedido de 2026-09-04) ─────────────────────
+  // Antes cada card repetia a legenda inteira: no slide de 8 disciplinas ×
+  // 9 status isso dava 72 linhas desenhando os MESMOS 9 rótulos, e a altura
+  // que elas comiam era exatamente a que faltava pro donut. Agora o rótulo
+  // aparece UMA vez, aqui, e o card mostra só os números (`chips`, cada um
+  // com o ponto colorido correspondente) — é a leitura de "small multiples
+  // com legenda compartilhada", e é o que a skill `dataviz` pede: legenda
+  // presente, mas uma só. União dos status de TODOS os cards, na ordem do
+  // fluxo de compra (a mesma de `fatiasDe`), pra a legenda servir de chave
+  // de cor e também de ordem das fatias e dos chips.
+  const statusNaGrade = new Set(donutsPorDisciplina.flatMap(d => d.slices.map(sl => sl.status)));
+  const legendaSlide = ORDEM_STATUS_RMI.filter(s => statusNaGrade.has(s)).map(status => ({
+    status,
+    cor: (STATUS_MANUAL_OPCOES.includes(status) ? configStatusManual(status) : configStatusItem(status)).cor,
+  }));
+
+  // ── Métricas do card, calculadas UMA vez pra grade inteira ─────────────
+  // `escalaSlide` usa o MENOR eixo (era `Math.max`): o conteúdo tem que
+  // caber nos dois, não crescer com o mais folgado.
+  const escalaSlide = Math.min(Math.max(Math.min(slideCardW / 420, slideCardH / 470), 0.72), 2.2);
+  const slidePadCard = 26 * escalaSlide;
+  const slideTituloFonte = 19 * escalaSlide;
+  const slideTituloLinhaH = slideTituloFonte * 1.2;
+  const slideGapBloco = 18 * escalaSlide;
+  // Bloco de título com altura FIXA (2 linhas sempre reservadas, mesmo pra
+  // título de 1 linha) — altura variável por card desalinharia os donuts
+  // entre cards da MESMA linha da grade. Só o nome da disciplina: a
+  // contagem já está no centro do donut e o valor em R$ não entra no slide
+  // (ver `kpisSlide`), então não há 3ª linha.
+  const slideBlocoTituloH = slideTituloLinhaH * 2 + 6 * escalaSlide;
+  // Chips de contagem, no lugar da legenda por card (ver `legendaSlide`):
+  // 1 linha por card na maioria dos casos, 2 quando são muitos status ou o
+  // card é estreito. `slideChipsLinhas` é calculado pelo PIOR card da grade
+  // e vale pra todos — mesma regra de sempre, altura igual em todo card pra
+  // os donuts não desalinharem entre cards da mesma linha.
+  const maxStatusSlide = Math.max(1, ...donutsPorDisciplina.map(d => d.slices.length));
+  let slideChipFonte = 15 * escalaSlide;
+  // Largura de um chip: ponto + folga + até 4 dígitos. Sem `getBBox`, é
+  // estimativa por caractere igual ao resto do slide.
+  const slideChipW = () => slideChipFonte * 0.42 * 2 + 6 * escalaSlide + 4 * slideChipFonte * 0.58 + 12 * escalaSlide;
+  const slideChipsPorLinha = () => Math.max(1, Math.floor((slideCardW - slidePadCard * 2) / slideChipW()));
+  let slideChipsLinhas = Math.ceil(maxStatusSlide / slideChipsPorLinha());
+  // Se precisaria de 3+ linhas de chips, encolhe a fonte antes de aceitar
+  // isso: 2 linhas é o teto que ainda lê como "uma faixa de números".
+  while (slideChipsLinhas > 2 && slideChipFonte > 9 * escalaSlide) {
+    slideChipFonte *= 0.92;
+    slideChipsLinhas = Math.ceil(maxStatusSlide / slideChipsPorLinha());
+  }
+  // Colunas = o nº de chips DIVIDIDO pelas linhas, não o máximo que cabe:
+  // com 9 status e 7 cabendo por linha, o máximo daria 7 + 2 (segunda linha
+  // quase vazia, torta); dividir dá 5 + 4, equilibrado. Congelado aqui, antes
+  // do encolhimento de emergência abaixo — se a fonte diminuir o chip fica
+  // mais estreito e continua cabendo nesse mesmo nº de colunas.
+  const slideChipsColunas = Math.ceil(maxStatusSlide / slideChipsLinhas);
+  let slideChipLinhaH = slideChipFonte * 1.75;
+  // Fração da caixa do `<DonutStatusRmi>` que o desenho realmente ocupa:
+  // raio 152 num viewBox 400 → 304/400. Ver o comentário em
+  // `slideDonutCaixa` abaixo.
+  const DONUT_OCUPACAO = 0.76;
+  const slideDonutMin = 118 * escalaSlide;
+  const alturaSemDonut = () => slidePadCard * 2 + slideBlocoTituloH + slideGapBloco * 2 + slideChipsLinhas * slideChipLinhaH;
+  let slideDonutSize = slideCardH - alturaSemDonut();
+  // Caso extremo (card baixo × muitos status): antes de deixar o donut
+  // sumir, é a faixa de chips que encolhe — nunca o card que estoura.
+  if (slideDonutSize < slideDonutMin) {
+    const sobraChips = slideCardH - (slidePadCard * 2 + slideBlocoTituloH + slideGapBloco * 2 + slideDonutMin);
+    const fator = Math.max(0.55, sobraChips / (slideChipsLinhas * slideChipLinhaH));
+    slideChipLinhaH *= fator;
+    slideChipFonte *= fator;
+    slideDonutSize = Math.max(64, slideCardH - alturaSemDonut());
+  }
+  slideDonutSize = Math.min(slideDonutSize, slideCardW * DONUT_OCUPACAO, 420 * escalaSlide);
+  // `slideDonutSize` é o DIÂMETRO desenhado, não a caixa: o viewBox do
+  // `<DonutStatusRmi>` é 400×400 mas o círculo tem raio 152, ou seja o
+  // desenho ocupa só 76% da caixa e os 24% restantes são ar. Reservar a
+  // CAIXA (o que era feito antes) fazia o donut sair ~24% menor do que o
+  // espaço realmente disponível — daí o buraco entre título, donut e
+  // legenda no slide de 8 cards. Agora a altura reservada é o diâmetro e a
+  // caixa (`slideDonutCaixa`) é centrada em cima dela, transbordando pro
+  // ar que já existia nos gaps — nada é desenhado ali, então não colide.
+  const slideDonutCaixa = slideDonutSize / DONUT_OCUPACAO;
+  const slideDonutSobra = (slideDonutCaixa - slideDonutSize) / 2;
+  const slideChipsBlocoH = slideChipsLinhas * slideChipLinhaH;
+  const slideChipR = slideChipFonte * 0.42;
+  const slideConteudoH = slideBlocoTituloH + slideGapBloco + slideDonutSize + slideGapBloco + slideChipsBlocoH;
 
   // Quebra o título do card em até 2 linhas (3ª linha vira "…") — achado
   // testando no navegador local: título de área/disciplina longo (ex. nome
@@ -7675,12 +7858,9 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // Automação", Novo Nordisk AP) vazava pra fora do card em SVG — `<text>`
   // não quebra linha sozinho como HTML (a versão antiga em HTML/flexbox
   // tinha `overflowWrap:'anywhere'`, de graça; SVG puro não tem
-  // equivalente). SEMPRE reserva o mesmo nº de linhas (2) pra todo card da
-  // grade, mesmo título curto — mesmo motivo do bloco fixo título+donut já
-  // documentado abaixo: altura variável por card desalinharia os donuts
-  // entre cards da MESMA linha. Largura de caractere aproximada pro
-  // IBM Plex Sans em negrito maiúsculo (sem medir de verdade — não dá pra
-  // usar `getBBox` num nó fora da tela ainda não commitado no layout).
+  // equivalente). Largura de caractere aproximada pro IBM Plex Sans em
+  // negrito maiúsculo (sem medir de verdade — não dá pra usar `getBBox`
+  // num nó fora da tela ainda não commitado no layout).
   const quebrarTituloSlide = (texto, larguraMax, fontSize) => {
     const charW = fontSize * 0.62;
     const porLinha = Math.max(4, Math.floor(larguraMax / charW));
@@ -8260,73 +8440,128 @@ function ModuloSuprimentos({ obraId, obraNome }){
           <svg ref={slideExportRef} className="slide-export" xmlns="http://www.w3.org/2000/svg"
             width={1920} height={1080} viewBox="0 0 1920 1080" fontFamily="'IBM Plex Sans','Segoe UI',Arial,sans-serif">
             <defs>
-              <linearGradient id="slideHeaderGrad" x1="0%" y1="0%" x2="100%" y2="15%">
-                <stop offset="0%" stopColor="#13223b" />
-                <stop offset="62%" stopColor="#13223b" />
-                <stop offset="84%" stopColor="#6a2942" />
+              {/* Degradê da barra lateral — os stops NÃO são 0%/100%: no
+                  template a barra é #003078 chapado até ~31% da altura e
+                  #B42C39 chapado a partir de ~62%, com a virada só no meio.
+                  Foi assim que ele foi medido, e é isso que faz a barra
+                  bater com a das outras páginas do relatório. */}
+              <linearGradient id="slideBarraGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="#003078" />
+                <stop offset="31%" stopColor="#003078" />
+                <stop offset="62%" stopColor="#B42C39" />
                 <stop offset="100%" stopColor="#B42C39" />
               </linearGradient>
             </defs>
             <rect width={1920} height={1080} fill="#fff" />
-            <rect width={1920} height={SLIDE_HEADER_H} fill="url(#slideHeaderGrad)" />
-            <text x={SLIDE_PAD} y={44} fontSize={13} fontWeight={700} fill="rgba(255,255,255,0.6)" style={{ letterSpacing:'0.18em', textTransform:'uppercase' }}>MSE Engenharia</text>
-            <text x={SLIDE_PAD} y={92} fontSize={32} fontWeight={800} fill="#fff">Status de Suprimentos por Disciplina</text>
-            <text x={SLIDE_PAD} y={124} fontSize={16} fill="#c9d3e8">{obraNome} · atualizado em {new Date().toLocaleDateString('pt-BR')}</text>
-            {logoDataUri && <image href={logoDataUri} x={1920 - SLIDE_PAD - 160} y={52} width={160} height={44} preserveAspectRatio="xMidYMid meet" />}
-
+            <rect width={SLIDE_BARRA_W} height={1080} fill="url(#slideBarraGrad)" />
+            <text x={SLIDE_BARRA_W / 2} y={538} transform={`rotate(-90 ${SLIDE_BARRA_W / 2} 538)`} textAnchor="middle" dominantBaseline="central" fontSize={30} fontWeight={700} fill="#fff">mse.com.br</text>
+            <text x={SLIDE_X0} y={96} fontSize={54} fontWeight={700} fill={SLIDE_AZUL}>Mapa de Suprimentos</text>
+            <rect x={SLIDE_REGUA.x} y={SLIDE_REGUA.y} width={SLIDE_REGUA.w} height={SLIDE_REGUA.h} fill={SLIDE_REGUA.cor} />
+            {/* Obra e data ficam abaixo da régua (o formulário não tem
+                subtítulo próprio): é a única informação de contexto que o
+                slide precisa carregar pra não depender da fala de quem
+                apresenta. */}
+            <text x={SLIDE_X0} y={158} fontSize={22} fontWeight={600} fill={SLIDE_AZUL}>{obraNome}</text>
+            <text x={SLIDE_X0} y={186} fontSize={15} fill="#6b7480">Atualizado em {new Date().toLocaleDateString('pt-BR')}</text>
+            {/* Faixa de números (ver `kpisSlide`). Os dois status que ganham
+                número próprio (Entregue/Atrasado) levam junto o MESMO ponto
+                colorido que aparece no donut e na legenda dos cards, pra
+                amarrar o topo à grade. */}
+            {kpisSlide.map((k, ki) => {
+              const kx = slideKpiX0 + ki * (SLIDE_KPI_W + SLIDE_KPI_GAP);
+              return (
+                <g key={k.rotulo}>
+                  <text x={kx} y={162} fontSize={46} fontWeight={800} fill={SLIDE_AZUL} fontFamily="'Barlow Condensed','IBM Plex Sans','Segoe UI',sans-serif">{k.valor}</text>
+                  {k.cor && <circle cx={kx + 5} cy={181} r={5} fill={k.cor} />}
+                  <text x={kx + (k.cor ? 18 : 0)} y={186} fontSize={15} fill="#4d5868">{k.rotulo}</text>
+                </g>
+              );
+            })}
+            {/* Legenda única da grade (ver `legendaSlide`) — o rótulo de cada
+                status aparece SÓ aqui; nos cards ficam apenas os números com
+                o ponto da mesma cor. Larguras estimadas por caractere, como
+                todo o resto do slide (sem `getBBox` num nó fora da tela). */}
+            {(() => {
+              const fonte = 17, r = 6, gapTexto = 9, gapEntre = 30;
+              const larguras = legendaSlide.map(l => r * 2 + gapTexto + l.status.length * fonte * 0.55);
+              const total = larguras.reduce((a, w) => a + w, 0) + gapEntre * (legendaSlide.length - 1);
+              let cursor = SLIDE_X0 + Math.max(0, (slideAreaW - total) / 2);
+              return legendaSlide.map((l, li) => {
+                const lx = cursor;
+                cursor += larguras[li] + gapEntre;
+                return (
+                  <g key={l.status}>
+                    <circle cx={lx + r} cy={SLIDE_LEGENDA_Y} r={r} fill={l.cor} />
+                    <text x={lx + r * 2 + gapTexto} y={SLIDE_LEGENDA_Y + fonte * 0.36} fontSize={fonte} fontWeight={600} fill={T.ink}>{l.status}</text>
+                  </g>
+                );
+              });
+            })()}
+            {logoDataUri && <image href={logoDataUri} x={SLIDE_X1 - SLIDE_LOGO_W} y={52} width={SLIDE_LOGO_W} height={SLIDE_LOGO_H} preserveAspectRatio="xMidYMid meet" />}
+            {/* Selo de controle na borda direita, subindo a partir do rodapé
+                — `xmlSpace="preserve"` porque os espaços entre os 3 campos
+                são o único separador (sem ele o SVG colapsa tudo num espaço
+                só e os campos grudam). */}
+            <text x={1889} y={1058} transform="rotate(-90 1889 1058)" textAnchor="start" dominantBaseline="central" fontSize={15} fill="#000" xmlSpace="preserve">{SLIDE_SELO}</text>
             {donutsPorDisciplina.map((dg, i) => {
               const col = i % slideCols, row = Math.floor(i / slideCols);
-              const x = SLIDE_PAD + col * (slideCardW + SLIDE_GAP);
-              const y = SLIDE_HEADER_H + SLIDE_PAD + row * (slideCardH + SLIDE_GAP);
-              // Escala o conteúdo do card (fonte/donut/legenda) pelo espaço
-              // realmente disponível — pedido explícito (2026-09-01): "ficaram
-              // só 3 gráficos, precisam se adaptar para ocupar todo o
-              // layout". Card de referência 420×480 (onde os tamanhos fixos
-              // de antes já ficavam bons) — menos cards (grade com só 1
-              // linha, cada card bem mais alto/largo) dá `escala` > 1, mais
-              // cards (grade cheia) tende a ~1.
-              const escala = Math.min(Math.max(slideCardW / 420, slideCardH / 480, 1), 2.6);
-              const donutSize = Math.min(200 * escala, slideCardW * 0.72, slideCardH * 0.5);
-              const tituloFonte = 18 * escala, subFonte = 13 * escala;
-              const legendaFonte = 13.5 * escala, legendaLinha = 26 * escala, legendaR = 6 * escala;
-              const tituloLinhaH = tituloFonte * 1.15;
-              // Sempre reserva 2 linhas de título (mesmo card com título
-              // curto de 1 linha só) — mesmo motivo do bloco fixo abaixo:
-              // altura variável desalinharia os cards da mesma linha. Ver
-              // `quebrarTituloSlide` (bem acima) pro porquê da quebra manual.
-              const blocoTituloH = 62 * escala + tituloLinhaH, gapDonutLegenda = 30 * escala;
-              // Centraliza só título+donut (altura FIXA, igual em todo card
-              // da grade) — de propósito NÃO soma a legenda aqui: ela varia
-              // de card pra card (nº de status diferente por disciplina), e
-              // se entrasse na conta cada card centralizaria numa altura
-              // diferente, desalinhando donut/título entre os cards da MESMA
-              // linha (achado testando no navegador local — "Elétrica e
-              // Sistemas", com 3 status, ficava visivelmente mais baixo que
-              // "HVAC"/"Civil", com 1 só). A legenda só continua abaixo do
-              // donut, curta ou longa — sobra embaixo do card é esperada.
-              const blocoFixoH = blocoTituloH + donutSize + gapDonutLegenda;
-              const startY = y + Math.max(24, (slideCardH - blocoFixoH) / 2);
-              const donutX = x + slideCardW / 2 - donutSize / 2;
-              const donutY = startY + blocoTituloH;
-              const legendY0 = donutY + donutSize + gapDonutLegenda;
-              const linhasTitulo = quebrarTituloSlide(dg.disciplina, slideCardW - 48 * escala, tituloFonte);
+              const x = SLIDE_X0 + col * (slideCardW + SLIDE_GAP);
+              const y = SLIDE_Y0 + row * (slideCardH + SLIDE_GAP);
+              // Tudo já foi dimensionado uma vez só pra grade inteira (ver o
+              // bloco `escalaSlide`/`slideDonutSize` acima) — aqui só posiciona.
+              // `startY` centra o conteúdo INTEIRO (título + donut + legenda),
+              // que agora tem a MESMA altura em todo card: o donut é quem
+              // absorve a diferença de nº de status, então os cards da mesma
+              // linha continuam alinhados sem que a legenda vaze pra fora
+              // (antes o alinhamento era comprado justamente ignorando a
+              // legenda na conta — daí o estouro).
+              const startY = y + Math.max(slidePadCard, (slideCardH - slideConteudoH) / 2);
+              // A caixa do donut é maior que o diâmetro (ver `slideDonutCaixa`),
+              // então recua `slideDonutSobra` nos dois eixos — o que transborda
+              // é o ar do viewBox, não desenho.
+              const donutX = x + slideCardW / 2 - slideDonutCaixa / 2;
+              const donutY = startY + slideBlocoTituloH + slideGapBloco - slideDonutSobra;
+              // `+ slideDonutSobra` desfaz o recuo aplicado em `donutY`: os
+              // chips têm que começar depois do DIÂMETRO desenhado, não
+              // depois da borda da caixa (que é só ar).
+              const chipsY0 = donutY + slideDonutSobra + slideDonutSize + slideGapBloco + slideChipLinhaH / 2;
+              const chipSlot = (slideCardW - slidePadCard * 2) / slideChipsColunas;
+              const linhasTitulo = quebrarTituloSlide(dg.disciplina, slideCardW - slidePadCard * 2, slideTituloFonte);
               return (
                 <g key={dg.disciplina}>
-                  <rect x={x} y={y} width={slideCardW} height={slideCardH} rx={18} fill="#fff" stroke="#e4e7ec" />
+                  <rect x={x} y={y} width={slideCardW} height={slideCardH} rx={14} fill="#fff" stroke="#d6dce6" />
                   {linhasTitulo.map((linha, li) => (
-                    <text key={li} x={x + slideCardW / 2} y={startY + 24 * escala + li * tituloLinhaH} textAnchor="middle" fontSize={tituloFonte} fontWeight={700} fill={T.ink} style={{ letterSpacing:'0.03em', textTransform:'uppercase' }}>{linha}</text>
+                    <text key={li} x={x + slideCardW / 2} y={startY + slideTituloFonte + li * slideTituloLinhaH} textAnchor="middle" fontSize={slideTituloFonte} fontWeight={700} fill={SLIDE_AZUL} style={{ letterSpacing:'0.02em', textTransform:'uppercase' }}>{linha}</text>
                   ))}
-                  <text x={x + slideCardW / 2} y={startY + 45 * escala + tituloLinhaH} textAnchor="middle" fontSize={subFonte} fill={T.mut}>{dg.total} itens</text>
-                  <svg x={donutX} y={donutY} width={donutSize} height={donutSize} viewBox="0 0 400 400" overflow="visible">
-                    <DonutStatusRmi slices={dg.slices} activeStatus={null} onSliceClick={() => {}} />
+                  <svg x={donutX} y={donutY} width={slideDonutCaixa} height={slideDonutCaixa} viewBox="0 0 400 400" overflow="visible">
+                    <DonutStatusRmi slices={dg.slices} activeStatus={null} onSliceClick={() => {}} rotuloCentro="Itens" />
                   </svg>
                   {dg.slices.map((sl, si) => {
-                    const ly = legendY0 + si * legendaLinha;
+                    // Chips: ponto colorido + contagem, sem rótulo (o rótulo
+                    // está na legenda única do topo). Preenche LINHA a linha —
+                    // ao contrário da legenda antiga em 2 colunas, aqui o
+                    // fluxo da compra é horizontal, então ler da esquerda pra
+                    // direita já preserva a ordem. Cada chip é centrado no
+                    // seu "slot" de largura fixa, pra as colunas baterem
+                    // entre a 1ª e a 2ª linha quando são duas.
+                    const colC = si % slideChipsColunas, linC = Math.floor(si / slideChipsColunas);
+                    // Cada linha é centrada no card pelo nº de chips que ela
+                    // realmente tem — a última costuma ter menos, e ancorá-la
+                    // à esquerda deixaria um buraco visível à direita.
+                    const nestaLinha = Math.min(slideChipsColunas, dg.slices.length - linC * slideChipsColunas);
+                    const centro = x + slideCardW / 2 - (nestaLinha * chipSlot) / 2 + (colC + 0.5) * chipSlot;
+                    const ly = chipsY0 + linC * slideChipLinhaH;
+                    const parW = slideChipR * 2 + 5 * escalaSlide + String(sl.value).length * slideChipFonte * 0.58;
+                    const px = centro - parW / 2;
                     return (
                       <g key={sl.status}>
-                        <circle cx={x + 28 * escala} cy={ly} r={legendaR} fill={sl.cor} />
-                        <text x={x + 44 * escala} y={ly + 5 * escala} fontSize={legendaFonte} fontWeight={600} fill={T.ink}>{sl.label}</text>
-                        <text x={x + slideCardW - 18 * escala} y={ly + 5 * escala} textAnchor="end" fontSize={legendaFonte} fontWeight={800} fill={sl.cor}>{sl.value}</text>
+                        <circle cx={px + slideChipR} cy={ly} r={slideChipR} fill={sl.cor} />
+                        {/* Contagem em tinta de texto, não na cor do status: o
+                            ponto ao lado já carrega a identidade, e número
+                            colorido perde contraste no projetor. O % saiu
+                            junto com o rótulo — proporção é exatamente o que
+                            o donut acima já mostra, era informação repetida. */}
+                        <text x={px + slideChipR * 2 + 5 * escalaSlide} y={ly + slideChipFonte * 0.36} fontSize={slideChipFonte} fontWeight={800} fill={T.ink}>{sl.value}</text>
                       </g>
                     );
                   })}
