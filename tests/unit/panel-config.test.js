@@ -43,6 +43,13 @@ test('configuração do reforço Novo Nordisk preserva exclusões e catálogo', 
   assert.deepEqual(reforco.linhasExcluidas, [147454]);
   assert.deepEqual(reforco.catalogoExtra['Estrutura e Suportação Metálica'], ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET']);
 });
+test('configuração da IPEN preserva filtros, catálogo e prioridade', () => {
+  const ipen = config.CONFIG_SUPRIMENTOS_POR_OBRA[114];
+  assert.deepEqual(ipen.escoposExcluidos, ['INDIRETOS', 'MAO DE OBRA']);
+  assert.equal(ipen.trocarAreaDisciplina, true);
+  assert.equal(ipen.catalogoExtra['Tubulação de Cobre'][0], 'TUBULACAO DE COBRE');
+  assert.deepEqual(ipen.catalogoPrioritario, ['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação']);
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');

@@ -235,6 +235,13 @@ Commit desta etapa: `23798b9`.
   regras ainda mantidas no legado.
 - Validação: 21 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Terceira configuração de Suprimentos externalizada
+
+- Externalizada a configuração da IPEN (`id_obra=114`), incluindo filtros de
+  escopo, troca de níveis da árvore, catálogo completo e prioridades de
+  classificação.
+- Validação: 22 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

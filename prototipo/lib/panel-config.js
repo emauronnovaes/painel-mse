@@ -76,6 +76,31 @@
         'Estrutura e Suportação Metálica': Object.freeze(['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET']),
       }),
     }),
+    114: Object.freeze({
+      trocarAreaDisciplina: true,
+      rotuloArea: 'Detalhamento',
+      escoposExcluidos: Object.freeze(['INDIRETOS', 'MAO DE OBRA']),
+      curvaAObrigatoria: false,
+      catalogoExtra: Object.freeze({
+        'Fabricação de Equipamentos (Reservatórios/Trocadores)': Object.freeze(['FABRICACAO - RESERVATORIO', 'FABRICACAO - TROCADOR DE CALOR']),
+        'Resistências Elétricas': Object.freeze(['RESISTENCIA 15 KW', 'RESISTENCIA COLEIRA DE MICA']),
+        'Tubulação Inox': Object.freeze(['TUBO - AISI 316', 'TUBULACAO DE INOX']),
+        'Tubulação Aço Carbono': Object.freeze(['TUBO - AISI 1020']),
+        'Estrutura e Suportação Metálica': Object.freeze(['CHAPA DE APOIO', 'SAPATA', 'PERFIL C ', 'TUBO QUADRADO', 'APOIO ESTRUTURAL', 'BASE SUPORTE', 'PLACA BASE', 'CHAPA SACRIFICIO', 'CHAPA DESLIZAMENTO', 'CHAPA 77', 'ESTRUTURA SP', 'OLHAL FIXO SUPORTE', 'PINO DE MOVIMENTACAO', 'CHAPA PORTA REFRATARIO', 'BANDEJA DE RETENCAO']),
+        'Suportes e Acessórios de Tubulação': Object.freeze(['LISEGA', 'GRADETEC', 'TIRANTE OLHAL', 'BRACADEIRA / BLOCO METALICO TERMOPAR', 'ABRACADEIRA ESPECIFICA', 'SUPORTE PARA PISO E PAREDE', 'SUPORTE MF', 'JUNCAO ARTICULADA', 'FIXADOR DUPLO', 'SUPORTE CAIXA DE TOMADA']),
+        'Válvulas e acessórios': Object.freeze(['TEE UNIAO', 'CRUZETA | AISI', 'COTOVELO UNIAO', 'MEIA LUVA ROSCADA', 'LUVA ROSCADA', 'BUJAO', 'REDUCAO CONECNTRICA', 'JUNTA DE VEDACAO', 'JUNTA PLANA', 'JUNCAO PLANA', 'POCO DE PROTECAO', 'TUBO PILOTO', 'CONECTOR MACHO', 'FILTRO SINTERIZADO']),
+        'Instrumentação': Object.freeze(['TERMOPAR', 'TRANSMISSOR DE VAZAO', 'TRANSDUTOR PROPORCIONAL', 'PRESOSTATO', 'PRESSOSTATO', 'ESPAGUETE', 'TERMO ENCOLHIVEL']),
+        'Painéis': Object.freeze(['QUADRO DE MONITORAMENTO', 'QUADRO DE COMANDO']),
+        'Isolamento térmico': Object.freeze(['LA DE ROCHA', 'PRODUTO REVESTIMENTO']),
+        'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['SEPTO DIVISOR', 'UNIAO PARA DIVISOR', 'TAMPA E PRESSAO']),
+        'Parafusos e Fixação': Object.freeze(['PARAFUSO', 'PARFUSO', 'PORCA', 'ARRUELA', 'PRISIONEIRO', 'CONTRAPORCA', 'INSUMOS DE MONTAGEM']),
+        'Equipamentos de TI': Object.freeze(['COMPUTADOR', 'MONITOR 22']),
+        'Dispositivos Elétricos (Tomadas/Plugues)': Object.freeze(['TOMADA STECK', 'PLUG STECK', 'PLUGUE MACHO TRIANGULAR']),
+        'Tubulação de Cobre': Object.freeze(['TUBULACAO DE COBRE']),
+        'Cabos': Object.freeze(['TERMINAL TIPO ILHOIS']),
+      }),
+      catalogoPrioritario: Object.freeze(['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação']),
+    }),
   });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
