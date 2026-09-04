@@ -163,6 +163,16 @@ Commit desta etapa: `23798b9`.
   continuam na camada de apresentação.
 - Validação: 14 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Obras em configuração externa
+
+- O array `OBRAS` ativo foi movido para `prototipo/lib/panel-config.js`,
+  preservando os 7 IDs, aliases de origem, contratos e curvas alternativas.
+- O HTML passou a consumir `MSEConfig.OBRAS` e validar essa configuração antes
+  da renderização.
+- A cópia anterior permanece temporariamente nomeada `OBRAS_LEGACY`, sem uso,
+  para permitir uma remoção isolada e facilmente revertível na próxima etapa.
+- Validação: 15 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

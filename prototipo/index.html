@@ -449,7 +449,7 @@ const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // 2026-08-19) — confirmado direto no texto das tarefas raiz
 // da EAP pra 4 das 6 obras (CP002/CP029/CP261/CP273); Novo Nordisk-UB/SP é
 // CP236 e Hitachi é CP022, ambos confirmados pelo usuário em 2026-08-10.
-const OBRAS = [
+const OBRAS_LEGACY = [
   { id: 106, nome: 'CNPEM - Faseado',              curva: 'CNPEM - FASEADO',           origemTV: 'CNPEM-FASEADA',                                                origemCP: 'CP029' },
   { id: 110, nome: 'Hitachi',                       curva: 'HITACHI',                   origemTV: 'HITACHI',                                                      origemCP: 'CP022' },
   { id: 94,  nome: 'Porto Itapoá',                  curva: 'PORTO',                     origemTV: 'PORTO ITAPOÁ',                                                 origemCP: 'CP002' },
@@ -487,6 +487,8 @@ const OBRAS = [
   // mapeada. Só Suprimentos funciona hoje (ver CONFIG_SUPRIMENTOS_POR_OBRA).
   { id: 114, nome: 'IPEN' },
 ];
+
+const OBRAS = MSEConfig.OBRAS;
 
 // Substituído em 2026-08-19 pelas tabelas reais `contratos_medicao` +
 // `boletins_medicao` (ver ModuloMedicoes) — pedido explícito do usuário:

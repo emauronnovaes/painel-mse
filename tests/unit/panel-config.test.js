@@ -13,6 +13,13 @@ test('SETORES expõe a ordem declarativa do painel', () => {
   assert.equal(config.SETORES[0].slug, 'curva-s');
   assert.equal(config.SETORES[8].slug, 'tour-360');
 });
+test('OBRAS preserva contratos e curvas alternativas', () => {
+  assert.equal(config.OBRAS.length, 7);
+  assert.equal(config.OBRAS.find(obra => obra.id === 106).origemCP, 'CP029');
+  assert.deepEqual(config.OBRAS.find(obra => obra.id === 107).curvas.map(curva => curva.label), ['Estudo', 'PPU']);
+  assert.equal(config.OBRAS.find(obra => obra.id === 91).curvas[0].label, 'Take-Off');
+  assert.equal(config.OBRAS.find(obra => obra.id === 114).origemCP, undefined);
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });
