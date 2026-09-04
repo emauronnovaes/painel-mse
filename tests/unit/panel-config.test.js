@@ -31,6 +31,12 @@ test('configurações de Suprimentos preservam escopo e exportação', () => {
   assert.equal(config.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[107], 'area');
   assert.equal(config.OBRAS_SEM_EXPORTACAO_GRAFICOS.has(94), true);
 });
+test('configuração da Hitachi fica disponível no módulo externo', () => {
+  const hitachi = config.CONFIG_SUPRIMENTOS_POR_OBRA[110];
+  assert.deepEqual(hitachi.escoposPermitidos, ['cp281', 'cp001', 'cp006']);
+  assert.deepEqual(hitachi.catalogoExtra['Equipamentos de TI'], ['NOTEBOOK']);
+  assert.equal(hitachi.catalogoExtra['Conectores e Ferragens de Linha (AT)'].length, 11);
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');

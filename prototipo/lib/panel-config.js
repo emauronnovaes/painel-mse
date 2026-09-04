@@ -44,6 +44,31 @@
   const OBRAS_SEM_EXPORTACAO_GRAFICOS = Object.freeze(new Set([94]));
   const STATUS_MANUAL_OPCOES = Object.freeze(['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   const ORDEM_STATUS_RMI = Object.freeze(['Atrasado', 'Pendente', 'Requisitado', 'Em cotação', 'Em Andamento', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
+  // Configuração específica de Suprimentos externalizada por obra.
+  // A migração começa pela Hitachi (id 110); as demais obras permanecem
+  // no legado do protótipo até cada fatia ser validada.
+  const CONFIG_SUPRIMENTOS_POR_OBRA = Object.freeze({
+    110: Object.freeze({
+      areaObrigatoria: false, escopoNivel0: true, rotulo: 'Escopo', curvaAObrigatoria: false,
+      escoposPermitidos: ['cp281', 'cp001', 'cp006'],
+      catalogoExtra: Object.freeze({
+        'Isoladores': Object.freeze(['ISOL. CERAM', 'ISOLADOR CERAMICO', 'ISOLADOR EPOXI', 'ISOLADOR SUPORTE']),
+        'Barramentos (AT)': Object.freeze(['TUBO AL EXTRUD', 'BARRA PERF. AL', 'BARRA CIRCULAR', 'BARRA RETANGULAR DE COBRE', 'BARRA CHATA DE ALUMINIO']),
+        'Conectores e Ferragens de Linha (AT)': Object.freeze(['CONEC. SUP', 'CONEC SUP', 'CONECT. SUP', 'CONECT SUP', 'CONECT. TERM', 'CONECT TERM', 'CONEC TERMINAL', 'CONECT. EMENDA', 'CONECT EMENDA', 'CONEC. EMENDA', 'CONEC EMENDA']),
+        'Controle de Acesso': Object.freeze(['LEITOR BIOMETRICO', 'FECHADURA ELETROMAGNETICA', 'SENSOR MAGNETICO', 'BOTOEIRA']),
+        'Parafusos e Fixação': Object.freeze(['PARAFUSO', 'PARARAFUSO', 'CHUMBADOR', 'ARRUELA', 'PORCA QUADRADA', 'PORCA SEXTAVADA', 'PORCA SEX']),
+        'Equipamentos de TI': Object.freeze(['NOTEBOOK']),
+        'Estrutura e Suportação Metálica': Object.freeze(['SUPORTE', 'PERFIL U EM ACO', 'PERFIL Z', 'CHAPA EM ACO GALVANIZADO']),
+        'Tubulação Aço Carbono': Object.freeze(['TUBO ACO PTO NBR', 'RED CONC PTO', 'TE 90º ACO PRETO', 'ACO PRETO A-234', 'CAP ACO CARBONO']),
+        'Acoplamentos e Conexões Ranhuradas': Object.freeze(['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO', 'GRAMPO U', 'CRUZETA EM ACO', 'CAP RANHURADO']),
+        'Automação e Controle': Object.freeze(['CORTINA DE LUZ']),
+        'Combate a Incêndio': Object.freeze(['WATER SPRAY', 'PROJETOR DE ALTA VAZAO']),
+        'Cabos': Object.freeze(['COND COBRE NU', 'TERMINAL COMPRESSAO']),
+        'Rede/Cabeamento Estruturado': Object.freeze(['KIT DE ANCORAGEM', 'PARA DIO']),
+        'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['PERF FGF', 'PARALEITO']),
+      }),
+    }),
+  });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
     const ids = obras.map(obra => obra.id);
@@ -61,7 +86,7 @@
     for (const [id, config] of Object.entries(configuracao)) {
       if (!ids.has(String(id))) throw new Error(`Configuração de Suprimentos inválida: obra desconhecida ${id}`);
       if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error(`Configuração de Suprimentos inválida: obra ${id}`);
-      for (const campo of ['escoposPermitidos', 'escoposExcluidos', 'categoriasExtras']) {
+      for (const campo of ['escoposPermitidos', 'escoposExcluidos', 'categoriasExtras', 'catalogoExtra']) {
         if (config[campo] !== undefined && !Array.isArray(config[campo]) && typeof config[campo] !== 'object') {
           throw new Error(`Configuração de Suprimentos inválida: ${campo} da obra ${id}`);
         }
@@ -69,5 +94,5 @@
     }
     return true;
   }
-  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, validarConfiguracao, validarConfiguracaoSuprimentos });
+  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, CONFIG_SUPRIMENTOS_POR_OBRA, validarConfiguracao, validarConfiguracaoSuprimentos });
 }));

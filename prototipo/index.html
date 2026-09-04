@@ -5698,7 +5698,7 @@ const OBRAS_STATUS_MANUAL_DESATIVADO = MSEConfig.OBRAS_STATUS_MANUAL_DESATIVADO;
 // validada pro CP029) — cada obra nova entra aqui só com o que
 // realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
 // na memória do projeto pro histórico de cada achado).
-const CONFIG_SUPRIMENTOS_POR_OBRA = {
+const CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY = {
   110: {
     areaObrigatoria: false, escopoNivel0: true, rotulo: 'Escopo', curvaAObrigatoria: false,
     // Pedido explícito (2026-08-25): "vamos manter os macros com cp281,
@@ -6419,6 +6419,12 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
       'Retificadores e Transformadores': ['RETIFICADOR', 'TRANSFORMADOR AUXILIAR'],
     },
   }, // Novo Nordisk - UB/SP
+};
+// Configurações já validadas são mantidas no módulo externo; o legado segue
+// como fallback durante a migração incremental das demais obras.
+const CONFIG_SUPRIMENTOS_POR_OBRA = {
+  ...CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY,
+  ...MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA,
 };
 MSEConfig.validarConfiguracaoSuprimentos(CONFIG_SUPRIMENTOS_POR_OBRA, OBRAS);
 

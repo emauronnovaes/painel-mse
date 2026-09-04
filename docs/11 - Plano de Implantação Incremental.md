@@ -216,6 +216,16 @@ Commit desta etapa: `23798b9`.
   esse contrato para não perder exceções específicas.
 - Validação: 19 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Primeira configuração de Suprimentos externalizada
+
+- A configuração específica da Hitachi (`id_obra=110`) foi copiada para
+  `MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA`, incluindo escopos permitidos e
+  catálogo adicional completo.
+- O HTML mantém as demais obras no mapa legado e faz merge determinístico,
+  permitindo migrar uma obra por vez sem alterar as regras ainda não validadas.
+- O validador passou a aceitar e verificar mapas `catalogoExtra`.
+- Validação: 20 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
