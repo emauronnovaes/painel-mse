@@ -408,6 +408,12 @@ Commit desta etapa: `23798b9`.
   a migração de suas regras e categorias de catálogo.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Desativação do legado do Porto Itapoá
+
+- Isolado o bloco legado da obra `id_obra=94`, após concluir suas regras
+  estruturais, catálogo de disciplinas e categorias de materiais.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
