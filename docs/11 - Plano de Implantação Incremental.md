@@ -420,6 +420,12 @@ Commit desta etapa: `23798b9`.
   remota retorna dados reais.
 - A suíte funcional deixa de depender de um estado específico do ambiente.
 
+### 2026-09-04 — Cobertura funcional por obra
+
+- Adicionado teste parametrizado para as 7 obras cadastradas, verificando
+  carregamento do setor Suprimentos, raiz da aplicação e ausência de erros de
+  página.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
