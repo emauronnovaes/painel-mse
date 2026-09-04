@@ -432,6 +432,9 @@ Commit desta etapa: `23798b9`.
 - Criado o comando `npm run test:all`, que executa a validação unitária, as
   rotas gerais e as sete obras de Suprimentos em sequência.
 
+- Adicionada verificação estática da ordem de carregamento dos módulos
+  compartilhados antes do Babel.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

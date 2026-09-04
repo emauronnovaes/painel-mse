@@ -17,3 +17,13 @@ test('cliente de dados mantém paginação e timeout centralizados', () => {
   const chamadasNativas = html.match(/\bfetch\(/g) || [];
   expect(chamadasNativas).toHaveLength(1);
 });
+
+test('módulos compartilhados são carregados antes do Babel', () => {
+  const html = fs.readFileSync(htmlPath, 'utf8');
+  const dominio = html.indexOf('lib/domain-utils.js');
+  const configuracao = html.indexOf('lib/panel-config.js');
+  const babel = html.indexOf('babel.min.js');
+  expect(dominio).toBeGreaterThanOrEqual(0);
+  expect(configuracao).toBeGreaterThan(dominio);
+  expect(babel).toBeGreaterThan(configuracao);
+});
