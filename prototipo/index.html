@@ -754,6 +754,19 @@ async function fetchPaginado(url, headers, tamanhoPagina = 1000){
   return todas;
 }
 
+// Adaptador de transição: permite migrar consumidores antigos que esperam
+// Response (`.ok`/`.json()`) para paginação sem alterar sua cadeia de Promises
+// de uma vez. Será removido quando esses consumidores passarem a receber
+// diretamente arrays tipados da camada de dados.
+async function fetchPaginadoCompat(url, headers, tamanhoPagina = 1000){
+  const rows = await fetchPaginado(url, headers, tamanhoPagina);
+  return {
+    ok: rows !== null,
+    status: rows === null ? 502 : 200,
+    json: async () => rows === null ? [] : rows,
+  };
+}
+
 // ── Helpers portados verbatim do dashboard atual (LoopEncSection e afins) —
 // usados pelo módulo de Encarregados. Funções puras, sem dependência de
 // estado/obra — dá pra colar sem tradução.
@@ -3479,7 +3492,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? `vw_efetivo_${gran.view}_total` : `vw_efetivo_${gran.view}_moimod_total`;
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setDados(Array.isArray(rows) ? rows : []); setLoading(false); })
       .catch(() => { setDados([]); setLoading(false); });
@@ -3490,7 +3503,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_mensal_total' : 'vw_efetivo_previsto_mensal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=1000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => setPrevistoMensal(Array.isArray(rows) ? rows : []))
       .catch(() => setPrevistoMensal([]));
@@ -3501,7 +3514,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_semanal_total' : 'vw_efetivo_previsto_semanal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc&limit=2000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => setPrevistoSemanal(Array.isArray(rows) ? rows : []))
       .catch(() => setPrevistoSemanal([]));
@@ -3511,7 +3524,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     if (!obraId) { setRealHistorico([]); return; }
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_real_historico?obra_id=eq.${obraId}${filtroMoi}&select=mes,qtd,granularidade&order=mes.asc&limit=1000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_real_historico?obra_id=eq.${obraId}${filtroMoi}&select=mes,qtd,granularidade&order=mes.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => setRealHistorico(Array.isArray(rows) ? rows : []))
       .catch(() => setRealHistorico([]));
@@ -3525,7 +3538,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarDir('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_${gran.view}_pessoas?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=*&order=nome.asc&limit=1000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_${gran.view}_pessoas?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=*&order=nome.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setDetalhe(Array.isArray(rows) ? rows : []); setDetalheLoading(false); })
       .catch(() => { setDetalhe([]); setDetalheLoading(false); });
@@ -3539,7 +3552,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarDirPrevisto('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_previsto_mensal_detalhe?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=nome_funcao,moi_mod,qtd&order=qtd.desc&limit=500`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_previsto_mensal_detalhe?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=nome_funcao,moi_mod,qtd&order=qtd.desc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setPrevistoDetalhe(Array.isArray(rows) ? rows : []); setPrevistoDetalheLoading(false); })
       .catch(() => { setPrevistoDetalhe([]); setPrevistoDetalheLoading(false); });
@@ -3551,7 +3564,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setResumo(null); setResumoErro(false);
     if (!obraId) return;
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
-    const pega = (url) => fetchComTimeout(url, { headers })
+    const pega = (url) => fetchPaginadoCompat(url, headers, 1000)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(rows => (Array.isArray(rows) && rows[0]) ? rows[0] : null);
     Promise.all([
@@ -3577,7 +3590,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setOrdenarCampoResumo('nome');
     setOrdenarDirResumo('asc');
     const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
-    fetchComTimeout(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_diario_pessoas?obra_id=eq.${obraId}&periodo=eq.${resumo.periodo}&select=nome,nome_funcao,moi_mod&order=nome.asc&limit=1000`, { headers })
+    fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_diario_pessoas?obra_id=eq.${obraId}&periodo=eq.${resumo.periodo}&select=nome,nome_funcao,moi_mod&order=nome.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setResumoDetalhe(Array.isArray(rows) ? rows : []); setResumoDetalheLoading(false); })
       .catch(() => { setResumoDetalhe([]); setResumoDetalheLoading(false); });
