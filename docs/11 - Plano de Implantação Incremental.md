@@ -362,6 +362,12 @@ Commit desta etapa: `23798b9`.
 - Externalizadas categorias de cabos, válvulas/acessórios e eletrodutos.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Sexta fatia do catálogo de materiais do Porto
+
+- Externalizadas palavras-chave de tubulação em aço carbono e instrumentação,
+  preservando a união com categorias já existentes.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

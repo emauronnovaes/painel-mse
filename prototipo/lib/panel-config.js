@@ -184,6 +184,8 @@
         'Cabos': Object.freeze(['COND CU', 'COND COBRE', 'MUFLA', 'TERMINAL COMPRESSAO']),
         'Válvulas e acessórios': Object.freeze(['LUVA REDUCAO', 'NIPLE', 'JUNTA EXPANSAO']),
         'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['EMENDA INTERNA']),
+        'Tubulação Aço Carbono': Object.freeze(['TUBO ACO PTO NBR']),
+        'Instrumentação': Object.freeze(['PRESSOSTATO']),
       }),
     }),
   });
