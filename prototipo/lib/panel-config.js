@@ -55,5 +55,19 @@
     if (setores.some(setor => !Number.isInteger(setor.num) || !setor.label)) throw new Error('Configuração do painel inválida: setor sem número ou rótulo');
     return true;
   }
-  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, validarConfiguracao });
+  function validarConfiguracaoSuprimentos(configuracao, obras) {
+    if (!configuracao || typeof configuracao !== 'object' || Array.isArray(configuracao)) throw new Error('Configuração de Suprimentos inválida');
+    const ids = new Set((obras || []).map(obra => String(obra.id)));
+    for (const [id, config] of Object.entries(configuracao)) {
+      if (!ids.has(String(id))) throw new Error(`Configuração de Suprimentos inválida: obra desconhecida ${id}`);
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error(`Configuração de Suprimentos inválida: obra ${id}`);
+      for (const campo of ['escoposPermitidos', 'escoposExcluidos', 'categoriasExtras']) {
+        if (config[campo] !== undefined && !Array.isArray(config[campo]) && typeof config[campo] !== 'object') {
+          throw new Error(`Configuração de Suprimentos inválida: ${campo} da obra ${id}`);
+        }
+      }
+    }
+    return true;
+  }
+  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, validarConfiguracao, validarConfiguracaoSuprimentos });
 }));

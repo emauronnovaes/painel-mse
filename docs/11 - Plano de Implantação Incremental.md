@@ -207,6 +207,15 @@ Commit desta etapa: `23798b9`.
   declarativa de status.
 - Validação: 18 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Contrato para configurações por obra
+
+- Adicionada `validarConfiguracaoSuprimentos` ao módulo de configuração.
+- O `CONFIG_SUPRIMENTOS_POR_OBRA` agora é validado na inicialização contra
+  as obras cadastradas e contra os tipos esperados de listas/mapas.
+- A extração do objeto grande fica para uma subetapa própria, protegida por
+  esse contrato para não perder exceções específicas.
+- Validação: 19 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

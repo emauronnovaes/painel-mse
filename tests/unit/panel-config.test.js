@@ -36,6 +36,11 @@ test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
   assert.equal(config.ORDEM_STATUS_RMI.at(-1), 'Entregue');
 });
+test('validarConfiguracaoSuprimentos rejeita obra desconhecida e tipos inválidos', () => {
+  assert.equal(config.validarConfiguracaoSuprimentos({ 106: { escoposPermitidos: [] } }, obras), true);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 999: {} }, obras), /obra desconhecida/);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 106: { escoposExcluidos: 'INDIRETOS' } }, obras), /escoposExcluidos/);
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });
