@@ -449,45 +449,6 @@ const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // 2026-08-19) — confirmado direto no texto das tarefas raiz
 // da EAP pra 4 das 6 obras (CP002/CP029/CP261/CP273); Novo Nordisk-UB/SP é
 // CP236 e Hitachi é CP022, ambos confirmados pelo usuário em 2026-08-10.
-const OBRAS_LEGACY = [
-  { id: 106, nome: 'CNPEM - Faseado',              curva: 'CNPEM - FASEADO',           origemTV: 'CNPEM-FASEADA',                                                origemCP: 'CP029' },
-  { id: 110, nome: 'Hitachi',                       curva: 'HITACHI',                   origemTV: 'HITACHI',                                                      origemCP: 'CP022' },
-  { id: 94,  nome: 'Porto Itapoá',                  curva: 'PORTO',                     origemTV: 'PORTO ITAPOÁ',                                                 origemCP: 'CP002' },
-  { id: 107, nome: 'Novo Nordisk - AP',              curva: 'NOVO NORDISK - AP',         origemTV: 'NN - AP - ELETROMECÂNICA',       origemPTS: 'Novo Nordisk AP', origemCP: 'CP273',
-    // NN - AP tinha 4 curvas na mesma planilha (pedido 2026-08-14: "no NN AP
-    // temos mais de uma curva... botões na parte de baixo pra navegar entre
-    // elas"; Estudo somada em 2026-08-26). Pedido explícito (2026-08-26):
-    // "pode suprimir as curvas PPU+OC e CO do AP" — os botões "PPU + C.O."
-    // (consolidado) e "C.O." isolado saíram do seletor; só "PPU" e "Estudo"
-    // continuam. `curva` acima (chave PADRÃO usada fora do seletor) NÃO
-    // mudou — segue 'NOVO NORDISK - AP' (mantém o vínculo com o resto do
-    // painel); o 1º item de `curvas` (agora "Estudo", pedido explícito
-    // 2026-08-31: "é para abrir em Estudo") vira o default só DENTRO
-    // do seletor de Curva S (`curvaChaveAtual` cai pro `curvas?.[0]?.chave`
-    // quando nada foi clicado ainda).
-    curvas: [
-      { chave: 'NOVO NORDISK - AP - Estudo', label: 'Estudo' },
-      { chave: 'NOVO NORDISK - AP - PPU',   label: 'PPU' },
-    ] },
-  { id: 108, nome: 'Novo Nordisk - AP - Reforço',    curva: 'NOVO NORDISK - REFORÇO AP', origemTV: 'NN - REFORÇO EST. METÁLICAS',                                  origemCP: 'CP261' },
-  { id: 91,  nome: 'Novo Nordisk - UB/SP',           curva: 'NOVO NORDISK - UB SP',      origemTV: 'NN - UB/SP - ELETROMECÂNICA',    origemPTS: 'Novo Nordisk UB',  origemCP: 'CP236',
-    // NN - UB/SP ganhou 2ª curva (Take-Off) em 2026-08-26, mesmo padrão do
-    // seletor de botões criado pro NN - AP. `curva` acima continua PADRÃO.
-    // Take-Off é o 1º item (pedido explícito 2026-08-31: "é para abrir em
-    // Take-off") — vira o default do seletor.
-    curvas: [
-      { chave: 'NOVO NORDISK - UB SP - Take Off', label: 'Take-Off' },
-      { chave: 'NOVO NORDISK - UB SP',           label: 'Original' },
-    ] },
-  // IPEN (2026-08-28): só tem itens_rmi (RMI 304) sincronizado até agora —
-  // sem EAP/cards_ativos/restricoes_obra ainda. `curva`/`origemTV`/`origemCP`
-  // ficam de fora de propósito (nenhum dado real pra mapear); os módulos que
-  // dependem deles (Curva S, Encarregados, Medições) degradam graciosamente
-  // pra "sem dado" — mesmo padrão já usado em toda a base pra obra sem fonte
-  // mapeada. Só Suprimentos funciona hoje (ver CONFIG_SUPRIMENTOS_POR_OBRA).
-  { id: 114, nome: 'IPEN' },
-];
-
 const OBRAS = MSEConfig.OBRAS;
 
 // Substituído em 2026-08-19 pelas tabelas reais `contratos_medicao` +

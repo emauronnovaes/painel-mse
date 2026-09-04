@@ -173,6 +173,12 @@ Commit desta etapa: `23798b9`.
   para permitir uma remoção isolada e facilmente revertível na próxima etapa.
 - Validação: 15 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Remoção da configuração legada
+
+- A cópia `OBRAS_LEGACY` foi removida do HTML.
+- `MSEConfig.OBRAS` passou a ser a única fonte de configuração de obras.
+- Validação: 15 testes unitários e 9 rotas Playwright aprovados após a remoção.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
