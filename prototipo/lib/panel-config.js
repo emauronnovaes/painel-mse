@@ -173,6 +173,9 @@
         'Drenagem (tubos e acessórios)': Object.freeze(['TUBO PEAD', 'BOCA DE LOBO', 'POCO DE VISITA', 'CAIXA PRE-MOLDADA', 'TAMPA EM FERRO FUNDIDO', 'COMPORTA METALICA', 'PVC ESGOTO', 'PVC ESG', 'CAIXA INSPECAO', 'FERRO FUND', 'PEAD', 'CALHA', 'COMPORTA']),
         'Agregados (Areia/Brita)': Object.freeze([/^AREIA$/, 'LASTRO DE BRITA', 'LASTRO BRITA']),
         'Concreto e Impermeabilização': Object.freeze(['ARGAMASSA POLIMERICA', 'IMPERMEABILIZACAO', 'ESPACADOR', 'TELA Q']),
+        'Estrutura e Suportação Metálica': Object.freeze(['ESTRUTURA METALICA', 'TELHA METALICA', 'CORRIMAO', 'GUARDA-CORPO', 'CHAPA DE ACO', 'PERFIL U', 'TELHA', 'GRAMPO C']),
+        'Iluminação': Object.freeze(['ILUMINACAO', 'EVERLED', 'CITYLED', 'REFLETOR']),
+        'Painéis': Object.freeze(['ELETROCENTRO', /^QD/, /^QL-/, 'QGBT', 'DISJUNTOR']),
       }),
     }),
   });

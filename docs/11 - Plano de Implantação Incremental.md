@@ -346,6 +346,11 @@ Commit desta etapa: `23798b9`.
   impermeabilização, incluindo seus padrões regex específicos.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Terceira fatia do catálogo de materiais do Porto
+
+- Externalizadas as categorias de estrutura metálica, iluminação e painéis.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
