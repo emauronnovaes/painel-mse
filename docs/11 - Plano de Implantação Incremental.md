@@ -435,6 +435,11 @@ Commit desta etapa: `23798b9`.
 - Adicionada verificação estática da ordem de carregamento dos módulos
   compartilhados antes do Babel.
 
+### 2026-09-04 — Validação completa do ciclo
+
+- `npm run test:all` executado com sucesso: 29 testes unitários, 9 rotas
+  gerais e 7 rotas de Suprimentos por obra aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
