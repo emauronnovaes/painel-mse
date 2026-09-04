@@ -7270,7 +7270,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // uma recoloração nossa.
   const [logoDataUri, setLogoDataUri] = useState('');
   useEffect(() => {
-    fetch(new URL('assets/images/mselogo-vermelha.png', document.baseURI).href)
+    fetchComTimeout(new URL('assets/images/mselogo-vermelha.png', document.baseURI).href)
       .then(r => r.blob())
       .then(blob => new Promise((resolve, reject) => {
         const reader = new FileReader();
