@@ -4516,15 +4516,14 @@ function corStatusRestricao(label){
 // implementar): se já venceu, continua mostrando "Atrasado" — esse
 // estado é mais grave e não devia ser escondido atrás de "Em risco".
 function monitoramentoRestricao(dataConclusao, statusLabel, criticidade){
-  if (!(statusLabel || '').toLowerCase().includes('abert')) return null;
-  if (!dataConclusao) return null;
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-  const limite = new Date(dataConclusao + 'T00:00:00');
-  const diasRestantes = Math.round((limite - hoje) / 86400000);
-  if (diasRestantes < 0) return { texto:'Atrasado', cor:T.red, bg:'rgba(210,59,59,0.13)', ordem:0 };
-  const criticidadeAlta = (criticidade || '').trim().toLowerCase() === 'alta';
-  if (diasRestantes <= 7 || criticidadeAlta) return { texto:'Em risco', cor:T.amber, bg:'rgba(217,145,26,0.13)', ordem:1 };
-  return { texto:'No prazo', cor:T.green, bg:'rgba(31,157,87,0.13)', ordem:2 };
+  const base = MSEDomain.monitoramentoBase(dataConclusao, statusLabel, criticidade);
+  if (!base) return null;
+  const cores = {
+    'Atrasado': { cor:T.red, bg:'rgba(210,59,59,0.13)' },
+    'Em risco': { cor:T.amber, bg:'rgba(217,145,26,0.13)' },
+    'No prazo': { cor:T.green, bg:'rgba(31,157,87,0.13)' },
+  };
+  return { ...base, ...cores[base.texto] };
 }
 // `onClick`/`ativo` são opcionais — sem eles, continua o mesmo badge
 // estático de sempre (Restrições usa assim). Com `onClick`, vira um botão
@@ -6839,12 +6838,13 @@ function fmtDataObjRmi(dt){
 
 // Calcula criticidade baseado em dias até a data limite em obra
 function calcularCriticidade(dataLimite){
-  if (!dataLimite || isNaN(dataLimite.getTime())) return { nivel: 'desconhecido', label: '—', cor: T.mut, bg: '#eef0f3' };
-  const diasRestantes = Math.ceil((dataLimite.getTime() - new Date().getTime()) / (1000*60*60*24));
-  if (diasRestantes <= 0) return { nivel: 'urgente', label: 'Urgente', cor:'#fff', bg:T.red };
-  if (diasRestantes <= 7) return { nivel: 'alta', label: 'Alta', cor:'#fff', bg:T.amber };
-  if (diasRestantes <= 30) return { nivel: 'moderada', label: 'Moderada', cor:T.ink, bg:'#fef3c7' };
-  return { nivel: 'baixa', label: 'Baixa', cor:T.body, bg:'#e0e7ff' };
+  const base = MSEDomain.criticidadeBase(dataLimite);
+  const cores = {
+    desconhecido: { cor:T.mut, bg:'#eef0f3' }, urgente: { cor:'#fff', bg:T.red },
+    alta: { cor:'#fff', bg:T.amber }, moderada: { cor:T.ink, bg:'#fef3c7' },
+    baixa: { cor:T.body, bg:'#e0e7ff' },
+  };
+  return { ...base, ...cores[base.nivel] };
 }
 
 function CriticidadeBadgeRmi({ dataLimite, finalizado }){

@@ -54,5 +54,23 @@
     metaSemanal = Math.min(metaSemanal, saldo);
     return { acumulado, metaSemanal, metaDiaria: metaSemanal / 5 };
   }
-  return Object.freeze({ parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana });
+  function criticidadeBase(dataLimite, agora = new Date()) {
+    if (!(dataLimite instanceof Date) || Number.isNaN(dataLimite.getTime())) return { nivel: 'desconhecido', label: '—' };
+    const diasRestantes = Math.ceil((dataLimite.getTime() - agora.getTime()) / 86400000);
+    if (diasRestantes <= 0) return { nivel: 'urgente', label: 'Urgente' };
+    if (diasRestantes <= 7) return { nivel: 'alta', label: 'Alta' };
+    if (diasRestantes <= 30) return { nivel: 'moderada', label: 'Moderada' };
+    return { nivel: 'baixa', label: 'Baixa' };
+  }
+  function monitoramentoBase(dataConclusao, statusLabel, criticidade, hoje = new Date()) {
+    if (!(statusLabel || '').toLowerCase().includes('abert') || !dataConclusao) return null;
+    const limite = new Date(`${dataConclusao}T00:00:00`);
+    if (Number.isNaN(limite.getTime())) return null;
+    hoje = new Date(hoje); hoje.setHours(0, 0, 0, 0);
+    const diasRestantes = Math.round((limite - hoje) / 86400000);
+    if (diasRestantes < 0) return { texto: 'Atrasado', ordem: 0 };
+    if (diasRestantes <= 7 || (criticidade || '').trim().toLowerCase() === 'alta') return { texto: 'Em risco', ordem: 1 };
+    return { texto: 'No prazo', ordem: 2 };
+  }
+  return Object.freeze({ parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana, criticidadeBase, monitoramentoBase });
 }));

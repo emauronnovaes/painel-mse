@@ -117,6 +117,19 @@ semanais e criticidade, preservando as fórmulas já validadas no dashboard.
 
 Commit: `17598b4` (utilitários iniciais) e alterações desta etapa em andamento.
 
+### 2026-09-04 — Criticidade e monitoramento
+
+- Extraídos `criticidadeBase` e `monitoramentoBase` para o módulo de domínio.
+- A camada visual continua responsável somente por mapear níveis semânticos
+  para cores do Design System.
+- Preservadas as regras: urgente/alta/moderada/baixa por prazo; monitoramento
+  apenas para restrições abertas; atraso sempre prevalece; criticidade alta
+  força “Em risco”.
+- Validação: 8 testes unitários e 9 rotas Playwright aprovados após ajuste do
+  fixture de teste para uma data realmente superior a 30 dias.
+
+Commit desta etapa: `50ca963`.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

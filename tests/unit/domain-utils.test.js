@@ -42,3 +42,17 @@ test('calcularMetaSemana usa o último corte realizado antes da janela', () => {
   assert.equal(meta.metaSemanal, 70);
   assert.equal(meta.metaDiaria, 14);
 });
+test('criticidadeBase classifica prazo nos quatro estados', () => {
+  const hoje = new Date(2026, 8, 4, 12);
+  assert.equal(domain.criticidadeBase(new Date(2026, 8, 3, 12), hoje).nivel, 'urgente');
+  assert.equal(domain.criticidadeBase(new Date(2026, 8, 10, 12), hoje).nivel, 'alta');
+  assert.equal(domain.criticidadeBase(new Date(2026, 8, 20, 12), hoje).nivel, 'moderada');
+  assert.equal(domain.criticidadeBase(new Date(2026, 10, 1, 12), hoje).nivel, 'baixa');
+});
+test('monitoramentoBase só calcula restrições abertas e prioriza atraso', () => {
+  const hoje = new Date(2026, 8, 4, 12);
+  assert.equal(domain.monitoramentoBase('2026-09-10', 'Concluída', 'Alta', hoje), null);
+  assert.equal(domain.monitoramentoBase('2026-09-03', 'Aberto', 'Baixa', hoje).texto, 'Atrasado');
+  assert.equal(domain.monitoramentoBase('2026-09-20', 'Aberto', 'Alta', hoje).texto, 'Em risco');
+  assert.equal(domain.monitoramentoBase('2026-10-01', 'Aberto', 'Baixa', hoje).texto, 'No prazo');
+});
