@@ -368,6 +368,12 @@ Commit desta etapa: `23798b9`.
   preservando a união com categorias já existentes.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Sétima fatia do catálogo de materiais do Porto
+
+- Externalizadas categorias de fixação, cercamento e miscelâneas, incluindo
+  os limites regex do fallback de descrições.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

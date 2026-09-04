@@ -186,6 +186,9 @@
         'Eletrodutos e Infraestrutura Elétrica': Object.freeze(['EMENDA INTERNA']),
         'Tubulação Aço Carbono': Object.freeze(['TUBO ACO PTO NBR']),
         'Instrumentação': Object.freeze(['PRESSOSTATO']),
+        'Parafusos e Fixação': Object.freeze(['PARAFUSO', 'ESTOJO', 'CHUMBADOR', 'BUCHA NYLON', 'PORCA SEXTAVADA', 'ARRUELA', 'ABRACADEIRA']),
+        'Cercamento': Object.freeze(['CERCAS E PORTOES', 'CERCA E PORTAO', 'BARREIRA NEW JERSEY', 'CANCELA', 'PORTAO']),
+        'Miscelâneas': Object.freeze([/\bPREGO\b/, /\bTAMPA\b/, /\bLONA\b/, 'CSAO']),
       }),
     }),
   });
