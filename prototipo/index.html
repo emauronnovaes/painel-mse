@@ -6424,8 +6424,16 @@ const CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY = {
 // como fallback durante a migração incremental das demais obras.
 const CONFIG_SUPRIMENTOS_POR_OBRA = {
   ...CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY,
-  ...MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA,
 };
+for (const [obraId, externo] of Object.entries(MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA)) {
+  const legado = CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY[obraId] || {};
+  CONFIG_SUPRIMENTOS_POR_OBRA[obraId] = {
+    ...legado,
+    ...externo,
+    catalogoExtra: { ...(legado.catalogoExtra || {}), ...(externo.catalogoExtra || {}) },
+    catalogoDisciplinaExtra: { ...(legado.catalogoDisciplinaExtra || {}), ...(externo.catalogoDisciplinaExtra || {}) },
+  };
+}
 MSEConfig.validarConfiguracaoSuprimentos(CONFIG_SUPRIMENTOS_POR_OBRA, OBRAS);
 
 // Campo agrupador do PNG "Gráficos" (`.slide-export`) por obra, quando não

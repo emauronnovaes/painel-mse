@@ -266,6 +266,13 @@ Commit desta etapa: `23798b9`.
   em etapa separada.
 - Validação: 25 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Merge profundo das configurações por obra
+
+- Corrigido o merge incremental para combinar mapas `catalogoExtra` e
+  `catalogoDisciplinaExtra` com o legado, evitando que uma obra parcialmente
+  migrada perca categorias ainda não externalizadas.
+- Validação: 26 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

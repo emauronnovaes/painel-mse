@@ -71,6 +71,10 @@ test('configuração do Porto preserva filtros estruturais e áreas canônicas',
   assert.equal(porto.mapaAreaCanonica['PATIO G1'], 'Pátio G1');
   assert.equal(porto.mapaAreaCanonica['GATE ACESSO AO PATIO G'], 'Acesso ao Pátio G');
 });
+test('merge incremental preserva catálogos legados ao adicionar regras externas', () => {
+  assert.equal(typeof config.CONFIG_SUPRIMENTOS_POR_OBRA[94].mapaAreaCanonica, 'object');
+  assert.equal(typeof config.CONFIG_SUPRIMENTOS_POR_OBRA[107].rmisExcluidos, 'object');
+});
 test('vocabulário de status mantém opções e ordem do fluxo', () => {
   assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
   assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
