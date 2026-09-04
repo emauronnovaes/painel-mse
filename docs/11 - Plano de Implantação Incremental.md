@@ -389,6 +389,11 @@ Commit desta etapa: `23798b9`.
   `id_obra=107`.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Segunda fatia do catálogo do Novo Nordisk AP
+
+- Externalizadas categorias de painéis, instrumentação e iluminação.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
