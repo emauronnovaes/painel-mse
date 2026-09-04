@@ -188,6 +188,17 @@ Commit desta etapa: `23798b9`.
 - Mantidos o fallback do Tour 360°, a prioridade da ortofoto e a data da foto.
 - Validação: 16 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Listas de configuração de Suprimentos
+
+- Externalizados `OBRAS_SUPRIMENTOS_VALIDADAS`,
+  `OBRAS_STATUS_MANUAL_DESATIVADO`,
+  `NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA` e
+  `OBRAS_SEM_EXPORTACAO_GRAFICOS`.
+- Removida a cópia legada do mapa de nível de exportação do HTML.
+- O grande `CONFIG_SUPRIMENTOS_POR_OBRA` permanece para uma etapa separada,
+  pois contém regras e exceções específicas por obra.
+- Validação: 17 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

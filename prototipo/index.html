@@ -5679,7 +5679,7 @@ function ehItemCanteiroRmi(descricao){
 // verdade, "Change Order" já bate o regex de balde existente): 71% do
 // valor coberto SEM NENHUM ajuste. Só 2 achados pontuais (ver
 // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
-const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91, 114]);
+const OBRAS_SUPRIMENTOS_VALIDADAS = MSEConfig.OBRAS_SUPRIMENTOS_VALIDADAS;
 
 // Status MANUAL desativado por obra (pedido explícito, 2026-09-02: "IPEN
 // ainda exibe as flags manuais? Descarte-as por hora") — a IPEN (114) já
@@ -5693,7 +5693,7 @@ const OBRAS_SUPRIMENTOS_VALIDADAS = new Set([106, 110, 94, 107, 108, 91, 114]);
 // editável — só mostra o automático, decorativo. Os 26 registros
 // continuam intactos no Supabase (não apagados, "por hora" = reversível),
 // só deixam de ser lidos/editáveis por essa obra.
-const OBRAS_STATUS_MANUAL_DESATIVADO = new Set([114]);
+const OBRAS_STATUS_MANUAL_DESATIVADO = MSEConfig.OBRAS_STATUS_MANUAL_DESATIVADO;
 // Ajustes específicos por obra, além da régua padrão (desenhada e
 // validada pro CP029) — cada obra nova entra aqui só com o que
 // realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
@@ -6427,18 +6427,7 @@ const CONFIG_SUPRIMENTOS_POR_OBRA = {
 // (`ModuloSuprimentos`) pra cada obra/motivo. Só entra aqui obra que
 // precisa de `it.area` SEM `trocarAreaDisciplina` (a IPEN já cai no default
 // via esse mecanismo, não precisa de entrada aqui).
-const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = {
-  107: 'area', // Novo Nordisk - AP — pedido explícito (2026-09-01); área = nome da RMI (`usarNomeRmiComoArea`)
-  108: 'area', // Novo Nordisk - AP - Reforço — pedido explícito (2026-09-01)
-  // Hitachi — pedido explícito (2026-09-01): "primeiro nível". Entrada
-  // NA PRÁTICA redundante com o default (`areaObrigatoria:false` faz
-  // `it.area` e `it.disciplina` saírem IDÊNTICOS pra essa obra — não
-  // existe camada de área separada, ver `areaArvore`/`disciplinaArvore`
-  // no `useMemo` de `arvore`) — mantida explícita mesmo assim, documenta
-  // a regra da obra e blinda contra o dia em que Hitachi ganhar uma
-  // camada de área de verdade (deixaria de ser redundante sem avisar).
-  110: 'area',
-};
+const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = MSEConfig.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA;
 
 // Obra sem regra de exportação de gráficos (botão "Gráficos PNG" nem
 // aparece) — pedido explícito (2026-09-01: "Porto não vai ter botão do
@@ -6446,7 +6435,7 @@ const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = {
 // padrão": Porto Itapoá ainda não teve seu layout de exportação definido,
 // então não expõe um botão que cairia no agrupamento genérico por
 // adivinhação.
-const OBRAS_SEM_EXPORTACAO_GRAFICOS = new Set([94]); // Porto Itapoá
+const OBRAS_SEM_EXPORTACAO_GRAFICOS = MSEConfig.OBRAS_SEM_EXPORTACAO_GRAFICOS;
 
 // Coluna "Status" — pedido explícito (2026-08-24): "vamos chamar de
 // coluna de status e classificar em finalizado, em andamento e

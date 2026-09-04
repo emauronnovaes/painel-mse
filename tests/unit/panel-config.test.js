@@ -25,6 +25,12 @@ test('configurações de apresentação preservam foto, tour e ortofoto', () => 
   assert.match(config.OBRA_TOUR_360[106], /^https:\/\/visi\.constructin\.com\.br/);
   assert.deepEqual(config.OBRA_ORTOFOTO[94], { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' });
 });
+test('configurações de Suprimentos preservam escopo e exportação', () => {
+  assert.equal(config.OBRAS_SUPRIMENTOS_VALIDADAS.has(114), true);
+  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.has(114), true);
+  assert.equal(config.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[107], 'area');
+  assert.equal(config.OBRAS_SEM_EXPORTACAO_GRAFICOS.has(94), true);
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });
