@@ -91,6 +91,8 @@ test('Porto expõe primeira fatia externa do catálogo de materiais', () => {
   assert.equal(catalogo['Agregados (Areia/Brita)'][0] instanceof RegExp, true);
   assert.equal(catalogo['Estrutura e Suportação Metálica'].length, 8);
   assert.equal(catalogo.Painéis.length, 5);
+  assert.equal(catalogo['Combate a Incêndio'].length, 6);
+  assert.equal(catalogo['Sinalização de Segurança'].length, 5);
 });
 test('obras integralmente migradas não mantêm bloco ativo duplicado no HTML', () => {
   const html = fs.readFileSync(require('node:path').join(__dirname, '../../prototipo/index.html'), 'utf8');

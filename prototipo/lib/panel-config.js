@@ -176,6 +176,11 @@
         'Estrutura e Suportação Metálica': Object.freeze(['ESTRUTURA METALICA', 'TELHA METALICA', 'CORRIMAO', 'GUARDA-CORPO', 'CHAPA DE ACO', 'PERFIL U', 'TELHA', 'GRAMPO C']),
         'Iluminação': Object.freeze(['ILUMINACAO', 'EVERLED', 'CITYLED', 'REFLETOR']),
         'Painéis': Object.freeze(['ELETROCENTRO', /^QD/, /^QL-/, 'QGBT', 'DISJUNTOR']),
+        'Combate a Incêndio': Object.freeze(['EXTINTOR', 'STORZ', 'MANGUEIRA TIPO', 'ABRIGO P/MANGUEIRA', 'TAMPAO CEGO', 'REGISTRO GLOBO ANGULAR']),
+        'Detecção e Alarme': Object.freeze(['ACIONADOR MANUAL', 'INDICADOR AUDIOVISUAL', 'ALARME PNE', 'BOTAO PNE', 'CAIXA INSTA ACIONADOR']),
+        'Acoplamentos e Conexões Ranhuradas': Object.freeze(['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO']),
+        'Sinalização de Segurança': Object.freeze(['PLACA FOTO', 'PLACA DE SINALIZACAO', 'PLACAS DE SINALIZACAO', 'PLACA SINALIZACAO', 'FAIXA DE PEDESTRE']),
+        'Dispositivos Elétricos (Tomadas/Interruptores)': Object.freeze(['TOMADA', 'INTERRUPTOR', 'RABICHO']),
       }),
     }),
   });
