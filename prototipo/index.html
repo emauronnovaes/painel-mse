@@ -5699,54 +5699,6 @@ const OBRAS_STATUS_MANUAL_DESATIVADO = MSEConfig.OBRAS_STATUS_MANUAL_DESATIVADO;
 // realmente diverge pra ela (ver notas acima e [[painel-mse-suprimentos]]
 // na memória do projeto pro histórico de cada achado).
 const CONFIG_SUPRIMENTOS_POR_OBRA_LEGACY = {
-  110: {
-    areaObrigatoria: false, escopoNivel0: true, rotulo: 'Escopo', curvaAObrigatoria: false,
-    // Pedido explícito (2026-08-25): "vamos manter os macros com cp281,
-    // cp001 e co0006 [cp006]. Os demais macros e suas filhas podem ser
-    // suprimidos" — só escopos (nível 0) cuja descrição bate um desses
-    // códigos entram na árvore; o resto (RMI 264 inteira, RMI 286
-    // inteira, e os escopos de RMI 275 sem código) fica de fora.
-    escoposPermitidos: ['cp281', 'cp001', 'cp006'],
-    // Categorias específicas da Hitachi pro catálogo de materiais
-    // padrão (ver `catalogoEfetivoRmi`/`CATALOGO_MATERIAIS_RMI`) —
-    // validado contra os 202 materiais dos 4 escopos permitidos
-    // (2026-08-25): cobertura do catálogo base foi de 79% pro 96% do
-    // valor com essas 6 entradas. Isoladas nesta obra por pedido
-    // explícito ("é possível separar as categorias por id_obra? Para
-    // evitar a contaminação") — o CP029 nunca vê essas palavras-chave.
-    catalogoExtra: {
-      'Isoladores': ['ISOL. CERAM', 'ISOLADOR CERAMICO', 'ISOLADOR EPOXI', 'ISOLADOR SUPORTE'],
-      'Barramentos (AT)': ['TUBO AL EXTRUD', 'BARRA PERF. AL', 'BARRA CIRCULAR', 'BARRA RETANGULAR DE COBRE', 'BARRA CHATA DE ALUMINIO'],
-      // Fonte usa pontuação inconsistente pro mesmo termo ("CONEC. SUP"
-      // × "CONEC SUP" sem ponto) — as duas variantes de cada palavra
-      // entram de propósito, achado testando (2026-08-25).
-      'Conectores e Ferragens de Linha (AT)': ['CONEC. SUP', 'CONEC SUP', 'CONECT. SUP', 'CONECT SUP', 'CONECT. TERM', 'CONECT TERM', 'CONEC TERMINAL', 'CONECT. EMENDA', 'CONECT EMENDA', 'CONEC. EMENDA', 'CONEC EMENDA'],
-      // Categorias novas (2ª rodada de validação, 2026-08-25 — "ainda
-      // tem vários itens caindo em item específico, fora do catálogo").
-      'Controle de Acesso': ['LEITOR BIOMETRICO', 'FECHADURA ELETROMAGNETICA', 'SENSOR MAGNETICO', 'BOTOEIRA'],
-      // "PARARAFUSO" (typo de origem p/ "PARAFUSO") e "PORCA SEX"
-      // (abreviação de "sextavada") entram como variantes de propósito.
-      'Parafusos e Fixação': ['PARAFUSO', 'PARARAFUSO', 'CHUMBADOR', 'ARRUELA', 'PORCA QUADRADA', 'PORCA SEXTAVADA', 'PORCA SEX'],
-      'Equipamentos de TI': ['NOTEBOOK'],
-      // Extensões de categorias já existentes no catálogo base — a
-      // união (`catalogoEfetivoRmi`) soma às palavras-chave do CP029,
-      // não substitui, e só vale dentro do catálogo efetivo da Hitachi.
-      // `SUPORTE` bare só é seguro aqui PORQUE é isolado por obra — no
-      // catálogo base (CP029) isso teria o mesmo risco de contaminação
-      // genérica do caso Chiller/Mola, por isso nunca vai pra lá.
-      // `SUPORTE` sozinho já cobre "SUPORTE METALICO", "SUPORTE
-      // FIXAÇÃO ISOLADORES" etc. (substring) — sem repetir as variantes
-      // específicas de propósito.
-      'Estrutura e Suportação Metálica': ['SUPORTE', 'PERFIL U EM ACO', 'PERFIL Z', 'CHAPA EM ACO GALVANIZADO'],
-      'Tubulação Aço Carbono': ['TUBO ACO PTO NBR', 'RED CONC PTO', 'TE 90º ACO PRETO', 'ACO PRETO A-234', 'CAP ACO CARBONO'],
-      'Acoplamentos e Conexões Ranhuradas': ['ACOPLAMENTO RIGIDO', 'ACOPLAMENTO DE REDUCAO', 'TEE RANHURADO', 'GRAMPO U', 'CRUZETA EM ACO', 'CAP RANHURADO'],
-      'Automação e Controle': ['CORTINA DE LUZ'],
-      'Combate a Incêndio': ['WATER SPRAY', 'PROJETOR DE ALTA VAZAO'],
-      'Cabos': ['COND COBRE NU', 'TERMINAL COMPRESSAO'],
-      'Rede/Cabeamento Estruturado': ['KIT DE ANCORAGEM', 'PARA DIO'],
-      'Eletrodutos e Infraestrutura Elétrica': ['PERF FGF', 'PARALEITO'],
-    },
-  }, // Hitachi
   114: {
     // IPEN (2026-08-28) — obra pequena: nível 0 = disciplina de verdade
     // (Mecânica/Elétrica/Isolamento Térmico), resolvido sem ajuste

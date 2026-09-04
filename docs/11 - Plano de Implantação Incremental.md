@@ -295,6 +295,12 @@ Commit desta etapa: `23798b9`.
   declarativo do contrato.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Remoção do legado da Hitachi
+
+- Removido o bloco `id_obra=110` do HTML após a externalização integral.
+- A configuração passa a ter uma única fonte no módulo `panel-config.js`.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
