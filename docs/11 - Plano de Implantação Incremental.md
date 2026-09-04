@@ -340,6 +340,12 @@ Commit desta etapa: `23798b9`.
   migração progressiva.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Segunda fatia do catálogo de materiais do Porto
+
+- Externalizadas as categorias de drenagem, agregados e concreto/
+  impermeabilização, incluindo seus padrões regex específicos.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

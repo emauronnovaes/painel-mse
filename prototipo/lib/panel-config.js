@@ -170,6 +170,9 @@
         'Geradores': Object.freeze(['GRUPO GERADOR', 'GERADOR DIESEL']),
         'Transformadores': Object.freeze(['TRANSFORMADOR']),
         'Aterramento': Object.freeze(['ATERRAMENTO', 'CARTUCHO SOLDA', 'MOLDE EXOTERMICO', 'HASTE AC', 'TERMINAL AEREO', 'CAIXA EQUIPOTENCIAL']),
+        'Drenagem (tubos e acessórios)': Object.freeze(['TUBO PEAD', 'BOCA DE LOBO', 'POCO DE VISITA', 'CAIXA PRE-MOLDADA', 'TAMPA EM FERRO FUNDIDO', 'COMPORTA METALICA', 'PVC ESGOTO', 'PVC ESG', 'CAIXA INSPECAO', 'FERRO FUND', 'PEAD', 'CALHA', 'COMPORTA']),
+        'Agregados (Areia/Brita)': Object.freeze([/^AREIA$/, 'LASTRO DE BRITA', 'LASTRO BRITA']),
+        'Concreto e Impermeabilização': Object.freeze(['ARGAMASSA POLIMERICA', 'IMPERMEABILIZACAO', 'ESPACADOR', 'TELA Q']),
       }),
     }),
   });
