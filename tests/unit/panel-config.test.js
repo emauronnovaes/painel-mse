@@ -72,8 +72,9 @@ test('configuração do Porto preserva filtros estruturais e áreas canônicas',
   assert.equal(porto.mapaAreaCanonica['GATE ACESSO AO PATIO G'], 'Acesso ao Pátio G');
 });
 test('merge incremental preserva catálogos legados ao adicionar regras externas', () => {
-  assert.equal(typeof config.CONFIG_SUPRIMENTOS_POR_OBRA[94].mapaAreaCanonica, 'object');
-  assert.equal(typeof config.CONFIG_SUPRIMENTOS_POR_OBRA[107].rmisExcluidos, 'object');
+  const merged = config.mesclarConfiguracaoSuprimentos({ 94: { catalogoExtra: { Base: ['BASE'] } } }, { 94: { rmisExcluidos: [182], catalogoExtra: { Externa: ['EXTERNA'] } } });
+  assert.deepEqual(merged[94].rmisExcluidos, [182]);
+  assert.deepEqual(merged[94].catalogoExtra, { Base: ['BASE'], Externa: ['EXTERNA'] });
 });
 test('Porto expõe catálogo externo de disciplinas', () => {
   const disciplinas = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoDisciplinaExtra;

@@ -288,6 +288,13 @@ Commit desta etapa: `23798b9`.
   tipos inválidos antes das próximas extrações.
 - Validação: 27 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Merge extraído para função de configuração
+
+- O merge profundo foi movido do HTML para `MSEConfig.mesclarConfiguracaoSuprimentos`.
+- A função recebeu teste unitário direto, mantendo o HTML apenas como consumidor
+  declarativo do contrato.
+- Validação: 27 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

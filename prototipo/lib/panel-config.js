@@ -208,5 +208,18 @@
     }
     return true;
   }
-  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, CONFIG_SUPRIMENTOS_POR_OBRA, validarConfiguracao, validarConfiguracaoSuprimentos });
+  function mesclarConfiguracaoSuprimentos(legado, externo) {
+    const resultado = { ...(legado || {}) };
+    for (const [obraId, regrasExternas] of Object.entries(externo || {})) {
+      const regrasLegadas = resultado[obraId] || {};
+      resultado[obraId] = {
+        ...regrasLegadas,
+        ...regrasExternas,
+        catalogoExtra: { ...(regrasLegadas.catalogoExtra || {}), ...(regrasExternas.catalogoExtra || {}) },
+        catalogoDisciplinaExtra: { ...(regrasLegadas.catalogoDisciplinaExtra || {}), ...(regrasExternas.catalogoDisciplinaExtra || {}) },
+      };
+    }
+    return resultado;
+  }
+  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, CONFIG_SUPRIMENTOS_POR_OBRA, validarConfiguracao, validarConfiguracaoSuprimentos, mesclarConfiguracaoSuprimentos });
 }));
