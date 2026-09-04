@@ -332,6 +332,14 @@ Commit desta etapa: `23798b9`.
   cobertura já validada.
 - Validação: 28 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Primeira fatia do catálogo de materiais do Porto
+
+- Externalizadas as categorias `Geradores`, `Transformadores` e `Aterramento`
+  do Porto Itapoá.
+- A união por categoria mantém as demais palavras-chave no legado durante a
+  migração progressiva.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

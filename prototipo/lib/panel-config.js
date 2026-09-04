@@ -166,6 +166,11 @@
         'Cancela': Object.freeze(['CANCELA']),
         'Cercamento': Object.freeze(['VIGA BALDRAME']),
       }),
+      catalogoExtra: Object.freeze({
+        'Geradores': Object.freeze(['GRUPO GERADOR', 'GERADOR DIESEL']),
+        'Transformadores': Object.freeze(['TRANSFORMADOR']),
+        'Aterramento': Object.freeze(['ATERRAMENTO', 'CARTUCHO SOLDA', 'MOLDE EXOTERMICO', 'HASTE AC', 'TERMINAL AEREO', 'CAIXA EQUIPOTENCIAL']),
+      }),
     }),
   });
   function validarConfiguracao(obras, setores) {

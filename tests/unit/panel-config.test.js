@@ -82,6 +82,12 @@ test('Porto expõe catálogo externo de disciplinas', () => {
   assert.deepEqual(disciplinas['Caixas e Eletrodutos'], ['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS']);
   assert.deepEqual(disciplinas['Cercamento'], ['VIGA BALDRAME']);
 });
+test('Porto expõe primeira fatia externa do catálogo de materiais', () => {
+  const catalogo = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoExtra;
+  assert.deepEqual(catalogo.Geradores, ['GRUPO GERADOR', 'GERADOR DIESEL']);
+  assert.deepEqual(catalogo.Transformadores, ['TRANSFORMADOR']);
+  assert.equal(catalogo.Aterramento.length, 6);
+});
 test('obras integralmente migradas não mantêm bloco ativo duplicado no HTML', () => {
   const html = fs.readFileSync(require('node:path').join(__dirname, '../../prototipo/index.html'), 'utf8');
   for (const id of [110, 108, 91, 114]) {
