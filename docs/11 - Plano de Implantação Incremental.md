@@ -374,6 +374,15 @@ Commit desta etapa: `23798b9`.
   os limites regex do fallback de descrições.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Catálogo civil restante do Porto externalizado
+
+- Externalizadas as famílias civis restantes do Porto: terraplanagem,
+  geossintéticos, drenos, pavimentação, fundações, formas, ETA/ETE,
+  contêineres e pesagem.
+- Esta etapa conclui a migração das categorias específicas do Porto para o
+  módulo externo, mantendo o merge com o catálogo base.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir
