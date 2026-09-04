@@ -457,42 +457,14 @@ const OBRAS = MSEConfig.OBRAS;
 // importação a partir destes". O `CONTRATOS_CP` hardcoded que vivia aqui
 // (valores vindos por chat em 2026-08-10, `fd` provisório) saiu de uso.
 
-// Mesmas fotos já usadas nos cards do dashboard atual (OBRA_VIDEOS) — reaproveitadas
-// como textura de fundo no cabeçalho (preto e branco, bem transparente).
-const OBRA_FOTOS = {
-  106: 'assets/images/cnpem-faseado.jpg',
-  110: 'assets/images/hitachi.jpg',
-  94:  'assets/images/porto.jpg',
-  107: 'assets/images/AP.jpg',
-  108: 'assets/images/reforço.jpg',
-  91:  'assets/images/UB.jpg',
-};
+const OBRA_FOTOS = MSEConfig.OBRA_FOTOS;
 
 const SETORES = MSEConfig.SETORES;
 MSEConfig.validarConfiguracao(OBRAS, SETORES);
 
-// Provisório — link do tour 360° (Constructin) por obra. Só a CNPEM - Faseado
-// (id 106) tem link cadastrado por enquanto; outras obras caem no estado
-// "indisponível" dentro de ModuloTour360.
-const OBRA_TOUR_360 = {
-  // Link atualizado em 2026-08-19 (o anterior usava a rota `#/tour/...`;
-  // este usa `#/v?t=...&p=...` — mesmo projeto Constructin, `p=10971`
-  // bate com o `10971` do link antigo, por isso a troca ficou na mesma
-  // obra em vez de virar uma 2ª entrada).
-  106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
-};
+const OBRA_TOUR_360 = MSEConfig.OBRA_TOUR_360;
 
-// Ortofoto (pirâmide Deep Zoom, gerada por scripts/gerar-ortofoto-tiles.js
-// a partir de assets/images/ORTOFOTO.jpg) no lugar do Tour 360° — só a
-// Porto Itapoá (id 94) tem ortofoto cadastrada por ora. Checada ANTES de
-// `OBRA_TOUR_360` dentro de `ModuloTour360` (pedido explícito, 2026-08-25).
-// `data` = data em que a foto foi tirada (pedido explícito, 2026-09-03:
-// "coloque uma badge da data da foto") — exibida em `ModuloOrtofoto`, ISO
-// (`YYYY-MM-DD`) pra passar direto por `fmtDataLonga`. Atualizar aqui
-// sempre que uma ortofoto nova substituir a atual.
-const OBRA_ORTOFOTO = {
-  94: { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' },
-};
+const OBRA_ORTOFOTO = MSEConfig.OBRA_ORTOFOTO;
 
 // Nome da aba "Tour 360°" vira "Ortofoto" pra quem tem ortofoto cadastrada
 // (pedido explícito, 2026-08-25) — usado na aba (TabsSetores) e no título

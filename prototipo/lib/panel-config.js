@@ -27,6 +27,17 @@
     { num: 8, slug: 'medicoes', label: 'Medições', estado: 'pronto' },
     { num: 9, slug: 'tour-360', label: 'Tour 360°', estado: 'pronto' },
   ]);
+  const OBRA_FOTOS = Object.freeze({
+    106: 'assets/images/cnpem-faseado.jpg', 110: 'assets/images/hitachi.jpg',
+    94: 'assets/images/porto.jpg', 107: 'assets/images/AP.jpg',
+    108: 'assets/images/reforço.jpg', 91: 'assets/images/UB.jpg',
+  });
+  const OBRA_TOUR_360 = Object.freeze({
+    106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
+  });
+  const OBRA_ORTOFOTO = Object.freeze({
+    94: Object.freeze({ dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' }),
+  });
   function validarConfiguracao(obras, setores) {
     if (!Array.isArray(obras) || !Array.isArray(setores)) throw new Error('Configuração do painel inválida: obras e setores devem ser listas');
     const ids = obras.map(obra => obra.id);
@@ -38,5 +49,5 @@
     if (setores.some(setor => !Number.isInteger(setor.num) || !setor.label)) throw new Error('Configuração do painel inválida: setor sem número ou rótulo');
     return true;
   }
-  return Object.freeze({ OBRAS, SETORES, validarConfiguracao });
+  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, validarConfiguracao });
 }));

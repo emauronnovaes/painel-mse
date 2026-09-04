@@ -179,6 +179,15 @@ Commit desta etapa: `23798b9`.
 - `MSEConfig.OBRAS` passou a ser a única fonte de configuração de obras.
 - Validação: 15 testes unitários e 9 rotas Playwright aprovados após a remoção.
 
+### 2026-09-04 — Configurações de apresentação externalizadas
+
+- Movidos `OBRA_FOTOS`, `OBRA_TOUR_360` e `OBRA_ORTOFOTO` para
+  `prototipo/lib/panel-config.js`.
+- Removidas as cópias legadas do HTML; cada configuração agora possui uma
+  única fonte declarativa.
+- Mantidos o fallback do Tour 360°, a prioridade da ortofoto e a data da foto.
+- Validação: 16 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

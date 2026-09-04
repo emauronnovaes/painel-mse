@@ -20,6 +20,11 @@ test('OBRAS preserva contratos e curvas alternativas', () => {
   assert.equal(config.OBRAS.find(obra => obra.id === 91).curvas[0].label, 'Take-Off');
   assert.equal(config.OBRAS.find(obra => obra.id === 114).origemCP, undefined);
 });
+test('configurações de apresentação preservam foto, tour e ortofoto', () => {
+  assert.equal(config.OBRA_FOTOS[106], 'assets/images/cnpem-faseado.jpg');
+  assert.match(config.OBRA_TOUR_360[106], /^https:\/\/visi\.constructin\.com\.br/);
+  assert.deepEqual(config.OBRA_ORTOFOTO[94], { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' });
+});
 test('validarConfiguracao rejeita IDs de obra duplicados', () => {
   assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
 });
