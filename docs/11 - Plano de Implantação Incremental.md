@@ -383,6 +383,12 @@ Commit desta etapa: `23798b9`.
   módulo externo, mantendo o merge com o catálogo base.
 - Validação: 29 testes unitários e 9 rotas Playwright aprovados.
 
+### 2026-09-04 — Primeira fatia do catálogo do Novo Nordisk AP
+
+- Externalizadas plataformas/escadas, conexões de tubulação e fixação da obra
+  `id_obra=107`.
+- Validação: 29 testes unitários e 9 rotas Playwright aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

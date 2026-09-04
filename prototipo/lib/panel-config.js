@@ -106,6 +106,11 @@
       usarNomeRmiComoArea: true,
       curvaAObrigatoria: false,
       descricoesExcluidas: Object.freeze(['CORTADORES DE TUBOS']),
+      catalogoExtra: Object.freeze({
+        'Plataformas e Escadas Metálicas': Object.freeze(['PLATAFORMA DE ACO', 'ESCADA DE EMERGENCIA']),
+        'Conexões e Acessórios de Tubulação': Object.freeze([/\bTE\b/, 'LUVA DE REDUCAO', 'CURVA DE 90', 'DRENO LIMPO', 'CURVA DE 45', 'CAP EM ACO', 'REDUCAO CONCENTRICA', 'REDUCAO EXCENTRICA', 'JUNTA TIPO PLANA', 'MANGUEIRA FLEXIVEL EM ACO', 'CPVC', 'COTOVELO', 'TEE', 'CURVA RL', 'PIPE', 'CAP (PLUGUE', 'TAMPAO TIPO CAP', 'CRUZETA', 'MEIA UNIAO', 'NIPLE TC', 'CONDUITE', /\bCAP\b/, 'TAMPAO', 'CURVA 45', /\bELBOW\b/, /\bWYE\b/, 'UNIAO EM ACO', 'UNIAO 3', 'MEIO ACOPLAMENTO', 'NIPLE', 'JUNTA PAPELAO', 'JUNTA EPDM', 'JUNTA DE VEDACAO', 'TAMPA DE ACOPLAMENTO', 'TAMPA CEGA', 'MEIA LUVA', 'ADAPTADOR DE PENETRACAO', 'COLA SOLVENTE', 'CONVERTER TUBOS', 'LUVA EM ACO', 'PLACA CEGA']),
+        'Parafusos e Fixação': Object.freeze(['PARAFUSO']),
+      }),
     }),
     91: Object.freeze({
       rmisExcluidos: Object.freeze([43]),
