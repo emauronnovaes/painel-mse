@@ -7115,10 +7115,8 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // compra é necessário também") — status que já indica alguma requisição
   // em andamento NÃO vira Atrasado só por causa da data, só a ausência
   // completa de requisição ativa.
-  const statusAtrasadoOuPendente = (it) => {
-    if (it.dataNecessidadeCompra && parseDataFlexivel(it.dataNecessidadeCompra) < new Date(new Date().toDateString())) return 'Atrasado';
-    return 'Pendente';
-  };
+  const statusAtrasadoOuPendente = (it) =>
+    MSEDomain.statusAtrasadoOuPendente(it.dataNecessidadeCompra);
   // Status de UM item FOLHA só (nunca uma família — `requisicoesDaLinha`
   // aqui sempre recebe um objeto sem `itensOriginais`, cai pra `[folha]`,
   // fica escopado só a ele). Pedido explícito (2026-09-02): "Entregue e
@@ -7135,11 +7133,9 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // `data_cadastro` mais recente — mesma regra provisória de antes,
   // continua sem regra oficial de desempate definida.
   const statusItemFolha = (folha) => {
-    if (folha.finalizado) return 'Entregue';
     const reqs = requisicoesDaLinha(folha);
-    if (reqs.length === 0) return statusAtrasadoOuPendente(folha);
-    const vencedora = reqs.reduce((melhor, r) => (!melhor || (r.data_cadastro || '') > (melhor.data_cadastro || '')) ? r : melhor, null);
-    const st = vencedora.status_requisicao;
+    return MSEDomain.statusItemFolha(folha, reqs);
+    /*
     // Revisado em 2026-09-03 (pedido explícito: "'Aprovado' será igual a
     // 'Comprado'") — Aprovado conta como Comprado (entra na regra de
     // Parcial do agrupado: só vira "Comprado" pleno se TODAS as folhas da
@@ -7158,6 +7154,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
     if (st === 'Comprado' || st === 'Aprovado') return 'Comprado';
     if (st === 'Em Aberto' || st === 'EmAprovacao' || st === 'EmCotacao') return 'Em cotação';
     return statusAtrasadoOuPendente(folha);
+    */
   };
   // Ordem de estágio (do mais pro menos avançado) — usada só pra achar o
   // "mais próximo do final" abaixo, não é exibida. "Em Andamento"/
@@ -7184,12 +7181,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   // só, "algum"/"todos" coincidem, cai direto no status dele.
   const statusAutomaticoItem = (it) => {
     const folhas = it.itensOriginais || [it];
-    const statusPorFolha = folhas.map(statusItemFolha);
-    const melhorRank = Math.max(...statusPorFolha.map(s => RANK_STATUS_ITEM[s] ?? 0));
-    if (melhorRank === 4) return statusPorFolha.every(s => s === 'Entregue') ? 'Entregue' : 'Entregue Parcial';
-    if (melhorRank === 3) return 'Comprado';
-    if (melhorRank === 1) return 'Em cotação';
-    return statusPorFolha.includes('Atrasado') ? 'Atrasado' : 'Pendente';
+    return MSEDomain.statusAutomaticoItem(folhas, requisicoesDaLinha);
   };
   // Pop-up do Farol Financeiro (Valor/Total Consumido/Saldo) — pedido
   // explícito (2026-08-24): "vamos trocar o tooltip por um pop-up".

@@ -130,6 +130,20 @@ Commit: `17598b4` (utilitários iniciais) e alterações desta etapa em andament
 
 Commit desta etapa: `50ca963`.
 
+### 2026-09-04 — Status e agregação de Suprimentos
+
+- Extraídos `statusAtrasadoOuPendente`, `statusItemFolha` e
+  `statusAutomaticoItem` para o módulo de domínio.
+- Mantida a precedência: item finalizado → Entregue; `Aprovado` → Comprado;
+  `Em Aberto`/`EmAprovacao`/`EmCotacao` → Em cotação; sem requisição ativa →
+  Atrasado ou Pendente pela data de necessidade.
+- Mantida a agregação de famílias: todos entregues → Entregue; parte entregue
+  → Entregue Parcial; qualquer comprado → Comprado.
+- A camada visual continua decidindo apenas cores, badges e rótulos.
+- Validação: 10 testes unitários e 9 rotas Playwright aprovados.
+
+Commit desta etapa: `23798b9`.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

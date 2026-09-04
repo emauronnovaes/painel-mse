@@ -56,3 +56,15 @@ test('monitoramentoBase só calcula restrições abertas e prioriza atraso', () 
   assert.equal(domain.monitoramentoBase('2026-09-20', 'Aberto', 'Alta', hoje).texto, 'Em risco');
   assert.equal(domain.monitoramentoBase('2026-10-01', 'Aberto', 'Baixa', hoje).texto, 'No prazo');
 });
+test('statusItemFolha aplica precedência de finalizado e status da requisição', () => {
+  const hoje = new Date(2026, 8, 4, 12);
+  assert.equal(domain.statusItemFolha({ finalizado: true }, [], hoje), 'Entregue');
+  assert.equal(domain.statusItemFolha({ dataNecessidadeCompra: '2026-09-03' }, [], hoje), 'Atrasado');
+  assert.equal(domain.statusItemFolha({ dataNecessidadeCompra: '2026-09-03' }, [{ status_requisicao: 'Aprovado', data_cadastro: '2026-09-01' }], hoje), 'Comprado');
+  assert.equal(domain.statusItemFolha({}, [{ status_requisicao: 'EmAprovacao', data_cadastro: '2026-09-01' }], hoje), 'Em cotação');
+});
+test('statusAutomaticoItem agrega entrega parcial e compra', () => {
+  const reqs = folha => folha.req ? [folha.req] : [];
+  assert.equal(domain.statusAutomaticoItem([{ finalizado: true }, { finalizado: false }], reqs), 'Entregue Parcial');
+  assert.equal(domain.statusAutomaticoItem([{ req: { status_requisicao: 'Comprado', data_cadastro: '2026-09-01' } }, { finalizado: false }], reqs), 'Comprado');
+});

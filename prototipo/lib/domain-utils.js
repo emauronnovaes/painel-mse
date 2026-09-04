@@ -72,5 +72,30 @@
     if (diasRestantes <= 7 || (criticidade || '').trim().toLowerCase() === 'alta') return { texto: 'Em risco', ordem: 1 };
     return { texto: 'No prazo', ordem: 2 };
   }
-  return Object.freeze({ parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana, criticidadeBase, monitoramentoBase });
+  function statusAtrasadoOuPendente(dataNecessidadeCompra, hoje = new Date()) {
+    if (dataNecessidadeCompra) {
+      const data = parseDataFlexivel(dataNecessidadeCompra);
+      const inicioHoje = new Date(hoje); inicioHoje.setHours(0, 0, 0, 0);
+      if (data && data < inicioHoje) return 'Atrasado';
+    }
+    return 'Pendente';
+  }
+  function statusItemFolha(folha, requisicoes, hoje = new Date()) {
+    if (folha.finalizado) return 'Entregue';
+    if (!requisicoes || requisicoes.length === 0) return statusAtrasadoOuPendente(folha.dataNecessidadeCompra, hoje);
+    const vencedora = requisicoes.reduce((melhor, atual) => (!melhor || (atual.data_cadastro || '') > (melhor.data_cadastro || '')) ? atual : melhor, null);
+    if (vencedora.status_requisicao === 'Comprado' || vencedora.status_requisicao === 'Aprovado') return 'Comprado';
+    if (['Em Aberto', 'EmAprovacao', 'EmCotacao'].includes(vencedora.status_requisicao)) return 'Em cotação';
+    return statusAtrasadoOuPendente(folha.dataNecessidadeCompra, hoje);
+  }
+  function statusAutomaticoItem(folhas, requisicoesPorFolha, hoje = new Date()) {
+    const status = folhas.map(folha => statusItemFolha(folha, requisicoesPorFolha(folha) || [], hoje));
+    const ranks = { Entregue: 4, Comprado: 3, 'Em cotação': 1, Atrasado: 0, Pendente: 0 };
+    const melhor = Math.max(...status.map(item => ranks[item] ?? 0));
+    if (melhor === 4) return status.every(item => item === 'Entregue') ? 'Entregue' : 'Entregue Parcial';
+    if (melhor === 3) return 'Comprado';
+    if (melhor === 1) return 'Em cotação';
+    return status.includes('Atrasado') ? 'Atrasado' : 'Pendente';
+  }
+  return Object.freeze({ parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana, criticidadeBase, monitoramentoBase, statusAtrasadoOuPendente, statusItemFolha, statusAutomaticoItem });
 }));
