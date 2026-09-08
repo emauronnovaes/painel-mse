@@ -440,6 +440,23 @@ Commit desta etapa: `23798b9`.
 - `npm run test:all` executado com sucesso: 29 testes unitários, 9 rotas
   gerais e 7 rotas de Suprimentos por obra aprovados.
 
+### 2026-09-08 — Comparação de Suprimentos antes/depois
+
+- Criado `scripts/compare-supply-baseline.cjs` para abrir em paralelo o backup
+  de 04/09 e a versão atual nas sete obras habilitadas.
+- A comparação cobre estado da tela, grupos visíveis, sinais agregados e o
+  resultado dos filtros de status comuns às duas execuções.
+- A validação encontrou uma regressão real na Hitachi: o merge criava
+  `catalogoDisciplinaExtra: {}` mesmo quando essa configuração não existia;
+  por ser um objeto verdadeiro em JavaScript, simplificava indevidamente
+  “AUTOMAÇÃO (CP001)” para “AUTOMAÇÃO E CONTROLE”.
+- Corrigida a semântica de ausência do catálogo e adicionado teste unitário.
+- Resultado final: paridade estrutural nas sete obras e paridade dos filtros
+  comuns. Consultas paginadas podem expor status adicionais em uma das
+  execuções quando a fonte muda durante o teste; isso fica registrado como
+  cobertura adicional e não mascara divergência de contagem em status comuns.
+- Validação: 30 testes unitários aprovados.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

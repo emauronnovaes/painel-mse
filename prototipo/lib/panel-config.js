@@ -276,8 +276,17 @@
         ...regrasLegadas,
         ...regrasExternas,
         catalogoExtra: mesclarCatalogo(regrasLegadas.catalogoExtra, regrasExternas.catalogoExtra),
-        catalogoDisciplinaExtra: mesclarCatalogo(regrasLegadas.catalogoDisciplinaExtra, regrasExternas.catalogoDisciplinaExtra),
       };
+      // Ausência tem significado: só obras com este catálogo devem
+      // simplificar nomes de disciplina. Um objeto vazio é truthy e ativava
+      // essa regra por acidente após a externalização (Hitachi: “AUTOMAÇÃO
+      // (CP001)” passava a “AUTOMAÇÃO E CONTROLE”).
+      if (regrasLegadas.catalogoDisciplinaExtra || regrasExternas.catalogoDisciplinaExtra) {
+        resultado[obraId].catalogoDisciplinaExtra = mesclarCatalogo(
+          regrasLegadas.catalogoDisciplinaExtra,
+          regrasExternas.catalogoDisciplinaExtra,
+        );
+      }
     }
     return resultado;
   }

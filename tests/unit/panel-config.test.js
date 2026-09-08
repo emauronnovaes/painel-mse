@@ -84,6 +84,13 @@ test('merge incremental preserva catálogos legados ao adicionar regras externas
   assert.deepEqual(merged[94].rmisExcluidos, [182]);
   assert.deepEqual(merged[94].catalogoExtra, { Cabos: ['BASE', 'EXTERNA'], Base: ['BASE'], Externa: ['EXTERNA'] });
 });
+
+test('merge não ativa catálogo de disciplina ausente', () => {
+  const merged = config.mesclarConfiguracaoSuprimentos({}, {
+    110: { catalogoExtra: { Cabos: ['CONDUTOR'] } },
+  });
+  assert.equal(Object.hasOwn(merged[110], 'catalogoDisciplinaExtra'), false);
+});
 test('Porto expõe catálogo externo de disciplinas', () => {
   const disciplinas = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoDisciplinaExtra;
   assert.deepEqual(disciplinas['Caixas e Eletrodutos'], ['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS']);

@@ -27,14 +27,15 @@
 
 ## Testes disponíveis
 
-- `npm run test:unit`: 29 testes unitários.
+- `npm run test:unit`: 30 testes unitários.
 - `npm run test:chromium -- tests/baseline-routes.spec.js`: 9 rotas gerais.
 - `npm run test:supply-works`: 7 obras de Suprimentos.
 - `npm run test:all`: executa o fluxo completo em sequência.
 - `tests/suprimentos.spec.js`: suíte funcional do setor, estabilizada para
   aceitar tanto estado vazio quanto tabela com dados remotos.
 
-Última validação completa: todos os testes passaram.
+Última validação unitária: todos os 30 testes passaram. A comparação
+antes/depois de Suprimentos também foi concluída nas sete obras.
 
 ## Commits recentes relevantes
 
@@ -50,13 +51,12 @@
 
 ## Pendências para retomada
 
-1. Comparar dados antes/depois por obra: itens, categorias, totais e filtros.
-2. Remover fisicamente comentários legados após a comparação.
-3. Fazer revisão visual/responsiva e validar exportações PNG.
-4. Extrair componentes React grandes ainda embutidos no HTML.
-5. Revisar performance, acessibilidade e segurança.
-6. Revisar alterações pendentes do workflow n8n e artefatos de teste.
-7. Executar `npm run test:all` antes do merge da branch.
+1. Remover fisicamente comentários legados, agora que a comparação foi concluída.
+2. Validar exportações PNG após a revisão visual/responsiva já realizada.
+3. Extrair componentes React grandes ainda embutidos no HTML.
+4. Revisar performance, acessibilidade e segurança.
+5. Revisar alterações pendentes do workflow n8n e artefatos de teste.
+6. Executar `npm run test:all` antes do merge da branch.
 
 ## Regra de continuidade
 
