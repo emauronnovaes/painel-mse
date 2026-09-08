@@ -119,13 +119,21 @@ Deno.serve(async (req) => {
 
   const alvo = `${EFETIVO_URL}/rest/v1/${relacao}${url.search}`;
 
+  // Aceita os DOIS formatos de credencial do Supabase:
+  //  * `service_role` legada — é um JWT, e o padrão é mandá-la em `apikey` E em
+  //    `Authorization: Bearer`.
+  //  * chave secreta nova (`sb_secret_...`) — NÃO é JWT. Vai só em `apikey`;
+  //    mandá-la como Bearer faz o gateway tentar validar assinatura e recusar.
+  // Sem esta distinção, quem colasse a chave nova levaria 401 do projeto B — um
+  // erro que parece de rede e manda investigar o lugar errado.
+  const chaveNova = serviceKey.startsWith("sb_");
+  const headers: Record<string, string> = chaveNova
+    ? { apikey: serviceKey }
+    : { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
+
   // Repassa os headers de paginação: `fetchPaginado` do painel pagina por
   // Range/Range-Unit (index.html:692), não por limit/offset. Sem repassar,
   // toda consulta voltaria capada no default de 1000 linhas do PostgREST.
-  const headers: Record<string, string> = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
-  };
   for (const h of ["Range", "Range-Unit", "Prefer", "Accept"]) {
     const v = req.headers.get(h);
     if (v) headers[h] = v;
