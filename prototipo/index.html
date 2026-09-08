@@ -25,6 +25,8 @@
      (pedido explícito, 2026-08-25: zoom "infinito" e navegável sem perder
      qualidade nem carregar o JPEG de 93MB inteiro de uma vez). -->
 <script src="https://unpkg.com/openseadragon@4/build/openseadragon/openseadragon.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="lib/auth.js"></script>
 <script src="lib/domain-utils.js"></script>
 <script src="lib/panel-config.js"></script>
 <style>
@@ -1630,7 +1632,7 @@ function ModuloCurvaS({ linhas, info, carregando, erro, obraId, obraNome, curvas
   useEffect(() => {
     if (!diarioCorte || !obraId) return;
     setDiarioCarregando(true); setDiarioErro(false); setDiarioLinha(null);
-    const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const sbHeaders = MSEAuth.headers();
     const ehNN = NN_IDS_PORTAL.has(Number(obraId));
     const janelaFim = parseDataCorte(diarioCorte.data);
     const janelaInicio = addDias(janelaFim, -6);
@@ -2270,7 +2272,7 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose, dataStatusOver
 
   useEffect(() => {
     setLoading(true); setErro(null); setCards([]);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     const alvo = (obraCfg?.origemTV || '').trim().toUpperCase();
     fetchPaginadoCompat(`${SUPABASE_URL}/rest/v1/cards_ativos?responsavel_encarregado=ilike.*${encodeURIComponent(nomeNorm)}*&order=nome_obra.asc,edt.asc`, headers)
       .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
@@ -2498,7 +2500,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   // eq. no PostgREST em todas as obras — mais seguro comparar já normalizado).
   useEffect(() => {
     setTvRaw(null); setTvErro(false);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     const desde = new Date(); desde.setDate(desde.getDate() - 21);
     const cols = encodeURIComponent('OBRA,RESPONSÁVEL,DATA,"META DO DIA","AVANÇO REGISTRADO",ADERENCIA_LINEAR');
     fetchPaginado(`${SUPABASE_URL}/rest/v1/vw_dados_tv?select=${cols}&DATA=gte.${desde.toISOString().slice(0, 10)}&order=DATA.asc`, headers)
@@ -2514,7 +2516,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   // ranking desta obra e alimenta os 3 fetches em lote abaixo.
   useEffect(() => {
     setCardsRaw(null); setCardsErro(false);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchPaginado(`${SUPABASE_URL}/rest/v1/cards_ativos?select=card_id,nome_obra,responsavel_encarregado&responsavel_encarregado=not.is.null`, headers)
       .then(rows => {
         if (rows === null) { setCardsErro(true); setCardsRaw([]); return; }
@@ -2532,7 +2534,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     if (!cardsRaw) return;
     if (cardsRaw.length === 0) { setQualidadeEnc({}); setProdutividadeEnc({}); setProdutividadeHhEnc({}); setColaboradoresEnc({}); setNumColabObra(0); return; }
     let cancelado = false;
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     const ids = cardsRaw.map(c => String(c.card_id));
     // `fetchPaginado` (Range/Content-Range), não `fetch` cru — o PostgREST
     // trunca em 1000 linhas por padrão INDEPENDENTE do `limit=` pedido na
@@ -2699,7 +2701,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   useEffect(() => {
     setPtsPorNomeDia({});
     if (!obraCfg?.origemPTS) return;
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchPaginado(`${SUPABASE_URL}/rest/v1/pts_emitidas?obra=eq.${encodeURIComponent(obraCfg.origemPTS)}&select=emitente,data_atividade,horario`, headers)
       .then(rows => {
         if (!rows) return;
@@ -2730,7 +2732,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   // não é suficiente pra evitar isso.
   useEffect(() => {
     setPresencaEnc({});
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
     const vinteEUmDiasAtras = new Date(ontem); vinteEUmDiasAtras.setDate(ontem.getDate() - 20);
@@ -3426,7 +3428,7 @@ function ModuloEfetivo({ obraId, obraNome }){
   useEffect(() => {
     if (!obraId) return;
     setLoading(true);
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const view = moiModFiltro === 'TOTAL' ? `vw_efetivo_${gran.view}_total` : `vw_efetivo_${gran.view}_moimod_total`;
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
@@ -3437,7 +3439,7 @@ function ModuloEfetivo({ obraId, obraNome }){
 
   useEffect(() => {
     if (!obraId) return;
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_mensal_total' : 'vw_efetivo_previsto_mensal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
@@ -3448,7 +3450,7 @@ function ModuloEfetivo({ obraId, obraNome }){
 
   useEffect(() => {
     if (!obraId) return;
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const view = moiModFiltro === 'TOTAL' ? 'vw_efetivo_previsto_semanal_total' : 'vw_efetivo_previsto_semanal_moimod_total';
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/${view}?obra_id=eq.${obraId}${filtroMoi}&select=periodo,qtd&order=periodo.asc`, headers)
@@ -3459,7 +3461,7 @@ function ModuloEfetivo({ obraId, obraNome }){
 
   useEffect(() => {
     if (!obraId) { setRealHistorico([]); return; }
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/efetivo_real_historico?obra_id=eq.${obraId}${filtroMoi}&select=mes,qtd,granularidade&order=mes.asc`, headers)
       .then(r => r.ok ? r.json() : [])
@@ -3473,7 +3475,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setBuscaDetalhe('');
     setOrdenarCampo('nome');
     setOrdenarDir('asc');
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_${gran.view}_pessoas?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=*&order=nome.asc`, headers)
       .then(r => r.ok ? r.json() : [])
@@ -3487,7 +3489,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setBuscaPrevisto('');
     setOrdenarCampoPrevisto('nome_funcao');
     setOrdenarDirPrevisto('asc');
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const filtroMoi = moiModFiltro === 'TOTAL' ? '' : `&moi_mod=eq.${moiModFiltro}`;
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_previsto_mensal_detalhe?obra_id=eq.${obraId}&periodo=eq.${popup.periodo}${filtroMoi}&select=nome_funcao,moi_mod,qtd&order=qtd.desc`, headers)
       .then(r => r.ok ? r.json() : [])
@@ -3500,7 +3502,7 @@ function ModuloEfetivo({ obraId, obraNome }){
   useEffect(() => {
     setResumo(null); setResumoErro(false);
     if (!obraId) return;
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     const pega = (url) => fetchPaginadoCompat(url, headers, 1000)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(rows => (Array.isArray(rows) && rows[0]) ? rows[0] : null);
@@ -3526,7 +3528,7 @@ function ModuloEfetivo({ obraId, obraNome }){
     setBuscaResumo('');
     setOrdenarCampoResumo('nome');
     setOrdenarDirResumo('asc');
-    const headers = { apikey: EFETIVO_SUPABASE_KEY, Authorization: `Bearer ${EFETIVO_SUPABASE_KEY}` };
+    const headers = MSEAuth.headersEfetivo();
     fetchPaginadoCompat(`${EFETIVO_SUPABASE_URL}/rest/v1/vw_efetivo_diario_pessoas?obra_id=eq.${obraId}&periodo=eq.${resumo.periodo}&select=nome,nome_funcao,moi_mod&order=nome.asc`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => { setResumoDetalhe(Array.isArray(rows) ? rows : []); setResumoDetalheLoading(false); })
@@ -4208,7 +4210,7 @@ function ModuloDesvios({ obraId, obraNome }){
   useEffect(() => {
     setEapRaw(null); setEapErro(false); setLocaisAbertos(new Set()); setDisciplinasAbertas(new Set());
     setBusca(''); setOrdenarPor('edt'); setOrdenarDir('asc');
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchPaginado(`${SUPABASE_URL}/rest/v1/EAP?id_obra=eq.${obraId}&select=id,edt,tarefa,disciplina,local,avanco_atual,desvio,data_inicio,data_termino,ponderacao_reais,encarregado_nome`, headers)
       .then(rows => {
         if (rows === null) { setEapErro(true); setEapRaw([]); }
@@ -4602,7 +4604,7 @@ function ModuloRestricoes({ obraId, obraNome }){
   useEffect(() => {
     if (!restricaoSelecionada) return;
     setTarefaEap(null); setTarefaErro(false); setTarefaCarregando(true);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     const { id_eap, edt } = restricaoSelecionada;
     fetchComTimeout(`${SUPABASE_URL}/rest/v1/EAP?id_eap=eq.${id_eap}&edt=eq.${encodeURIComponent(edt)}&select=*`, { headers })
       .then(r => r.ok ? r.json() : null)
@@ -4617,7 +4619,7 @@ function ModuloRestricoes({ obraId, obraNome }){
   useEffect(() => {
     setDado(null); setErro(false); setBusca(''); setOrdenarPor('prioridade'); setOrdenarDir('asc');
     setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false); setFiltroStatus(null);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchComTimeout(`${SUPABASE_URL}/rest/v1/restricoes_obra?id_obra=eq.${obraId}&select=restricoes,atualizado_em`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => {
@@ -4940,7 +4942,7 @@ function ModuloOcCo({ obraId, obraNome }){
     setDado(null); setResumo(null); setErro(false); setBusca('');
     setOrdenarPor('valor'); setOrdenarDir('desc'); setDetalhe(null); setAprovadoAberto(false);
     setFiltroStatus(null); setFiltroExecucao(null);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchComTimeout(`${SUPABASE_URL}/rest/v1/orcamentos_complementares_obra?id_obra=eq.${obraId}&select=ocs,resumo,total,atualizado_em`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => {
@@ -6134,7 +6136,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   const statusManualDesativado = OBRAS_STATUS_MANUAL_DESATIVADO.has(obraId);
   useEffect(() => {
     if (!obraValidada || statusManualDesativado) return;
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchPaginadoCompat(`${SUPABASE_URL}/rest/v1/suprimentos_status_manual?id_obra=eq.${obraId}&select=id_item,status`, headers)
       .then(r => r.ok ? r.json() : [])
       .then(rows => setStatusManualPorItem(Object.fromEntries(rows.map(r => [r.id_item, r.status]))))
@@ -6154,7 +6156,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   const [requisicoesPorItemRmi, setRequisicoesPorItemRmi] = useState({});
   useEffect(() => {
     if (!obraValidada) return;
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     // Busca todas as requisições da obra + seus itens. Join via id_mapa_compras.
     Promise.all([
       fetchPaginado(`${SUPABASE_URL}/rest/v1/requisicoes_mapa_compras?id_obra=eq.${obraId}&select=id,id_rmi,nome_rmi,requisicao,requisicao_tipo,tipo,grupo,categoria,descricao,status_requisicao,data_cadastro,data_necessidade,requisitante,data_cronograma_fechado,solicitacao_enviada,necessario_contrato,necessario_art,total_itens`, headers),
@@ -6189,7 +6191,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
       if (novoStatus) next[idItem] = novoStatus; else delete next[idItem];
       return next;
     });
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
+    const headers = MSEAuth.headers({ 'Content-Type': 'application/json' });
     if (!novoStatus) {
       fetchComTimeout(`${SUPABASE_URL}/rest/v1/suprimentos_status_manual?id_obra=eq.${obraId}&id_item=eq.${idItem}`, { method:'DELETE', headers }).catch(() => {});
     } else {
@@ -6480,7 +6482,7 @@ function ModuloSuprimentos({ obraId, obraNome }){
   useEffect(() => {
     if (!obraValidada) return;
     setTodosItens(null); setErro(false);
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     // Busca a obra INTEIRA (todos os níveis) de uma vez — resolver
     // disciplina + área + material precisa caminhar a árvore até a
     // folha, e essa folha pode estar em qualquer profundidade (ver
@@ -8476,7 +8478,7 @@ function ModuloMedicoes({ obraId, obraNome }){
   useEffect(() => {
     setContratoRaw(null); setContratoErro(false); setBoletinsRaw(null); setBoletinsErro(false); setCurvaFisica(null);
     if (!obraCfg?.origemCP) return;
-    const headers = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const headers = MSEAuth.headers();
     fetchComTimeout(`${SUPABASE_URL}/rest/v1/contratos_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => setContratoRaw(Array.isArray(rows) && rows[0] ? rows[0] : {}))
@@ -9500,7 +9502,7 @@ function App(){
   const [curvasErro, setCurvasErro] = useState(false);
 
   useEffect(() => {
-    const sbHeaders = { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
+    const sbHeaders = MSEAuth.headers();
     fetchPaginado(`${SUPABASE_URL}/rest/v1/curvas_s?select=obra,semana,data,acum_previsto,acum_realizado,acum_desvio,acum_tendencia,semanal_previsto,semanal_realizado,semanal_desvio,semanal_tendencia&order=obra.asc,semana.asc`, sbHeaders)
       .then(rows => {
         if (rows === null) { setCurvasErro(true); setCurvasRaw([]); }
@@ -9651,7 +9653,94 @@ function App(){
   );
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+// ── Bootstrap com portão de login — ADR-007 (ver docs/06 e docs/14) ──────────
+// `MSEAuth.iniciar()` também consome a sessão que o Google devolve no fragmento
+// da URL, por isso precisa rodar ANTES do primeiro render: sem isso, o retorno
+// do OAuth cairia na tela de login de novo, num laço.
+//
+// Enquanto `LOGIN_OBRIGATORIO` estiver `false` em lib/auth.js (provider Google
+// ainda não configurado, Fase 1 do docs/14), o app renderiza como sempre e o
+// login fica disponível sem ser exigido — é o que permite deployar este código
+// sem trancar ninguém fora de um fluxo que ainda não existe.
+function ChipUsuario() {
+  const u = MSEAuth.usuario();
+  if (!u) return null;
+  return (
+    <div style={{ position:'fixed', right:12, bottom:12, zIndex:9999, display:'flex',
+                  alignItems:'center', gap:8, background:'var(--card)', border:'1px solid var(--line)',
+                  borderRadius:999, padding:'6px 10px', boxShadow:'0 2px 8px rgba(25,34,49,.10)' }}>
+      {u.foto && <img src={u.foto} alt="" width="22" height="22" style={{ borderRadius:'50%' }} />}
+      <span style={{ fontSize:12, color:'var(--body)' }}>{u.email}</span>
+      <button onClick={() => MSEAuth.sair()}
+              style={{ border:'none', background:'transparent', color:'var(--mut)', fontSize:12,
+                       textDecoration:'underline', padding:0 }}>sair</button>
+    </div>
+  );
+}
+
+function TelaLogin({ erro }) {
+  const [entrando, setEntrando] = React.useState(false);
+  async function entrar() {
+    setEntrando(true);
+    try { await MSEAuth.entrarComGoogle(); }
+    catch (e) { console.error(e); setEntrando(false); }
+  }
+  return (
+    <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'var(--bg)' }}>
+      <div style={{ background:'var(--card)', border:'1px solid var(--line)', borderRadius:14,
+                    padding:'40px 36px', width:'min(400px, 92vw)', textAlign:'center',
+                    boxShadow:'0 8px 28px rgba(25,34,49,.10)' }}>
+        <img src="assets/images/mselogo.png" alt="MSE" style={{ height:34, marginBottom:24 }} />
+        <div style={{ fontSize:18, fontWeight:600, color:'var(--ink)', marginBottom:6 }}>
+          Painel de Obra
+        </div>
+        <div style={{ fontSize:13, color:'var(--mut)', marginBottom:28, lineHeight:1.5 }}>
+          Acesso restrito a contas <strong>@{MSEAuth.DOMINIO_SUGERIDO}</strong>
+        </div>
+        <button onClick={entrar} disabled={entrando}
+                style={{ width:'100%', padding:'11px 16px', borderRadius:8, border:'1px solid var(--line)',
+                         background:'#fff', color:'var(--ink)', fontSize:14, fontWeight:500,
+                         display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+                         opacity: entrando ? .6 : 1 }}>
+          <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
+            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.7 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-2.8-.4-4.1H24v8.4h12.4c-.3 2.1-1.6 5.2-4.6 7.3l7.6 5.9c4.5-4.2 6.7-10.3 6.7-17.5z"/>
+            <path fill="#FBBC05" d="M10.4 28.7A14.7 14.7 0 0 1 9.6 24c0-1.6.3-3.2.8-4.7l-7.8-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.8-6.1z"/>
+            <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.8l-7.6-5.9c-2 1.4-4.8 2.4-8.2 2.4-6.3 0-11.7-3.7-13.6-9.8l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/>
+          </svg>
+          {entrando ? 'Redirecionando…' : 'Entrar com Google'}
+        </button>
+        {erro && (
+          <div style={{ marginTop:18, fontSize:12, color:'var(--red)', lineHeight:1.5 }}>{erro}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const raizReact = ReactDOM.createRoot(document.getElementById('root'));
+
+function renderizar(erroAuth) {
+  const temSessao = !!MSEAuth.sessao();
+  if (MSEAuth.loginObrigatorio() && !temSessao) {
+    raizReact.render(<TelaLogin erro={erroAuth} />);
+    return;
+  }
+  raizReact.render(<><App />{temSessao && <ChipUsuario />}</>);
+}
+
+MSEAuth.iniciar({
+  url: SUPABASE_URL, anonKey: SUPABASE_KEY,
+  urlEfetivo: EFETIVO_SUPABASE_URL, anonKeyEfetivo: EFETIVO_SUPABASE_KEY,
+}).then(() => {
+  MSEAuth.aoMudar(() => renderizar());
+  renderizar();
+}).catch((e) => {
+  // Falha alto (ADR-005): não dá pra saber se existe sessão, então não renderiza
+  // o painel como se estivesse tudo normal.
+  console.error('[MSEAuth] iniciar() falhou', e);
+  renderizar('Não foi possível iniciar a autenticação: ' + (e && e.message ? e.message : e));
+});
 </script>
 </body>
 </html>
