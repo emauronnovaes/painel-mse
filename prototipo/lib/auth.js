@@ -80,7 +80,27 @@
     return !!(u && u.email && u.email.toLowerCase().endsWith('@' + DOMINIO_SUGERIDO));
   }
 
-  function loginObrigatorio() { return LOGIN_OBRIGATORIO; }
+  // Costura de teste, não bypass de produção.
+  //
+  // A suíte roda contra o working copy (playwright.config.ts) e não tem como
+  // completar um OAuth do Google. Sem esta costura, todo teste de navegador
+  // bateria na tela de login — e, pior, os specs antigos PASSARIAM nela, porque
+  // asseguravam só "#root visível e body contém MSE", que a tela de login também
+  // satisfaz. Teste verde numa tela que não é a testada é pior que teste
+  // vermelho.
+  //
+  // Só é acionável por `page.addInitScript`, ou seja, por quem já controla o
+  // navegador antes do carregamento — não por URL, query string ou clique. E
+  // desativa apenas o PORTÃO DE UI: o acesso ao dado é decidido pelo RLS, que
+  // esta flag não alcança. Depois da Fase 4, contornar o portão não devolve dado
+  // nenhum, o que é justamente a diferença entre isto e a "trava cosmética" que
+  // o ADR-007 existe pra evitar (docs/05).
+  function loginObrigatorio() {
+    try {
+      if (typeof window !== 'undefined' && window.__MSE_TESTE_SEM_LOGIN === true) return false;
+    } catch (e) { /* ambiente sem window: segue a regra normal */ }
+    return LOGIN_OBRIGATORIO;
+  }
 
   function notificar() {
     ouvintes.forEach(function (cb) {

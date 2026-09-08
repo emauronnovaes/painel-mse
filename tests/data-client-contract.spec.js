@@ -18,12 +18,23 @@ test('cliente de dados mantém paginação e timeout centralizados', () => {
   expect(chamadasNativas).toHaveLength(1);
 });
 
-test('módulos compartilhados são carregados antes do Babel', () => {
+test('módulos compartilhados são carregados antes do app', () => {
   const html = fs.readFileSync(htmlPath, 'utf8');
   const dominio = html.indexOf('lib/domain-utils.js');
   const configuracao = html.indexOf('lib/panel-config.js');
-  const babel = html.indexOf('babel.min.js');
+  const auth = html.indexOf('lib/auth.js');
+  // O que importa é a ordem contra o SCRIPT DO APP, não contra a tag da
+  // biblioteca do Babel. A tag `babel.min.js` só carrega o transpilador e fica
+  // no <head> antes dos módulos de propósito; o que consome MSEConfig/MSEDomain/
+  // MSEAuth é o `<script type="text/babel">`, que roda depois do parse do <body>.
+  //
+  // A asserção antiga comparava com `babel.min.js` e por isso falhava desde que
+  // foi escrita (707e803), sem ninguém notar: este spec ficou FORA do `test:all`,
+  // que era o portão de merge. Duas falhas de método se cobrindo.
+  const appScript = html.indexOf('<script type="text/babel"');
   expect(dominio).toBeGreaterThanOrEqual(0);
   expect(configuracao).toBeGreaterThan(dominio);
-  expect(babel).toBeGreaterThan(configuracao);
+  expect(auth).toBeGreaterThanOrEqual(0);
+  expect(appScript).toBeGreaterThan(configuracao);
+  expect(appScript).toBeGreaterThan(auth);
 });

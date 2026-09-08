@@ -8,11 +8,13 @@
   },
   "scripts": {
     "test": "playwright test",
-    "test:all": "npm run test:unit && npm run test:chromium -- tests/baseline-routes.spec.js && npm run test:supply-works",
+    "test:all": "npm run test:unit && npm run test:local",
     "test:chromium": "playwright test --project=chromium",
     "test:supply-works": "playwright test --project=chromium tests/supply-works.spec.js",
     "test:ui": "playwright test --ui",
-    "test:unit": "node --test tests/unit/*.test.js"
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:local": "playwright test --project=chromium --grep-invert @smoke",
+    "test:smoke": "playwright test --project=chromium --grep @smoke"
   },
   "keywords": [],
   "author": "",
