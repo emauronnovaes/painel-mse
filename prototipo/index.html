@@ -4,7 +4,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MSE - Curva S</title>
+<title>MSE — Painel de Obra</title>
 <link rel="icon" href="assets/images/mselogo2.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -30,7 +30,7 @@
 <style>
   :root{
     --bg:#e8eaee; --card:#fff; --line:#e4e7ec;
-    --ink:#192231; --body:#4d5868; --mut:#98a1b0; --mut2:#aab2bf;
+    --ink:#192231; --body:#4d5868; --mut:#66758a; --mut2:#768397;
     --blue:#2563eb; --green:#4CAF7F; --amber:#D4941E; --red:#C94444;
   }
   * { box-sizing: border-box; }
@@ -352,6 +352,54 @@
      topo) — essa exportação não é sobre dinheiro, é sobre a lista de
      materiais em si. Farol financeiro segue removido (pedido anterior,
      mesmo dia) — zero canto arredondado, zero "bolinha" de status. */
+  /* Acabamento da interface: escopo de tela para preservar os relatórios. */
+  @media screen {
+    body { -webkit-font-smoothing: antialiased; }
+    .app-shell { background:#f0f2f6; }
+    .app-shell .card {
+      box-shadow:0 2px 4px rgba(25,34,49,.025), 0 8px 24px rgba(25,34,49,.025);
+    }
+    .app-shell .card .card { box-shadow:none; }
+    .header-foto { opacity:.24; }
+    .header-title { letter-spacing:-.025em; line-height:1.2; }
+    .header-wrap { box-shadow:0 2px 8px rgba(19,34,59,.12); }
+    .tabs-scroll { border-radius:14px; }
+    .tab-btn.ativo { box-shadow:0 3px 8px rgba(37,99,235,.2); }
+    .tab-btn:not(.ativo):hover { background:#f0f4fa; transform:none; }
+    .app-shell button, .app-shell input, .app-shell select { font-family:inherit; }
+    .app-shell button:focus-visible, .app-shell input:focus-visible,
+    .app-shell select:focus-visible, .app-shell [tabindex]:focus-visible {
+      outline:3px solid #2563eb; outline-offset:3px;
+    }
+    .header-wrap button:focus-visible { outline-color:#b9d7ff; }
+    .app-shell button:disabled { cursor:default; opacity:.5; }
+    .app-shell input, .app-shell select { accent-color:#2563eb; }
+    .app-shell input::placeholder { color:#768397; opacity:1; }
+    .table-scroll-x { scrollbar-color:#c1cad7 transparent; scrollbar-width:thin; }
+    .table-scroll-x td { font-variant-numeric:tabular-nums; }
+    .table-scroll-x tbody tr:focus-within { background:#eef4ff; }
+    .empty-box { color:#66758a; background:#f8fafc; line-height:1.7; }
+    .estado-conteudo { display:flex; flex-direction:column; align-items:center; gap:16px; max-width:440px; text-align:center; }
+    .estado-icone { width:48px; height:48px; border-radius:16px; background:#f0f4fa; color:#66758a; display:grid; place-items:center; }
+    .estado-texto { font-size:14px; line-height:1.6; }
+    @media (min-width:769px) and (max-width:1200px) {
+      .tabs-scroll .tab-btn { flex:0 0 auto !important; min-width:120px !important; }
+    }
+    @media (max-width:768px) {
+      .header-actions { flex-direction:row; align-items:center !important; }
+      .header-actions > button { width:auto; min-height:44px; }
+      .header-actions .seletor-obra-wrap { flex:1; min-width:0; width:auto; }
+      .obra-btn { min-height:44px; }
+      .toolbar-wrap button, .toolbar-wrap select, .toolbar-wrap input { min-height:40px; }
+      .estado-conteudo { padding:24px 8px; }
+      .performance-toolbar, .farol-resumo, .farol-resumo-dados { flex-wrap:wrap; }
+      .performance-toolbar > svg { flex-shrink:0; }
+      .performance-toolbar > span { flex:1; }
+      .performance-toolbar > button { margin-left:0 !important; min-height:40px; }
+      .farol-resumo > div { max-width:100%; }
+      .farol-resumo-dados { row-gap:10px !important; }
+    }
+  }
   .print-report{ display:none; }
   @media print{
     @page{ size:A4; margin:16mm 14mm; }
@@ -429,7 +477,7 @@ const { useState, useEffect, useRef, useMemo } = React;
 
 const T = {
   bg:'#e8eaee', card:'#fff', line:'#e4e7ec', ink:'#192231', body:'#4d5868',
-  mut:'#98a1b0', mut2:'#aab2bf', blue:'#2563eb', green:'#1f9d57', amber:'#d9911a', red:'#d23b3b'
+  mut:'#66758a', mut2:'#768397', blue:'#2563eb', green:'#1f9d57', amber:'#d9911a', red:'#d23b3b'
 };
 
 // ── Supabase — mesmos dois projetos e chaves do dashboard atual (anon key, só leitura) ──
@@ -866,7 +914,7 @@ function TabsSetores({ atual, onIr, obraId }){
         {SETORES.map(s => {
           const ativo = s.slug === atual.slug;
           return (
-            <button key={s.slug} className={`tab-btn${ativo ? ' ativo' : ''}`} onClick={() => onIr(s)}
+            <button key={s.slug} aria-current={ativo ? 'page' : undefined} className={`tab-btn${ativo ? ' ativo' : ''}`} onClick={() => onIr(s)}
               style={{
                 display:'flex', alignItems:'center', gap:8, flex:'1 1 0', minWidth:0, minHeight:44,
                 padding:'8px 12px', borderRadius:8, border:'none',
@@ -897,7 +945,12 @@ function TabsSetores({ atual, onIr, obraId }){
 function CartaoEstado({ texto, maxHeight, tom }){
   return (
     <div className="card painel-gutter" style={{ padding:20, flex:1, minHeight:0, maxHeight, display:'flex', alignItems:'center', justifyContent:'center' }}>
-      <div className="mono" style={{ fontSize:12, letterSpacing:'0.08em', color: tom || T.mut, textTransform:'uppercase' }}>{texto}</div>
+      <div className="estado-conteudo" role="status">
+        <div className="estado-icone" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5 19V9m7 10V5m7 14v-7M3 21h18" /></svg>
+        </div>
+        <div className="estado-texto" style={{ color: tom || T.mut }}>{texto}</div>
+      </div>
     </div>
   );
 }
@@ -3148,7 +3201,7 @@ function ModuloEncarregados({ obraId, obraNome }){
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14 }}>
-      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 14px', background:'rgba(217,145,26,0.08)', border:'1px solid rgba(217,145,26,0.18)', borderRadius:12, flexShrink:0 }}>
+      <div className="performance-toolbar" style={{ display:'flex', alignItems:'center', gap:10, padding:'8px 14px', background:'rgba(217,145,26,0.08)', border:'1px solid rgba(217,145,26,0.18)', borderRadius:12, flexShrink:0 }}>
         <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={T.amber} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z" /><path d="M17 5h3a2 2 0 0 1-2 4M7 5H4a2 2 0 0 0 2 4" />
         </svg>
@@ -9377,7 +9430,7 @@ function ModuloMedicoes({ obraId, obraNome }){
       
       {/* NOVO WIDGET: FAROL HORIZONTAL COM FUNDO COLORIDO (Acima de tudo) */}
       <div 
-        className={farolDiff != null ? "card hoverable balao-clicavel" : "card"} 
+        className={farolDiff != null ? "card hoverable balao-clicavel farol-resumo" : "card farol-resumo"}
         onClick={farolDiff != null ? () => setFarolAberto(true) : undefined} 
         style={{ 
           display:'flex', alignItems:'center', gap:16, padding:'10px 16px', borderRadius:10, 
@@ -9395,7 +9448,7 @@ function ModuloMedicoes({ obraId, obraNome }){
         
         {farolDiff != null ? (
           <>
-            <div style={{ display:'flex', alignItems:'center', gap:20, fontSize:12.5 }}>
+            <div className="farol-resumo-dados" style={{ display:'flex', alignItems:'center', gap:20, fontSize:12.5 }}>
               <span><span style={{ color:T.mut }}>Medido: </span><span style={{ fontWeight:600, color:T.ink }}>{percMedido.toFixed(2)}%</span></span>
               <span><span style={{ color:T.mut }}>Físico (Curva S): </span><span style={{ fontWeight:600, color:T.ink }}>{percFisico.toFixed(2)}%</span></span>
               <span><span style={{ color:T.mut }}>Diferença: </span><span className="mono" style={{ fontWeight:700, color:farolTom.cor }}>{farolDiff > 0 ? '+' : ''}{farolDiff.toFixed(2)}%</span></span>

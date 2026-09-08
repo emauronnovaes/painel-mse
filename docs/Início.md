@@ -16,6 +16,9 @@ escolhida — é decisão consciente, para ser tomada com o desenho na mão. Ver
 
 ## Ordem de leitura
 
+Revisão visual mais recente: [[13 - Revisão Visual do Painel]] (08/09/2026).
+A refatoração incremental está em espera por solicitação do usuário.
+
 | Nota | Para quê | Estado |
 |---|---|---|
 | [[01 - Visão do Produto]] | que problema resolve, para quem | 🟡 núcleo (Painel de Obra) definido, resto em aberto |
