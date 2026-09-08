@@ -112,15 +112,82 @@ negada.
 
 ### Fase 3 — Aditivo no banco (reversível, não fecha nada)
 
-7. Criar, **ao lado** das policies de `anon`, as equivalentes
-   `to authenticated` com o predicado de domínio:
-   `auth.jwt()->>'email' like '%@mse.com.br'`.
-8. Recriar as 5 views com `security_invoker = true`.
-9. Edge Function no projeto A para as leituras do `Efetivo`, exigindo sessão e
+7. ✅ **Feito em 08/09/2026** — migração `adr007_fase3_policies_authenticated_dominio_mse`.
+   Predicado de domínio numa função única, `public.mse_email_do_dominio()`, e
+   policy `mse_select_authenticated` nas **22** relações hoje legíveis por
+   `anon`. `grant select` para `authenticated` incluído.
+
+   Detalhes que valem lembrar:
+   - `split_part(lower(email), '@', 2) = 'mse.com.br'` em vez de
+     `like '%@mse.com.br'` — comparação exata de domínio, e case-insensitive
+     porque o e-mail do provider pode vir com maiúscula.
+   - O predicado está embrulhado em `(select ...)` para virar InitPlan, avaliado
+     **uma vez por statement** em vez de por linha. Em tabela grande como `EAP`
+     isso é a diferença entre a tela abrir e travar.
+   - Migração `adr007_fase3_dominio_coalesce_false`: sem JWT a função devolvia
+     `NULL`. Em RLS `USING (NULL)` nega, então o comportamento já estava certo,
+     mas `coalesce(..., false)` torna isso explícito em vez de depender da
+     sutileza.
+
+   Verificado: 22 policies criadas, **26 policies de `anon`/`PUBLIC` seguem de
+   pé** (aditivo confirmado), e leitura com a anon key continua devolvendo dado
+   em todas as tabelas e views testadas. `npm run test:all` verde.
+
+8. ✅ **Feito em 08/09/2026** — migração `adr007_fase3_views_security_invoker`.
+   Quatro views receberam `security_invoker = true`:
+   `view_atividades_3d`, `view_avanco_duas_semanas`, `vw_cards_ativos_contexto`,
+   `vw_dados_tv`. Seguro porque todas leem só de `EAP`, `cards_ativos`,
+   `Apontamentos` e `apontamento_efetivo`, que têm policy para `anon` (hoje) e
+   para `authenticated` (passo 7).
+
+   ⚠️ **`v_indices_financeiros_diario` ficou de fora, de propósito.** Ela lê de
+   `medicao_acumulada` e `tarefas`, que têm RLS ligada e **nenhuma** policy de
+   leitura. Com `security_invoker` ela passaria a respeitar esse fechamento e
+   devolveria **zero linhas para todos, inclusive logado** — a tela financeira
+   sairia de "dado parado desde 11/08" para "vazia".
+
+   As alternativas eram abrir leitura nessas duas tabelas (aumenta a superfície,
+   direção oposta ao ADR-007) ou manter a view `security_definer` e controlar
+   pelo `GRANT`. Escolhida a segunda: um bypass de RLS explícito e restrito por
+   grant é melhor que abrir duas tabelas hoje fechadas. O motivo está gravado
+   num `COMMENT ON VIEW`, para ninguém "consertar" isso sem contexto. Na Fase 4
+   o fechamento dela é por `revoke select from anon`, não por `security_invoker`.
+
+9. ⏳ Edge Function no projeto A para as leituras do `Efetivo`, exigindo sessão e
    lendo o B com `service_role`; migrar os 9 sítios do front-end.
 
 Ao fim desta fase, usuário logado e `anon` funcionam em paralelo. Dá para
 validar o app inteiro autenticado antes de fechar qualquer porta.
+
+### ⚠️ Fora do plano original: escrita alcançável pela anon key
+
+Descoberto em 08/09/2026 ao gerar o snapshot de rollback. O levantamento inicial
+mediu só **leitura**; o dump das policies revelou **11 policies de escrita** que
+o `anon` alcança, com os `GRANT`s correspondentes (INSERT/UPDATE/DELETE
+concedidos), então são efetivas:
+
+| Tabela | anon pode |
+|---|---|
+| `suprimentos` | INSERT, UPDATE, **DELETE** |
+| `suprimentos_status_manual` | INSERT, UPDATE, **DELETE** |
+| `curvas_s` | INSERT, UPDATE |
+| `apontamento_efetivo` | **DELETE** |
+| `cards_ativos` | **DELETE** |
+
+Isso é destruição de dado, não vazamento: `curvas_s` alimenta o relatório
+semanal dos diretores e a Curva S diária do Drive. Não há evidência de que tenha
+ocorrido — a conclusão vem das policies mais os grants, sem teste de escrita
+contra a base.
+
+**Fechar escrita é mais barato que fechar leitura** e não depende das decisões
+pendentes do `dashboard-main` nem da `apresentacao/`: o painel escreve em **uma**
+tabela só, `suprimentos_status_manual` (`prototipo/index.html:6194-6202`, upsert
+e delete do status manual). As outras quatro nenhum consumidor conhecido escreve
+— quem grava é o n8n, com `service_role`, que ignora RLS.
+
+**Falta antes de mexer:** auditar o n8n e o `dashboard-main` para descobrir se
+algum deles grava em `curvas_s` ou `suprimentos` com a anon key. Se grava,
+remover a policy o quebra.
 
 ### Fase 4 — O corte ⚠️
 
