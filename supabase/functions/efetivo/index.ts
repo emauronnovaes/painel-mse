@@ -17,20 +17,33 @@
 const EFETIVO_URL = "https://wnldmumgjwujveeimyef.supabase.co";
 const DOMINIO = "mse.com.br";
 
-// Allow-list explícita. O front-end monta dois nomes DINAMICAMENTE
-// (`vw_efetivo_${gran}_total` / `_moimod_total` na linha 3432 e
-// `vw_efetivo_${gran}_pessoas` na 3480, com gran em diario|semanal|mensal),
-// então a lista é gerada do mesmo jeito — se fosse escrita à mão, a
-// granularidade que faltasse quebraria só naquele filtro, difícil de notar.
-const GRANULARIDADES = ["diario", "semanal", "mensal"];
+// Allow-list gerada a partir dos padroes REAIS do front-end. Ha TRES sitios que
+// montam o nome da relacao dinamicamente, nao um:
+//   index.html:3438  vw_efetivo_${gran}_total | _moimod_total   (real)
+//   index.html:3449  vw_efetivo_previsto_mensal_total | _moimod_total
+//   index.html:3460  vw_efetivo_previsto_semanal_total | _moimod_total
+//   index.html:3486  vw_efetivo_${gran}_pessoas
+//
+// A v1 desta lista cobria so o primeiro, e o resultado foi o Histograma abrir
+// com o realizado e SEM o previsto — falha parcial, que e a pior de notar. O
+// conjunto abaixo foi conferido contra os logs de acesso do projeto B (quais
+// relacoes o navegador de fato pede), nao contra leitura de codigo.
+//
+// Nao existe previsto DIARIO em B: as views de previsto sao so semanal e mensal.
+const GRAN_REAL = ["diario", "semanal", "mensal"];
+const GRAN_PREVISTO = ["semanal", "mensal"];
 const RELACOES_PERMITIDAS = new Set<string>([
   "efetivo_diario_raw",
   "efetivo_real_historico",
   "vw_efetivo_previsto_mensal_detalhe",
-  ...GRANULARIDADES.flatMap((g) => [
+  ...GRAN_REAL.flatMap((g) => [
     `vw_efetivo_${g}_total`,
     `vw_efetivo_${g}_moimod_total`,
     `vw_efetivo_${g}_pessoas`,
+  ]),
+  ...GRAN_PREVISTO.flatMap((g) => [
+    `vw_efetivo_previsto_${g}_total`,
+    `vw_efetivo_previsto_${g}_moimod_total`,
   ]),
 ]);
 
