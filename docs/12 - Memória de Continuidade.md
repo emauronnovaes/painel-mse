@@ -54,12 +54,35 @@ antes/depois de Suprimentos também foi concluída nas sete obras.
 - `1ed4ee7`: remoção do legado Hitachi.
 - `2afc9bd`: merge de palavras-chave por categoria.
 
+## Fechamento do working tree (08/09/2026)
+
+Branch pronta para merge: working tree limpo e suíte completa verde.
+
+- `npm run test:all`: **30 unitários + 9 rotas + 7 obras de Suprimentos**, todos
+  passando.
+- Política de artefatos definida no `.gitignore`: `test-results/` e
+  `playwright-report/` são regerados a cada execução e saíram do versionamento
+  (7 arquivos de falhas antigas foram destrastreados); `backups/` sai porque o
+  estado pré-refactor é o ponto de partida desta branch, recuperável pelo
+  histórico.
+- **`apresentacao/index.html` passou a ser versionado.** Era um alvo de hosting
+  ativo no `firebase.json` (site `painel-mse-apresentacao`) cujo fonte existia
+  somente no deploy — perder a máquina local significava perder o app.
+- `apresentacao/assets/` fica fora do git: 178 MB (13.418 tiles da ortofoto +
+  9 imagens) verificados por md5 como cópia byte-idêntica de
+  `prototipo/assets/`, sem nenhum conteúdo exclusivo. Se algum dia a
+  apresentação precisar de um asset próprio, versionar esse arquivo à parte.
+- Workflow n8n de Suprimentos versionado (estava modificado e solto desde
+  31/08): passa a iterar obra por obra, ganha ramo de requisições e troca a
+  credencial de gravação para `supabaseApi`. Não foi executado — ver pendência 3.
+
 ## Pendências para retomada
 
 1. Extrair componentes React grandes ainda embutidos no HTML.
 2. Revisar performance, acessibilidade e segurança.
-3. Revisar alterações pendentes do workflow n8n e artefatos de teste.
-4. Executar `npm run test:all` antes do merge da branch.
+3. Validar a **execução** do workflow n8n de Suprimentos dentro do n8n. O export
+   está versionado, mas a reestruturação (loop por obra + ramo de requisições +
+   troca de credencial) nunca foi rodada de ponta a ponta.
 
 ## Regra de continuidade
 
