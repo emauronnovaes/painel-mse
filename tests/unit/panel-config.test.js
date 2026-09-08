@@ -28,7 +28,12 @@ test('configurações de apresentação preservam foto, tour e ortofoto', () => 
 });
 test('configurações de Suprimentos preservam escopo e exportação', () => {
   assert.equal(config.OBRAS_SUPRIMENTOS_VALIDADAS.has(114), true);
-  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.has(114), true);
+  // 114 saiu do conjunto em 2026-09-08, a pedido explícito ("permita atribuir
+  // status manualmente novamente"). Hoje NENHUMA obra tem o status manual
+  // desativado — o conjunto existe vazio, pronto pra receber um id se alguma
+  // precisar ser desativada de novo.
+  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.has(114), false);
+  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.size, 0);
   assert.equal(config.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[107], 'area');
   assert.equal(config.OBRAS_SEM_EXPORTACAO_GRAFICOS.has(94), true);
 });

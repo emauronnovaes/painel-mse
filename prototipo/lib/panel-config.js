@@ -39,7 +39,7 @@
     94: Object.freeze({ dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' }),
   });
   const OBRAS_SUPRIMENTOS_VALIDADAS = Object.freeze(new Set([106, 110, 94, 107, 108, 91, 114]));
-  const OBRAS_STATUS_MANUAL_DESATIVADO = Object.freeze(new Set([114]));
+  const OBRAS_STATUS_MANUAL_DESATIVADO = Object.freeze(new Set());
   const NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA = Object.freeze({ 107: 'area', 108: 'area', 110: 'area' });
   const OBRAS_SEM_EXPORTACAO_GRAFICOS = Object.freeze(new Set([94]));
   const STATUS_MANUAL_OPCOES = Object.freeze(['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);

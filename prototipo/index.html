@@ -5796,18 +5796,22 @@ function ehItemCanteiroRmi(descricao){
 // CONFIG_SUPRIMENTOS_POR_OBRA[107]).
 const OBRAS_SUPRIMENTOS_VALIDADAS = MSEConfig.OBRAS_SUPRIMENTOS_VALIDADAS;
 
-// Status MANUAL desativado por obra (pedido explícito, 2026-09-02: "IPEN
-// ainda exibe as flags manuais? Descarte-as por hora") — a IPEN (114) já
-// tinha 26 overrides manuais gravados em `suprimentos_status_manual` (todos
-// de 2026-08-31, quando o manual era a ÚNICA forma de status real —
-// anterior à requisição). Agora que a IPEN tem status automático de
-// verdade vindo de `status_requisicao` (`statusAutomaticoItem`), esses
-// overrides antigos ficariam escondendo o automático novo por baixo, sem
-// motivo. Enquanto a obra estiver aqui: não busca `suprimentos_status_manual`
-// (fica sempre `{}`) e o badge da tabela principal não vira `<select>`
-// editável — só mostra o automático, decorativo. Os 26 registros
-// continuam intactos no Supabase (não apagados, "por hora" = reversível),
-// só deixam de ser lidos/editáveis por essa obra.
+// Status MANUAL desativado por obra — hoje VAZIO, todas as obras podem
+// atribuir status manual.
+//
+// Histórico: a IPEN (114) esteve aqui de 2026-09-02 a 2026-09-08, a pedido
+// explícito ("IPEN ainda exibe as flags manuais? Descarte-as por hora"). O
+// motivo era que ela tinha 26 overrides de 2026-08-31 — de quando o manual era
+// a ÚNICA forma de status real, anterior à requisição — e eles escondiam o
+// automático novo vindo de `status_requisicao` (`statusAutomaticoItem`).
+// Reativada em 2026-09-08 a pedido explícito. Os 26 registros nunca foram
+// apagados ("por hora" era reversível de propósito), então voltam a aparecer —
+// mas agora como escolha visível: o badge vira `<select>`, o item overrideado
+// se identifica como manual, e "Automático" no próprio `<select>` limpa o
+// override item por item.
+//
+// O conjunto fica aqui, vazio, em vez de o código ser removido: desativar uma
+// obra de novo é acrescentar o id, sem refazer a lógica.
 const OBRAS_STATUS_MANUAL_DESATIVADO = MSEConfig.OBRAS_STATUS_MANUAL_DESATIVADO;
 // Configurações específicas por obra vivem integralmente no módulo externo.
 const CONFIG_SUPRIMENTOS_POR_OBRA = MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA;

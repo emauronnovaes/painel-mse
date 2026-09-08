@@ -102,6 +102,26 @@ test.describe('Setor Suprimentos', () => {
     await expect(page.locator('body')).toContainText(/pdf completo/i);
   });
 
+  test('o status manual pode ser atribuído item por item', async ({ page }) => {
+    await esperarCarregar(page);
+    // O `<select>` de status é da linha de MATERIAL, e a árvore inicia recolhida
+    // (só o nível Área). Sem abrir até o nível 3 não existe select nenhum na
+    // página — foi o que me fez achar, num primeiro teste, que a feature estava
+    // quebrada quando era só a árvore fechada.
+    await page.locator('.btn-nivel').nth(2).click();
+    const selects = page.locator('select').filter({ has: page.locator('option', { hasText: 'Em cotação' }) });
+    await expect(selects.first()).toBeVisible();
+    await expect(selects.first()).toBeEnabled();
+    // As 5 opções manuais mais a primeira, que é o status automático e serve de
+    // "voltar ao automático" (grava value="" e o app faz DELETE do override).
+    const opcoes = await selects.first().locator('option').allTextContents();
+    for (const o of ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']) {
+      expect(opcoes, `falta a opção "${o}"`).toContain(o);
+    }
+    expect(opcoes.length, 'deve haver a opção de voltar ao automático além das 5 manuais')
+      .toBeGreaterThan(5);
+  });
+
   test('sobrevive a viewport mobile', async ({ page }) => {
     await esperarCarregar(page);
     await page.setViewportSize({ width: 375, height: 667 });
