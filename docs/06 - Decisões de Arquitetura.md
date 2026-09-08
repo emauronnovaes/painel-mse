@@ -109,7 +109,7 @@ do `firebase deploy`).
 
 ---
 
-## ADR-007 — Autorização no servidor ⏳ PENDENTE
+## ADR-007 — Autorização no servidor 🚧 EM IMPLANTAÇÃO
 
 **Direção:** nada de trava por senha no cliente.
 
@@ -118,9 +118,44 @@ do `firebase deploy`).
 com "ver código-fonte" lê as duas, e o dado protegido é baixado para o navegador
 de qualquer forma. Serve para esconder botão, não para proteger informação.
 
-**A definir:** se há dado realmente restrito no novo painel e, se houver, como
-autorizar (RLS por perfil no Supabase? filtro no servidor?). Depende de
-[[01 - Visão do Produto]].
+**A pergunta que estava aberta — "se há dado realmente restrito" — foi medida em
+08/09/2026. Há.** As duas anon keys estão em texto claro no HTML servido
+(`prototipo/index.html:485` e `:487`) e, no projeto `API - Portal`, **27 das 32
+relações do schema `public` são legíveis por `anon`** — inclusive `nfs`,
+`proximos_faturamentos`, `boletins_medicao`, `contratos_medicao`,
+`orcamentos_complementares_obra` e `v_indices_financeiros_diario`. Dado
+financeiro e de compras das obras está público para quem já viu a URL. O
+segundo projeto (`Efetivo`) está na mesma condição.
+
+**Decisão (08/09/2026):**
+
+1. **Identidade no Supabase Auth, não no Firebase Auth.** O Hosting é Firebase, o
+   que torna o Firebase Auth o reflexo natural — mas identidade do Firebase deixa
+   o Supabase sem saber quem é o usuário, e o RLS sem `auth.uid()` para se
+   apoiar. Ligar os dois exigiria servidor assinando JWT customizado. Supabase
+   Auth com provider Google devolve um JWT que o RLS entende nativamente, pelo
+   mesmo trabalho de front-end.
+2. **Provider Google, sem senha.** A MSE usa Google Workspace; senha própria só
+   adicionaria gestão de credencial sem ganho.
+3. **A restrição de domínio é server-side.** O parâmetro `hd=mse.com.br` do
+   Google é *dica de UX*, contornável — a checagem que vale é um predicado de RLS
+   sobre `auth.jwt()->>'email'`. Confiar no `hd` seria repetir o antipadrão que
+   este ADR existe para evitar.
+4. **O `apikey` continua sendo a anon key**; o que muda é o `Authorization`, que
+   passa a levar o JWT da sessão. É o padrão do Supabase — a anon key deixa de
+   ser credencial de leitura e volta a ser só roteamento de API.
+5. **Segundo projeto (`Efetivo`) atendido por Edge Function, não por segundo
+   login.** Um JWT do projeto A não vale no projeto B. Em vez de dois fluxos de
+   OAuth, os 9 sítios que leem o `Efetivo` passam por uma Edge Function no
+   projeto A que exige sessão e lê o B com `service_role` guardada como secret.
+6. **Consumidores server-side migram para `service_role`.** `relatorios-pdf`,
+   `curva_s_drive.py` e o `dashboard-main` usam as anon keys hoje; fechar o
+   `anon` sem migrá-los antes derruba o relatório semanal e a Curva S diária do
+   Drive.
+
+**Ordem de execução e plano por tabela:** [[14 - Plano ADR-007]]. A ordem não é
+detalhe — cada fase é verificável isoladamente e nenhuma derruba o app ou os
+jobs enquanto a seguinte não estiver pronta.
 
 ## Ver também
 - [[05 - Herança do Dashboard Atual]]
