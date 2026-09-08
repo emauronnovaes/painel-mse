@@ -973,7 +973,7 @@ function TabsSetores({ atual, onIr, obraId }){
       {/* Desktop: abas dividem o espaço. Mobile (@media 768): flex 0 0 auto
           + scroll-x no .tabs-scroll para todas serem alcançáveis no dedo. */}
       <div ref={scrollRef} className="card tabs-scroll">
-        {SETORES.map(s => {
+        {SETORES.filter(s => !(s.slug === 'medicoes' && MSEAuth.restringirFinanceiro())).map(s => {
           const ativo = s.slug === atual.slug;
           return (
             <button key={s.slug} aria-current={ativo ? 'page' : undefined} className={`tab-btn${ativo ? ' ativo' : ''}`} onClick={() => onIr(s)}
@@ -9516,6 +9516,10 @@ function parseHash(){
 }
 
 function App(){
+  // Descobre o acesso total antes de decidir o que mostrar. O retorno não é
+  // usado direto: serve pra re-renderizar quando a resposta chega, já que
+  // `MSEAuth.restringirFinanceiro()` é lido de dentro da árvore.
+  useAcessoTotal();
   const inicial = parseHash();
   const [obraId, setObraId] = useState(
     inicial && OBRAS.some(o => o.id === inicial.id) ? inicial.id : OBRAS[0].id
@@ -9704,7 +9708,14 @@ function App(){
                 : setor.slug === 'restricoes'
                   ? <ModuloRestricoes obraId={obraAtual.id} obraNome={obraAtual.nome} />
                   : setor.slug === 'medicoes'
-                    ? <ModuloMedicoes obraId={obraAtual.id} obraNome={obraAtual.nome} />
+                    ? (MSEAuth.restringirFinanceiro()
+                        // Alguém que chegou por URL direta. Mensagem de PERMISSÃO,
+                        // não tela vazia: Medições vazia se lê como "não houve
+                        // faturamento" (ADR-005 — nunca deixar ausência parecer
+                        // dado). Quem recusa o dado é o RLS; isto só explica.
+                        ? <CartaoEstado maxHeight={620}
+                            texto="🔒 Medições é restrito — seu acesso não inclui informação financeira. Fale com o Planejamento se precisar." />
+                        : <ModuloMedicoes obraId={obraAtual.id} obraNome={obraAtual.nome} />)
                     : setor.slug === 'tour-360'
                       ? <ModuloTour360 obraId={obraAtual.id} obraNome={obraAtual.nome} />
                       : setor.slug === 'oc-co'
@@ -9825,6 +9836,23 @@ function TelaLogin({ erro }) {
       </div>
     </div>
   );
+}
+
+// Descobre se a sessão tem acesso total (lista `public.acesso_total`, ver
+// docs/15). Enquanto não sabe, assume RESTRITO — nunca mostrar primeiro e
+// esconder depois, que revelaria o que a pessoa não pode ver.
+function useAcessoTotal() {
+  const [pronto, setPronto] = React.useState(MSEAuth.acessoTotal() !== null);
+  React.useEffect(() => {
+    let vivo = true;
+    if (MSEAuth.sessao() && MSEAuth.acessoTotal() === null) {
+      MSEAuth.carregarAcessoTotal().then(() => { if (vivo) setPronto(true); });
+    } else {
+      setPronto(true);
+    }
+    return () => { vivo = false; };
+  }, []);
+  return { pronto, restringir: MSEAuth.restringirFinanceiro() };
 }
 
 const raizReact = ReactDOM.createRoot(document.getElementById('root'));

@@ -33,6 +33,7 @@
   let cliente = null;
   let sessaoAtual = null;
   let anonKeyPortal = null;
+  let anonKeyPortalUrl = null;
   let anonKeyEfetivo = null;
   const ouvintes = [];
 
@@ -95,6 +96,56 @@
   // esta flag não alcança. Depois da Fase 4, contornar o portão não devolve dado
   // nenhum, o que é justamente a diferença entre isto e a "trava cosmética" que
   // o ADR-007 existe pra evitar (docs/05).
+  // ── Acesso total (financeiro) ──────────────────────────────────────────────
+  // A lista de e-mails com acesso total vive em `public.acesso_total`, e a
+  // tabela tem o GRANT revogado de propósito: ninguém consegue LISTAR quem tem
+  // acesso. O painel então não lê a lista — ele PERGUNTA sobre si mesmo, pelo
+  // RPC `mse_acesso_total()`, e recebe só um booleano.
+  //
+  // Isto é para a UI, não é a proteção. Quem recusa o dado é o RLS (policies
+  // RESTRITIVAS no financeiro) e o WHERE da view `v_indices_financeiros_diario`.
+  // Esconder o setor evita o pior modo de falha: uma tela de Medições vazia se
+  // lê como "não houve faturamento", não como "você não tem permissão" — o
+  // oposto do ADR-005.
+  let acessoTotalCache = null;   // null = ainda não sabido
+  let acessoTotalPromessa = null;
+
+  async function carregarAcessoTotal() {
+    if (acessoTotalCache !== null) return acessoTotalCache;
+    if (acessoTotalPromessa) return acessoTotalPromessa;
+    acessoTotalPromessa = (async () => {
+      try {
+        const r = await fetch(anonKeyPortalUrl + '/rest/v1/rpc/mse_acesso_total', {
+          method: 'POST',
+          headers: Object.assign(headers(), { 'Content-Type': 'application/json' }),
+          body: '{}',
+        });
+        if (!r.ok) throw new Error('rpc mse_acesso_total: HTTP ' + r.status);
+        acessoTotalCache = (await r.json()) === true;
+      } catch (e) {
+        // Falha alto no console, mas assume RESTRITO: na dúvida, esconder é o
+        // erro seguro. Mostrar o financeiro por falha de rede seria o inverso.
+        console.error('[MSEAuth] nao foi possivel checar acesso total', e);
+        acessoTotalCache = false;
+      } finally {
+        acessoTotalPromessa = null;
+      }
+      return acessoTotalCache;
+    })();
+    return acessoTotalPromessa;
+  }
+
+  function acessoTotal() { return acessoTotalCache; }
+
+  // Verdadeiro só quando HÁ sessão e ela não está na lista. Sem sessão devolve
+  // `false` de propósito: o RLS restringe apenas `authenticated`, e produção
+  // ainda lê como `anon` (a Fase 4 do docs/14 não aconteceu). Se a UI
+  // restringisse sem sessão, o painel em produção perderia Medições hoje,
+  // divergindo do banco.
+  function restringirFinanceiro() {
+    return !!sessaoAtual && acessoTotalCache === false;
+  }
+
   function loginObrigatorio() {
     try {
       if (typeof window !== 'undefined' && window.__MSE_TESTE_SEM_LOGIN === true) return false;
@@ -130,6 +181,8 @@
   async function sair() {
     await exigeCliente().auth.signOut();
     sessaoAtual = null;
+    acessoTotalCache = null;
+    acessoTotalPromessa = null;
     notificar();
   }
 
@@ -141,6 +194,7 @@
       throw new Error('MSEAuth.iniciar({ url, anonKey, urlEfetivo, anonKeyEfetivo })');
     }
     anonKeyPortal = cfg.anonKey;
+    anonKeyPortalUrl = cfg.url;
     anonKeyEfetivo = cfg.anonKeyEfetivo || null;
 
     if (typeof supabase === 'undefined' || !supabase.createClient) {
@@ -159,6 +213,9 @@
 
     cliente.auth.onAuthStateChange(function (_evento, novaSessao) {
       sessaoAtual = novaSessao || null;
+      // Sessao trocou: o acesso total e por e-mail, entao o cache nao vale mais.
+      acessoTotalCache = null;
+      acessoTotalPromessa = null;
       notificar();
     });
 
@@ -169,6 +226,7 @@
     iniciar, entrarComGoogle, sair, aoMudar,
     headers, headersEfetivo,
     sessao, usuario, ehDaMSE, loginObrigatorio,
+    carregarAcessoTotal, acessoTotal, restringirFinanceiro,
     DOMINIO_SUGERIDO,
   });
 }));
