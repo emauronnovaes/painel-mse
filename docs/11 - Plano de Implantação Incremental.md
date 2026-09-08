@@ -467,6 +467,18 @@ Commit desta etapa: `23798b9`.
 - Validação: 30 testes unitários aprovados e comparação antes/depois aprovada
   nas sete obras, incluindo os filtros de status comuns.
 
+### 2026-09-08 — Validação das exportações PNG
+
+- Criado `scripts/validate-png-exports.cjs`, que exercita os downloads no
+  Chromium e valida assinatura, formato, dimensões e conteúdo não uniforme.
+- Os seis slides de Suprimentos com exportação habilitada (`106`, `110`,
+  `107`, `108`, `91` e `114`) foram gerados como PNGs válidos de `3840×2160`.
+- O Histograma da obra `106` foi gerado como PNG válido de `4356×1788`.
+- Porto (`94`) continua sem o botão por regra explícita da obra. O ranking de
+  Encarregados não foi baixado porque nenhuma das obras testadas apresentou
+  ranking habilitado no estado remoto atual; o verificador registra essa
+  condição sem tratá-la como falha.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

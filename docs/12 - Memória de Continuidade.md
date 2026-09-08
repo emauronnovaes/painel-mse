@@ -36,6 +36,8 @@ módulo externo é a única fonte das configurações específicas por obra.
 - `npm run test:all`: executa o fluxo completo em sequência.
 - `tests/suprimentos.spec.js`: suíte funcional do setor, estabilizada para
   aceitar tanto estado vazio quanto tabela com dados remotos.
+- `scripts/validate-png-exports.cjs`: valida downloads PNG dos slides de
+  Suprimentos, Histograma e a regra de ausência do botão em Porto.
 
 Última validação unitária: todos os 30 testes passaram. A comparação
 antes/depois de Suprimentos também foi concluída nas sete obras.
@@ -54,11 +56,10 @@ antes/depois de Suprimentos também foi concluída nas sete obras.
 
 ## Pendências para retomada
 
-1. Validar exportações PNG após a revisão visual/responsiva já realizada.
-2. Extrair componentes React grandes ainda embutidos no HTML.
-3. Revisar performance, acessibilidade e segurança.
-4. Revisar alterações pendentes do workflow n8n e artefatos de teste.
-5. Executar `npm run test:all` antes do merge da branch.
+1. Extrair componentes React grandes ainda embutidos no HTML.
+2. Revisar performance, acessibilidade e segurança.
+3. Revisar alterações pendentes do workflow n8n e artefatos de teste.
+4. Executar `npm run test:all` antes do merge da branch.
 
 ## Regra de continuidade
 
