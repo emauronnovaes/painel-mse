@@ -153,8 +153,51 @@ negada.
    num `COMMENT ON VIEW`, para ninguém "consertar" isso sem contexto. Na Fase 4
    o fechamento dela é por `revoke select from anon`, não por `security_invoker`.
 
-9. ⏳ Edge Function no projeto A para as leituras do `Efetivo`, exigindo sessão e
-   lendo o B com `service_role`; migrar os 9 sítios do front-end.
+9. 🚧 **Função no ar em 08/09/2026; migração do front-end aguardando o secret.**
+   `supabase/functions/efetivo/index.ts`, deployada no projeto A como `efetivo`
+   (v2, `verify_jwt = true`).
+
+   **Por que existe:** o JWT do projeto A não vale no projeto B — bases de
+   autenticação distintas. A função roda em A, exige sessão de A e lê B com a
+   `service_role` de B. Sem ela, fechar o `anon` de B exigiria um segundo fluxo
+   de OAuth, com o usuário logando duas vezes.
+
+   **Não amplia acesso.** A allow-list tem as 12 relações que o `anon` de B já
+   lê hoje, só por GET. Outras 10 relações de B ficam de fora.
+
+   Portões, na ordem: método `GET` → sessão presente → `role = authenticated`
+   → `exp` não vencido → domínio `@mse.com.br` → relação na allow-list →
+   secret configurado → proxy.
+
+   Detalhes que a implementação exigiu:
+   - **A allow-list é gerada, não escrita à mão.** O front-end monta dois nomes
+     dinamicamente (`vw_efetivo_${gran}_total`/`_moimod_total` em
+     `index.html:3432` e `vw_efetivo_${gran}_pessoas` em `:3480`, com `gran` em
+     `diario|semanal|mensal`). Lista manual esqueceria uma granularidade e a
+     tela quebraria só naquele filtro, difícil de notar.
+   - **Repassa `Range`/`Range-Unit`.** O `fetchPaginado` do painel
+     (`index.html:692`) pagina por header `Range`, não por `limit`/`offset`. Sem
+     repassar, toda consulta voltaria capada em 1000 linhas.
+   - **Bug de ordem encontrado no teste, corrigido na v2.** A checagem do secret
+     estava antes da autorização, então todo caso negativo devolvia 500 com o
+     nome da variável de ambiente — contava o estado da configuração para quem
+     nem passou da porta, e mascarava a autorização (nenhum 401/403 aparecia).
+     Foi só testar de fato que apareceu.
+
+   Verificado: sem `Authorization` → 401 (gateway); anon key como Bearer → 403
+   `necessario usuario autenticado`; `POST` → 405. Allow-list conferida por
+   geração contra o `pg_class` de B: 12/12 existem, 0 que o front pede ficam
+   bloqueadas, 10 relações de B não expostas.
+
+   **Pendente do usuário:** definir o secret `EFETIVO_SERVICE_KEY` na função
+   (Supabase → Edge Functions → `efetivo` → Secrets, ou
+   `supabase secrets set EFETIVO_SERVICE_KEY=...`) com a `service_role` **do
+   projeto Efetivo** (`wnldmumgjwujveeimyef`), não a do Portal. Sem isso a
+   função devolve 503 com a mensagem apontando para este documento.
+
+   **Depois do secret**, e só então: migrar os 9 sítios do front-end de
+   `MSEAuth.headersEfetivo()` + `EFETIVO_SUPABASE_URL` para a função. Antes
+   disso a migração deixaria a tela de Histograma/Efetivo quebrada.
 
 Ao fim desta fase, usuário logado e `anon` funcionam em paralelo. Dá para
 validar o app inteiro autenticado antes de fechar qualquer porta.
