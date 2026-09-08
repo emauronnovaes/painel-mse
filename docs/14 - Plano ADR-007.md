@@ -185,9 +185,60 @@ tabela só, `suprimentos_status_manual` (`prototipo/index.html:6194-6202`, upser
 e delete do status manual). As outras quatro nenhum consumidor conhecido escreve
 — quem grava é o n8n, com `service_role`, que ignora RLS.
 
-**Falta antes de mexer:** auditar o n8n e o `dashboard-main` para descobrir se
-algum deles grava em `curvas_s` ou `suprimentos` com a anon key. Se grava,
-remover a policy o quebra.
+#### Auditoria dos escritores (08/09/2026) — e o falso negativo que quase custou caro
+
+A auditoria de **código** nesta máquina achou **zero** sítios de escrita em
+`curvas_s`, `suprimentos`, `apontamento_efetivo` e `cards_ativos`. Concluir dali
+que ninguém escreve teria sido errado: os **logs** (`edge_logs`, 24h) mostram
+escrita ativa e intensa nessas mesmas tabelas — 3.285 POSTs em
+`apontamento_efetivo`, 303 em `curvas_s`, 96 POSTs e 72 DELETEs em
+`suprimentos`. Existe um ETL server-side que não vive nesta máquina.
+
+Lição de método: para decidir sobre permissão, **log de tráfego real vale mais
+que arqueologia de código**. O código local é um subconjunto dos clientes.
+
+Os logs identificaram exatamente dois escritores, e **ambos usam
+`service_role`**, que ignora RLS:
+
+| Escritor | `user_agent` | Grava em |
+|---|---|---|
+| ETL Node | `axios/1.15.0` | `apontamento_efetivo`, `EAP`, `Apontamentos`, `tarefas`, `medicao_acumulada`, `medicao_diaria`, `pts_emitidas`, `cards_ativos`, `orcamentos_complementares_obra`, `restricoes_obra` |
+| Google Apps Script (vários scripts) | `Google-Apps-Script` | `curvas_s`, `suprimentos`, `boletins_medicao`, `contratos_medicao`, `relatorio_produtividade_semanal`, `nfs`, `proximos_faturamentos` |
+
+**Como se provou o papel, sem acesso às credenciais:** os dois gravam com
+sucesso (200/201/204) em tabelas que têm RLS ligada e **nenhuma policy de
+INSERT** — `tarefas`, `medicao_acumulada` e `medicao_diaria` no caso do axios;
+`boletins_medicao`, `contratos_medicao`, `nfs` e `proximos_faturamentos` no caso
+do Apps Script. Sob `anon` isso seria negado pelo RLS. Só `bypassrls` passa.
+Confirmação direta no código de um deles: `sheet_to_supabase.gs` lê
+`SUPABASE_SERVICE_KEY` do `PropertiesService`, sem JWT literal no arquivo.
+
+#### Fechamento aplicado — migração `adr007_fecha_escrita_anon_sem_uso`
+
+Como nenhum escritor legítimo dependia delas, as policies de escrita do `anon`
+eram resíduo. Removidas, com `revoke insert, update, delete from anon`:
+
+- `apontamento_efetivo` e `cards_ativos` — policy `"Delete"` (`TO public USING (true)`)
+- `curvas_s` — `"insert anon"`, `"update anon"` (mantida a `"escrita service_role"`)
+- `suprimentos` — `"delete anon"`, `"escrita anon"`, `"insert anon"`, `"update anon"`
+
+Verificado por requisição real com a anon key: `INSERT` e `DELETE` nas quatro
+devolvem **401**, e a leitura continua devolvendo dado. `service_role` e
+`authenticated` com privilégios intactos. `npm run test:all` verde.
+
+**`suprimentos_status_manual` ficou de fora, de propósito.** É a única tabela em
+que o painel escreve (`prototipo/index.html:6194-6202`) e, em produção, ele
+ainda escreve como `anon` porque o login não foi deployado. Fechar agora
+quebraria o status manual de Suprimentos. A policy `mse_write_authenticated`
+já foi criada (aditiva) para o painel logado; a remoção da escrita `anon` dessa
+tabela é o **primeiro passo depois do deploy do login**.
+
+#### Resíduo conhecido, sem risco ativo
+
+`tarefas` e `medicao_diaria` (e as outras três do grupo "RLS sem policy")
+mantêm `GRANT` de INSERT/DELETE para `anon`. O RLS nega, porque não há policy —
+então não há exposição real, mas o grant é frouxo. Revogar junto com a Fase 4,
+por higiene.
 
 ### Fase 4 — O corte ⚠️
 
