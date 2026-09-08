@@ -952,13 +952,31 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
   );
 }
 
+// Setores que a sessão atual pode ver, RENUMERADOS em sequência.
+//
+// O `num` de `SETORES` é rótulo de exibição, não identidade — a identidade é o
+// `slug`. Ao esconder Medições e OC/CO, os números originais deixavam buracos na
+// barra (1,2,3,4,5,6,9), porque vinham fixos da config. Renumerar aqui, e não na
+// config, mantém `SETORES` como a lista canônica e faz a barra refletir o que
+// está de fato visível.
+function setoresVisiveis() {
+  return SETORES
+    .filter(s => !setorBloqueado(s.slug))
+    .map((s, i) => ({ ...s, num: i + 1 }));
+}
+
 // ── Faixa de setores + navegação lateral ────────────────────────────────────
 function TabsSetores({ atual, onIr, obraId }){
   const scrollRef = useRef(null);
+  const visiveis = setoresVisiveis();
   const irPara = (delta) => {
-    const i = SETORES.findIndex(s => s.slug === atual.slug);
-    const prox = SETORES[(i + delta + SETORES.length) % SETORES.length];
-    onIr(prox);
+    // Navega SÓ pelos visíveis. Antes ciclava por `SETORES` inteiro, então as
+    // setas ‹ › pousavam nos setores escondidos e mostravam o cartão de
+    // permissão — o usuário conseguia chegar por navegação normal ao que a barra
+    // tinha acabado de esconder.
+    const i = visiveis.findIndex(s => s.slug === atual.slug);
+    if (i === -1) { onIr(visiveis[0]); return; }  // estava num setor bloqueado
+    onIr(visiveis[(i + delta + visiveis.length) % visiveis.length]);
   };
 
   useEffect(() => {
@@ -976,7 +994,7 @@ function TabsSetores({ atual, onIr, obraId }){
       {/* Desktop: abas dividem o espaço. Mobile (@media 768): flex 0 0 auto
           + scroll-x no .tabs-scroll para todas serem alcançáveis no dedo. */}
       <div ref={scrollRef} className="card tabs-scroll">
-        {SETORES.filter(s => !setorBloqueado(s.slug)).map(s => {
+        {visiveis.map(s => {
           const ativo = s.slug === atual.slug;
           return (
             <button key={s.slug} aria-current={ativo ? 'page' : undefined} className={`tab-btn${ativo ? ' ativo' : ''}`} onClick={() => onIr(s)}
