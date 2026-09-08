@@ -68,6 +68,17 @@ negada.
    Nesta fase o header cai para a anon key quando não há sessão, então o app
    continua funcionando igual antes do login existir. É deploy seguro.
 
+   ✅ **Validado em 08/09/2026 no `localhost:8899`**: login com Google
+   `@mse.com.br` funciona ponta a ponta, sessão registrada em `auth.sessions`,
+   painel abre depois de entrar. `LOGIN_OBRIGATORIO = true`.
+
+   ⚠️ **Produção nunca foi testada.** A allow-list de *Redirect URLs* do Supabase
+   não é verificável de fora — o endpoint `/authorize` aceita qualquer
+   `redirect_to` e só valida no callback, caindo no *Site URL* quando a URL não
+   está na lista. Então o primeiro deploy com o portão ligado tem que ser
+   testado na hora. Se o login falhar em produção, o rollback é voltar
+   `LOGIN_OBRIGATORIO` para `false` e redeployar — uma linha.
+
 ### Fase 2 — Consumidores server-side (antes do corte, obrigatoriamente)
 
 4. ✅ **Feito em 08/09/2026.** `relatorios-pdf/gerar_relatorio.py` e as **três**
@@ -101,11 +112,11 @@ negada.
 
 ### Fase 3 — Aditivo no banco (reversível, não fecha nada)
 
-6. Criar, **ao lado** das policies de `anon`, as equivalentes
+7. Criar, **ao lado** das policies de `anon`, as equivalentes
    `to authenticated` com o predicado de domínio:
    `auth.jwt()->>'email' like '%@mse.com.br'`.
-7. Recriar as 5 views com `security_invoker = true`.
-8. Edge Function no projeto A para as leituras do `Efetivo`, exigindo sessão e
+8. Recriar as 5 views com `security_invoker = true`.
+9. Edge Function no projeto A para as leituras do `Efetivo`, exigindo sessão e
    lendo o B com `service_role`; migrar os 9 sítios do front-end.
 
 Ao fim desta fase, usuário logado e `anon` funcionam em paralelo. Dá para
@@ -113,14 +124,14 @@ validar o app inteiro autenticado antes de fechar qualquer porta.
 
 ### Fase 4 — O corte ⚠️
 
-9. Tabela por tabela: dropar a policy de `anon`/`PUBLIC` e
-   `revoke select on <tabela> from anon`. Validar a tela correspondente do
-   painel a cada grupo, não tudo de uma vez.
-10. Repetir no projeto `Efetivo`.
-11. Rodar `npm run test:all` autenticado e conferir o relatório semanal e a
+10. Tabela por tabela: dropar a policy de `anon`/`PUBLIC` e
+    `revoke select on <tabela> from anon`. Validar a tela correspondente do
+    painel a cada grupo, não tudo de uma vez.
+11. Repetir no projeto `Efetivo`.
+12. Rodar `npm run test:all` autenticado e conferir o relatório semanal e a
     Curva S do Drive depois do corte.
 
-**Ponto de não retorno:** a partir do passo 9 qualquer consumidor esquecido para
+**Ponto de não retorno:** a partir do passo 10 qualquer consumidor esquecido para
 de ler, com erro visível (o que é o comportamento correto por ADR-005 — falhar
 alto, não em silêncio). Reverter é recriar a policy, então o risco é de
 indisponibilidade, não de perda de dado.

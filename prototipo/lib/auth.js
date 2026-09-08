@@ -23,7 +23,7 @@
   // ninguém fora de um login que ainda não funciona. Vira `true` quando o fluxo
   // for validado, e deixa de existir no fim da Fase 4, quando o RLS passa a ser
   // o que decide.
-  const LOGIN_OBRIGATORIO = false;
+  const LOGIN_OBRIGATORIO = true;
 
   // Dica pro Google mostrar direto as contas do domínio. É UX, não trava: o
   // usuário consegue contornar. A checagem que vale é o predicado de RLS sobre
