@@ -52,12 +52,11 @@
 
   function headers(extra) { return montarHeaders(anonKeyPortal, extra); }
 
-  // O JWT do projeto `API - Portal` NÃO vale no projeto `Efetivo` — são bases
-  // de autenticação distintas. Por isso aqui o header segue com a anon key do
-  // Efetivo mesmo havendo sessão: mandar o token do Portal só produziria 401.
-  // A saída decidida (docs/14, Fase 3, passo 8) é uma Edge Function no Portal
-  // que exige sessão e lê o Efetivo com `service_role` — quando ela existir,
-  // estes 9 sítios deixam de falar direto com o Efetivo e esta função sai.
+  // ⚠️ SEM USO desde 08/09/2026 — os 9 sítios do Efetivo migraram para a Edge
+  // Function (`EFETIVO_API` em index.html) e passaram a usar `headers()`.
+  // Mantida SÓ como rollback enquanto a Fase 3 não é confirmada em produção.
+  // REMOVER quando o Histograma estiver validado autenticado — código morto é
+  // antipadrão explícito do projeto (docs/05, "se não usa, não entra").
   function headersEfetivo(extra) {
     return Object.assign({ apikey: anonKeyEfetivo, Authorization: 'Bearer ' + anonKeyEfetivo }, extra || {});
   }
