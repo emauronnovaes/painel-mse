@@ -7,7 +7,8 @@
         "firebase.json",
         "**/.*",
         "**/node_modules/**",
-        "combinado/**"
+        "combinado/**",
+        "assets/images/ORTOFOTO.jpg"
       ]
     },
     {
@@ -16,7 +17,8 @@
       "ignore": [
         "firebase.json",
         "**/.*",
-        "**/node_modules/**"
+        "**/node_modules/**",
+        "assets/images/ORTOFOTO.jpg"
       ]
     }
   ]
