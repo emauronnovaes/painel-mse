@@ -97,5 +97,17 @@
     if (melhor === 1) return 'Em cotação';
     return status.includes('Atrasado') ? 'Atrasado' : 'Pendente';
   }
-  return Object.freeze({ parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana, criticidadeBase, monitoramentoBase, statusAtrasadoOuPendente, statusItemFolha, statusAutomaticoItem });
+  /** Qual dos "vazios" o quadro-resumo de Efetivo está vendo.
+   *  A distinção existe porque a ação de quem lê muda:
+   *   'ok'          — há apontamento válido no dia consultado.
+   *   'nao_lancado' — o dia FOI carregado (existe linha crua) mas ninguém tem
+   *                   `situacao` preenchida. Normal de manhã; resolve sozinho.
+   *   'sem_dado'    — não há linha alguma para o dia. A carga não chegou.
+   *  Sem essa separação, os dois viravam o mesmo "—" e ninguém sabia se era
+   *  esperar ou cobrar a integração. */
+  function estadoResumoEfetivo({ temTotal, temLinhaCrua }) {
+    if (temTotal) return 'ok';
+    return temLinhaCrua ? 'nao_lancado' : 'sem_dado';
+  }
+  return Object.freeze({ estadoResumoEfetivo, parseValNum, parseDataFlexivel, normalizarNomeParaMatch, corDesvio, aderenciaSemanal, calcularMetaSemana, criticidadeBase, monitoramentoBase, statusAtrasadoOuPendente, statusItemFolha, statusAutomaticoItem });
 }));

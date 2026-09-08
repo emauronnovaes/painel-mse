@@ -3578,27 +3578,54 @@ function ModuloEfetivo({ obraId, obraNome }){
       .catch(() => { setPrevistoDetalhe([]); setPrevistoDetalheLoading(false); });
   }, [popup, moiModFiltro, obraId]);
 
-  // Quadro-resumo: efetivo total disponível + %MOI/%MOD, sempre do dado
-  // diário mais recente — independe da granularidade escolhida no gráfico.
+  // Quadro-resumo: efetivo total disponível + %MOI/%MOD, do dia de HOJE.
+  //
+  // NÃO RECUA — pedido explícito (2026-09-08). A versão anterior pegava o último
+  // dia com pelo menos uma presença (`order=periodo.desc&limit=1`), e o efeito
+  // era mostrar feriado como se fosse o efetivo da obra: em 08/09 todas as obras
+  // exibiam 07/09 (feriado da Independência), com NN-Reforço em 1 pessoa contra
+  // 46 na sexta anterior, e Porto em 10 contra 110. Um dia praticamente sem
+  // ninguém alocado virava o número do quadro.
+  //
+  // Agora consulta o dia corrente e nada mais. Sem apontamento válido hoje, o
+  // quadro diz isso em vez de exibir outro dia — ADR-005: ausência não deve
+  // parecer dado. O custo, aceito na decisão, é perder o último efetivo
+  // conhecido enquanto o apontamento do dia não é lançado.
+  //
+  // Distingue dois "vazios" diferentes, porque a ação de quem lê muda:
+  //   'nao_lancado' — as linhas do dia existem em `efetivo_diario_raw` mas com
+  //                   `situacao` em branco. O dia foi carregado e ainda não
+  //                   apontado; é normal de manhã, e resolve sozinho.
+  //   'sem_dado'    — não há linha alguma para hoje. A carga não chegou.
   useEffect(() => {
     setResumo(null); setResumoErro(false);
     if (!obraId) return;
     const headers = MSEAuth.headers();
+    // Data LOCAL, não `toISOString()`: em UTC-3 o ISO vira o dia seguinte a
+    // partir das 21h, e o quadro passaria a consultar um dia que nem começou.
+    const d = new Date();
+    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const pega = (url) => fetchPaginadoCompat(url, headers, 1000)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(rows => (Array.isArray(rows) && rows[0]) ? rows[0] : null);
     Promise.all([
-      pega(`${EFETIVO_API}/vw_efetivo_diario_total?obra_id=eq.${obraId}&select=periodo,qtd&order=periodo.desc&limit=1`),
-      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOI&select=periodo,qtd&order=periodo.desc&limit=1`),
-      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOD&select=periodo,qtd&order=periodo.desc&limit=1`),
-    ]).then(([rt, rmoi, rmod]) => {
+      pega(`${EFETIVO_API}/vw_efetivo_diario_total?obra_id=eq.${obraId}&periodo=eq.${hoje}&select=periodo,qtd`),
+      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOI&periodo=eq.${hoje}&select=periodo,qtd`),
+      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOD&periodo=eq.${hoje}&select=periodo,qtd`),
+      // Só pra separar 'nao_lancado' de 'sem_dado'; a view já filtrou os brancos.
+      pega(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=eq.${hoje}&select=id&limit=1`),
+    ]).then(([rt, rmoi, rmod, umaLinhaCrua]) => {
       setResumo({
         total: rt ? parseValNum(rt.qtd) : null,
         moi: rmoi ? parseValNum(rmoi.qtd) : null,
         mod: rmod ? parseValNum(rmod.qtd) : null,
-        periodo: rt ? rt.periodo : null,
+        periodo: hoje,
+        estado: MSEDomain.estadoResumoEfetivo({ temTotal: !!rt, temLinhaCrua: !!umaLinhaCrua }),
       });
-    }).catch(() => { setResumo({ total: null, moi: null, mod: null, periodo: null }); setResumoErro(true); });
+    }).catch(() => {
+      setResumo({ total: null, moi: null, mod: null, periodo: hoje, estado: 'erro' });
+      setResumoErro(true);
+    });
   }, [obraId]);
 
   // Detalhe do quadro-resumo (nome, função, MOI/MOD) — mesmo dia usado no balão
@@ -3800,7 +3827,15 @@ function ModuloEfetivo({ obraId, obraNome }){
   const pctMoi = resumo === null ? '···' : (resumo.total ? `${(resumo.moi / resumo.total * 100).toFixed(1)}%` : '—');
   const pctMod = resumo === null ? '···' : (resumo.total ? `${(resumo.mod / resumo.total * 100).toFixed(1)}%` : '—');
   const totalTxt = resumo === null ? '···' : (resumo.total != null ? String(resumo.total) : '—');
-  const corteResumo = resumo && resumo.periodo ? fmtDataCurta(parseDataFlexivel(resumo.periodo)) : null;
+  // O rótulo do corte diz POR QUE está vazio, quando está. "07/09" sozinho não
+  // informava nada; "08/09 · apontamento não lançado" informa.
+  const corteResumo = (() => {
+    if (!resumo || !resumo.periodo) return null;
+    const data = fmtDataCurta(parseDataFlexivel(resumo.periodo));
+    if (resumo.estado === 'nao_lancado') return `${data} · apontamento não lançado`;
+    if (resumo.estado === 'sem_dado') return `${data} · sem dado de efetivo`;
+    return data;
+  })();
 
   return (
     <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:10 }}>
@@ -3808,7 +3843,7 @@ function ModuloEfetivo({ obraId, obraNome }){
       <div className="kpi-row cols-3">
         <Balao titulo="Efetivo Total Disponível" cor={T.ink} bg="rgba(25,34,49,0.05)" borda="rgba(25,34,49,0.12)"
           corte={corteResumo} valor={resumoErro ? '—' : totalTxt}
-          onClick={(resumo && resumo.periodo && !resumoErro) ? () => setResumoPopupAberto(true) : undefined} />
+          onClick={(resumo && resumo.estado === 'ok' && !resumoErro) ? () => setResumoPopupAberto(true) : undefined} />
         <Balao titulo="% MOI" cor={T.blue} bg="rgba(37,99,235,0.08)" borda="rgba(37,99,235,0.15)"
           valor={resumoErro ? '—' : pctMoi} />
         <Balao titulo="% MOD" cor={T.amber} bg="rgba(217,145,26,0.08)" borda="rgba(217,145,26,0.15)"

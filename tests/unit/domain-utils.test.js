@@ -68,3 +68,17 @@ test('statusAutomaticoItem agrega entrega parcial e compra', () => {
   assert.equal(domain.statusAutomaticoItem([{ finalizado: true }, { finalizado: false }], reqs), 'Entregue Parcial');
   assert.equal(domain.statusAutomaticoItem([{ req: { status_requisicao: 'Comprado', data_cadastro: '2026-09-01' } }, { finalizado: false }], reqs), 'Comprado');
 });
+
+test('estadoResumoEfetivo separa os dois vazios do quadro de Efetivo', () => {
+  const f = domain.estadoResumoEfetivo;
+  // Com apontamento válido no dia: mostra o número.
+  assert.equal(f({ temTotal: true, temLinhaCrua: true }), 'ok');
+  assert.equal(f({ temTotal: true, temLinhaCrua: false }), 'ok');
+  // Dia carregado mas sem situacao preenchida — caso real de 08/09/2026, em que
+  // todas as obras tinham linha crua e nenhuma presença. Antes o quadro recuava
+  // pro feriado 07/09 e exibia 1 pessoa como se fosse o efetivo da obra.
+  assert.equal(f({ temTotal: false, temLinhaCrua: true }), 'nao_lancado');
+  // Nem linha crua: a carga não chegou. Ação diferente — cobrar a integração,
+  // não esperar o apontamento.
+  assert.equal(f({ temTotal: false, temLinhaCrua: false }), 'sem_dado');
+});
