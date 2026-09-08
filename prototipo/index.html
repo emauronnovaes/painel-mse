@@ -2713,10 +2713,26 @@ function ModuloEncarregados({ obraId, obraNome }){
       // tratamento gracioso que `colabPorEnc` já dava pra card sem dado.
       const efPorCard = await emLotes('apontamento_efetivo', 'tarefa_id,funcionario_nome,data_consulta', 'tarefa_id');
       const nomesPorCard = {};
+      // Data de Status escolhida à MÃO exige o dia EXATO — pedido explícito
+      // (2026-09-08: "dias sem colaboradores alocados estão exibindo contagem").
+      //
+      // O recuo `<=` dia veio do ajuste de 2026-08-28, pra tolerar atraso na
+      // fonte, e continua valendo no modo AUTOMÁTICO: lá o
+      // `getDiaAderenciaComFallback` já pula feriado e fim de semana, então o dia
+      // que ele escolhe é um dia útil de verdade.
+      //
+      // No modo manual o recuo produz mentira: selecionar 07/09 (feriado) no
+      // CNPEM devolvia os 30 colaboradores de 04/09, num dia em que
+      // `apontamento_efetivo` não tem linha alguma. O Porto, sem apontamento há
+      // mais de 9 dias, recuaria semanas.
+      let houveApontamentoNoDia = false;
       Object.keys(efPorCard).forEach(k => {
         const rows = efPorCard[k].filter(r => r.data_consulta);
         const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
-        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+        const rowsDoDia = dataStatusOverride
+          ? rows.filter(r => String(r.data_consulta).slice(0, 10) === dia)
+          : linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+        if (rowsDoDia.length) houveApontamentoNoDia = true;
         nomesPorCard[k] = new Set(rowsDoDia.filter(r => r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
       });
       const colabPorEnc = {};
@@ -2735,7 +2751,14 @@ function ModuloEncarregados({ obraId, obraNome }){
       // coluna "Colaboradores" abaixo. Um dedup por obra inteira poderia
       // ser menor que a soma se a mesma pessoa aparecesse em cards de mais
       // de um encarregado no mesmo dia.
-      if (!cancelado) setNumColabObra(Object.values(resumoColab).reduce((a, b) => a + b, 0));
+      // `null` quando o dia não teve apontamento NENHUM, pra o balão mostrar "—"
+      // em vez de "0". Zero é uma afirmação ("ninguém alocado"); ausência de
+      // apontamento é outra coisa, e por ADR-005 não deve parecer dado.
+      if (!cancelado) {
+        setNumColabObra(houveApontamentoNoDia
+          ? Object.values(resumoColab).reduce((a, b) => a + b, 0)
+          : null);
+      }
 
       // Produtividade (Hh Previsto ÷ Hh Real) — NOVO indicador (pedido
       // explícito, 2026-08-27), independente da "Performance" acima. Mesma
