@@ -70,10 +70,34 @@ negada.
 
 ### Fase 2 — Consumidores server-side (antes do corte, obrigatoriamente)
 
-4. `relatorios-pdf` e `curva_s_drive.py` passam a usar `service_role` lida de
-   variável de ambiente — nunca no código. Testar cada um gerando a saída real.
-5. Definir o destino do `dashboard-main`: migrar igual, ou aposentar. Se ficar
+4. ✅ **Feito em 08/09/2026.** `relatorios-pdf/gerar_relatorio.py` e as **três**
+   cópias de `curva_s_drive.py` resolvem a credencial por
+   `os.getenv("MSE_SUPABASE_SERVICE_KEY")`, caindo na anon key com aviso
+   explícito quando a variável não existe. A chave nunca entra no código.
+
+   O fallback com aviso é deliberado: hoje a anon ainda lê, então o relatório
+   semanal e a Curva S diária continuam saindo; o aviso é o que impede a
+   migração de parecer concluída sem estar. Quando a Fase 4 cortar, a ausência
+   da variável deixa de ser aviso e passa a ser falha — visível, por ADR-005.
+
+   As três cópias foram alteradas de propósito (`planejamento_dash/`, que é a
+   que roda; `curva-s-agendado/`, o pacote distribuível; e a do Desktop): depois
+   do corte, qualquer cópia que alguém execute precisa funcionar. Isso NÃO
+   promove as outras divergências da cópia do Desktop, que seguem pendentes.
+
+   Verificado: `USANDO_SERVICE_ROLE` alterna corretamente com e sem a variável,
+   e o relatório semanal roda ponta a ponta gerando os 4 PNGs.
+
+   **Pendente do usuário:** definir `MSE_SUPABASE_SERVICE_KEY` na máquina que
+   roda os jobs (`setx`, nível de usuário). Enquanto não for definida, os dois
+   consumidores seguem na anon key.
+
+5. ⏳ Definir o destino do `dashboard-main`: migrar igual, ou aposentar. Se ficar
    com anon key, o corte da Fase 4 o derruba.
+6. ⏳ Investigar **quem mais autentica neste projeto**. `auth.users` tem 34
+   contas `@mse.com.br` via Google criadas entre julho e agosto/2026 — o
+   provider já estava configurado antes do ADR-007. Existe outro app usando
+   esse OAuth, e o corte da Fase 4 o afeta também.
 
 ### Fase 3 — Aditivo no banco (reversível, não fecha nada)
 
