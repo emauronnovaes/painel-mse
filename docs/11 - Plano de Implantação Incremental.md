@@ -457,6 +457,16 @@ Commit desta etapa: `23798b9`.
   cobertura adicional e não mascara divergência de contagem em status comuns.
 - Validação: 30 testes unitários aprovados.
 
+### 2026-09-08 — Remoção física da configuração legada
+
+- Removidos de `prototipo/index.html` os blocos comentados das configurações
+  específicas por obra, totalizando cerca de 42 mil caracteres sem execução.
+- `CONFIG_SUPRIMENTOS_POR_OBRA` passou a referenciar diretamente
+  `MSEConfig.CONFIG_SUPRIMENTOS_POR_OBRA`; o módulo externo é agora a única
+  fonte dessas regras.
+- Validação: 30 testes unitários aprovados e comparação antes/depois aprovada
+  nas sete obras, incluindo os filtros de status comuns.
+
 ## Critério de rollback
 
 Se uma fase quebrar uma rota, alterar uma regra sem intenção ou introduzir

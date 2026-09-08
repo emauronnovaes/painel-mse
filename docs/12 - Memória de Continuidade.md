@@ -25,6 +25,9 @@
   legado isolado.
 - Obra `106`: não possuía configuração específica no mapa original.
 
+Os blocos legados comentados foram removidos fisicamente em 08/09/2026. O
+módulo externo é a única fonte das configurações específicas por obra.
+
 ## Testes disponíveis
 
 - `npm run test:unit`: 30 testes unitários.
@@ -51,12 +54,11 @@ antes/depois de Suprimentos também foi concluída nas sete obras.
 
 ## Pendências para retomada
 
-1. Remover fisicamente comentários legados, agora que a comparação foi concluída.
-2. Validar exportações PNG após a revisão visual/responsiva já realizada.
-3. Extrair componentes React grandes ainda embutidos no HTML.
-4. Revisar performance, acessibilidade e segurança.
-5. Revisar alterações pendentes do workflow n8n e artefatos de teste.
-6. Executar `npm run test:all` antes do merge da branch.
+1. Validar exportações PNG após a revisão visual/responsiva já realizada.
+2. Extrair componentes React grandes ainda embutidos no HTML.
+3. Revisar performance, acessibilidade e segurança.
+4. Revisar alterações pendentes do workflow n8n e artefatos de teste.
+5. Executar `npm run test:all` antes do merge da branch.
 
 ## Regra de continuidade
 
