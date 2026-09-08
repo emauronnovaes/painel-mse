@@ -9859,9 +9859,10 @@ function TelaLogin({ erro }) {
   );
 }
 
-// Descobre se a sessão tem acesso total (lista `public.acesso_total`, ver
-// docs/15). Enquanto não sabe, assume RESTRITO — nunca mostrar primeiro e
-// esconder depois, que revelaria o que a pessoa não pode ver.
+// Rede de segurança para a sessão que TROCA com o app já aberto (login/logout
+// sem recarregar): o `onAuthStateChange` limpa o cache do acesso, e este efeito
+// o preenche de novo. Na carga normal o bootstrap já resolveu antes do primeiro
+// render, então aqui não há o que fazer. Ver `public.acesso_total` e docs/15.
 function useAcessoTotal() {
   const [pronto, setPronto] = React.useState(MSEAuth.acessoTotal() !== null);
   React.useEffect(() => {
@@ -9890,8 +9891,18 @@ function renderizar(erroAuth) {
 MSEAuth.iniciar({
   url: SUPABASE_URL, anonKey: SUPABASE_KEY,
   urlEfetivo: EFETIVO_SUPABASE_URL, anonKeyEfetivo: EFETIVO_SUPABASE_KEY,
-}).then(() => {
+}).then(async () => {
   MSEAuth.aoMudar(() => renderizar());
+  // Resolve o acesso ANTES do primeiro render. Só isto elimina o flash de
+  // verdade: com a resposta já em mãos, a barra de abas nasce correta em vez de
+  // nascer completa e se corrigir. O `restringirFinanceiro()` tratando `null`
+  // como restrito é a segunda linha de defesa, para o caso de algo renderizar
+  // antes disto.
+  //
+  // Custa uma ida ao servidor a mais na carga de quem está logado. É o preço de
+  // não piscar informação restrita, e a alternativa (renderizar otimista e
+  // corrigir) foi exatamente o bug.
+  if (MSEAuth.sessao()) await MSEAuth.carregarAcessoTotal();
   renderizar();
 }).catch((e) => {
   // Falha alto (ADR-005): não dá pra saber se existe sessão, então não renderiza

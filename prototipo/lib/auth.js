@@ -137,13 +137,19 @@
 
   function acessoTotal() { return acessoTotalCache; }
 
-  // Verdadeiro só quando HÁ sessão e ela não está na lista. Sem sessão devolve
-  // `false` de propósito: o RLS restringe apenas `authenticated`, e produção
-  // ainda lê como `anon` (a Fase 4 do docs/14 não aconteceu). Se a UI
-  // restringisse sem sessão, o painel em produção perderia Medições hoje,
-  // divergindo do banco.
+  // Sem sessão devolve `false` de propósito: o RLS restringe apenas
+  // `authenticated`, e produção ainda lê como `anon` (a Fase 4 do docs/14 não
+  // aconteceu). Se a UI restringisse sem sessão, o painel em produção perderia
+  // Medições hoje, divergindo do banco.
+  //
+  // COM sessão, restringe até PROVA em contrário — `null` (ainda não sabido)
+  // conta como restrito, não como liberado. A primeira versão comparava
+  // `=== false`, então enquanto o RPC não respondia a função devolvia `false` e
+  // as abas de Medições/OC-CO apareciam por um instante a cada refresh. Mostrar
+  // primeiro e esconder depois revela justamente o que deveria ficar escondido.
   function restringirFinanceiro() {
-    return !!sessaoAtual && acessoTotalCache === false;
+    if (!sessaoAtual) return false;
+    return acessoTotalCache !== true;
   }
 
   function loginObrigatorio() {

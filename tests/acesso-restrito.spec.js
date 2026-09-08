@@ -95,6 +95,42 @@ test.describe('Acesso restrito ao financeiro', () => {
     }
   });
 
+  test('a barra nasce correta — nenhum frame com Medições ou OC/CO', async ({ page }) => {
+    // REGRESSÃO REAL, achada pelo usuário: `restringirFinanceiro()` comparava
+    // `acessoTotalCache === false`, e no primeiro render o cache é `null`. Logo
+    // devolvia `false`, a barra nascia COMPLETA e se corrigia quando o RPC
+    // respondia — dava pra ver Medições e OC/CO por um instante a cada refresh.
+    //
+    // Consertado em duas pontas: `null` passou a restringir, e o bootstrap
+    // resolve o acesso ANTES do primeiro render. Este teste amostra a barra a
+    // cada 5ms desde antes de a página existir; se qualquer amostra tiver os
+    // setores proibidos, o flash voltou.
+    await page.addInitScript(([k, v]) => {
+      try { localStorage.setItem(k, v); } catch (e) { /* storage bloqueado */ }
+    }, [`sb-${REF}-auth-token`, JSON.stringify(sessaoFalsa())]);
+    await page.addInitScript(() => {
+      window.__amostrasAbas = [];
+      setInterval(() => {
+        const abas = [...document.querySelectorAll('.tab-btn')]
+          .map(x => (x.innerText || '').replace(/\s+/g, ' ').trim());
+        if (!abas.length) return;
+        const chave = abas.join(' | ');
+        const ult = window.__amostrasAbas[window.__amostrasAbas.length - 1];
+        if (chave !== ult) window.__amostrasAbas.push(chave);
+      }, 5);
+    });
+    await page.goto('/#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.tabs-scroll', { timeout: 45_000 });
+    await page.waitForFunction(() => MSEAuth.acessoTotal() !== null, null, { timeout: 30_000 });
+    await page.waitForTimeout(1200);
+
+    const amostras = await page.evaluate(() => window.__amostrasAbas);
+    const proibidas = amostras.filter(s => /Medi[çc][õo]es|OC\s*\/\s*CO/i.test(s));
+    expect(proibidas, 'frames com setor restrito visivel: ' + proibidas.join(' >> ')).toEqual([]);
+    // Uma composição só: a barra nunca mudou depois do primeiro paint.
+    expect(amostras.length, 'a barra mudou de composicao: ' + amostras.join(' >> ')).toBe(1);
+  });
+
   test('URL direta a um setor escondido explica a permissão, não finge vazio', async ({ page }) => {
     await abrirRestrito(page, '/#/obra/106/medicoes');
     // ADR-005: ausência nunca deve parecer dado. Medições sem linhas se leria
