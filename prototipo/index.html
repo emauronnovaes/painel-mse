@@ -7,7 +7,7 @@
 <title>MSE — Painel de Obra</title>
 <link rel="icon" href="assets/images/mselogo2.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@600;700;800;900&display=swap" rel="stylesheet">
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <!-- react-grid-layout (UMD, 86KB) — grid de widgets do setor Medições:
@@ -469,6 +469,60 @@
     @page{
       @bottom-right{ content:"página " counter(page) " de " counter(pages); font-family:'IBM Plex Sans', sans-serif; font-size:8px; color:#000; }
     }
+  }
+
+  /* ── LOGIN ──────────────────────────────────────────────────────────────────
+     Portado do dashboard-main (index.html:69-149) a pedido explícito, para as
+     duas telas de entrada da MSE terem a mesma cara. Escuro de propósito, ainda
+     que o painel seja claro: é o padrão já estabelecido no dashboard, e o
+     contraste marca a transição de "porta" para "aplicação".
+     Diferença deliberada: não há formulário de e-mail/senha. O ADR-007 decidiu
+     Google apenas — senha própria só somaria credencial a gerenciar. */
+  @keyframes loginBgPan {
+    0%   { transform: scale(1.06) translate(0%,    0%); }
+    33%  { transform: scale(1.10) translate(-0.8%, -0.4%); }
+    66%  { transform: scale(1.08) translate( 0.5%, -0.8%); }
+    100% { transform: scale(1.06) translate(0%,    0%); }
+  }
+  @keyframes loginCardIn {
+    from { opacity: 0; transform: translateY(28px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0)    scale(1); }
+  }
+  @keyframes loginShimmer {
+    0%   { background-position: -300% center; }
+    100% { background-position:  300% center; }
+  }
+  @keyframes loginFooterIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .login-bg { animation: loginBgPan 22s ease-in-out infinite; will-change: transform; }
+  .login-card { animation: loginCardIn 0.65s cubic-bezier(0.22,1,0.36,1) forwards; }
+  .login-shimmer {
+    background: linear-gradient(90deg, transparent 0%, rgba(59,130,246,0.9) 40%,
+      rgba(147,197,253,1) 50%, rgba(59,130,246,0.9) 60%, transparent 100%);
+    background-size: 300% 100%;
+    animation: loginShimmer 3.5s linear infinite;
+  }
+  .login-footer { animation: loginFooterIn 1s 0.5s ease both; }
+  .login-google-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 12px;
+    background: #fff; border: none; border-radius: 10px;
+    color: #1f2937; font-size: 14px; font-weight: 600;
+    font-family: 'Barlow', sans-serif; letter-spacing: 0.02em;
+    cursor: pointer; transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  }
+  .login-google-btn:hover:not(:disabled) {
+    background: #f1f5f9; transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .login-google-btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+  .login-google-btn:disabled { background: rgba(255,255,255,0.55); cursor: default; }
+  /* Respeita quem pediu menos movimento no sistema — a foto com Ken Burns e o
+     shimmer são decorativos, não informativos. */
+  @media (prefers-reduced-motion: reduce) {
+    .login-bg, .login-card, .login-shimmer, .login-footer { animation: none; }
   }
 </style>
 </head>
@@ -9686,39 +9740,84 @@ function ChipUsuario() {
 
 function TelaLogin({ erro }) {
   const [entrando, setEntrando] = React.useState(false);
+  const [erroLocal, setErroLocal] = React.useState('');
   async function entrar() {
-    setEntrando(true);
+    setEntrando(true); setErroLocal('');
     try { await MSEAuth.entrarComGoogle(); }
-    catch (e) { console.error(e); setEntrando(false); }
+    catch (e) { console.error(e); setErroLocal(e?.message || String(e)); setEntrando(false); }
   }
+  const mensagem = erro || erroLocal;
   return (
-    <div style={{ minHeight:'100vh', display:'grid', placeItems:'center', background:'var(--bg)' }}>
-      <div style={{ background:'var(--card)', border:'1px solid var(--line)', borderRadius:14,
-                    padding:'40px 36px', width:'min(400px, 92vw)', textAlign:'center',
-                    boxShadow:'0 8px 28px rgba(25,34,49,.10)' }}>
-        <img src="assets/images/mselogo.png" alt="MSE" style={{ height:34, marginBottom:24 }} />
-        <div style={{ fontSize:18, fontWeight:600, color:'var(--ink)', marginBottom:6 }}>
-          Painel de Obra
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center',
+                  position:'relative', overflow:'hidden', background:'#060a12' }}>
+
+      {/* Foto de obra com Ken Burns lento */}
+      <div className="login-bg" style={{
+        position:'absolute', inset:'-6%',
+        backgroundImage:'url(assets/images/background.png)',
+        backgroundSize:'cover', backgroundPosition:'center',
+        filter:'brightness(0.68) saturate(0.8)', zIndex:0,
+      }} />
+
+      {/* Vinheta: escurece as bordas e mantém o centro legível */}
+      <div style={{ position:'absolute', inset:0, zIndex:1,
+        background:'radial-gradient(ellipse 70% 90% at 50% 50%, transparent 30%, rgba(6,10,18,0.72) 100%)' }} />
+
+      <div className="login-card" style={{
+        position:'relative', zIndex:2, width:'90%', maxWidth:380,
+        background:'#0b1120', border:'1px solid rgba(59,130,246,0.18)',
+        borderRadius:22, overflow:'hidden',
+        boxShadow:'0 40px 80px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04) inset',
+      }}>
+        <div className="login-shimmer" style={{ width:'100%', height:3 }} />
+
+        <div style={{ padding:'44px 48px 48px', display:'flex', flexDirection:'column', alignItems:'center' }}>
+          <img src="assets/images/mselogo2.png" alt="MSE"
+               style={{ height:50, marginBottom:28, filter:'brightness(1.1)' }}
+               onError={e => e.target.style.display = 'none'} />
+
+          <div style={{ width:'100%', height:1, marginBottom:26,
+            background:'linear-gradient(90deg, transparent, rgba(59,130,246,0.25), transparent)' }} />
+
+          <div style={{ fontFamily:"'Barlow Condensed', sans-serif", fontSize:30, fontWeight:800,
+                        letterSpacing:'0.2em', color:'#f1f5f9', textTransform:'uppercase', marginBottom:4,
+                        textAlign:'center', lineHeight:1.1 }}>
+            Painel de Obra
+          </div>
+          <div style={{ fontSize:12, color:'#475569', marginBottom:36, letterSpacing:'0.08em',
+                        textTransform:'uppercase', fontFamily:"'Barlow', sans-serif" }}>
+            Acesso restrito
+          </div>
+
+          <button className="login-google-btn" type="button" onClick={entrar} disabled={entrando}>
+            <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.36-8.16 2.36-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+            </svg>
+            {entrando ? 'Redirecionando…' : 'Continuar com Google'}
+          </button>
+
+          <div style={{ marginTop:18, fontSize:11, color:'#475569', letterSpacing:'0.04em',
+                        fontFamily:"'Barlow', sans-serif", textAlign:'center', lineHeight:1.5 }}>
+            Contas <strong style={{ color:'#64748b' }}>@{MSEAuth.DOMINIO_SUGERIDO}</strong>
+          </div>
+
+          {mensagem && (
+            <div style={{ marginTop:18, width:'100%', fontSize:12, color:'#f87171', textAlign:'center',
+                          padding:'8px 10px', background:'rgba(248,113,113,0.08)', borderRadius:8,
+                          border:'1px solid rgba(248,113,113,0.15)', lineHeight:1.5 }}>
+              {mensagem}
+            </div>
+          )}
         </div>
-        <div style={{ fontSize:13, color:'var(--mut)', marginBottom:28, lineHeight:1.5 }}>
-          Acesso restrito a contas <strong>@{MSEAuth.DOMINIO_SUGERIDO}</strong>
-        </div>
-        <button onClick={entrar} disabled={entrando}
-                style={{ width:'100%', padding:'11px 16px', borderRadius:8, border:'1px solid var(--line)',
-                         background:'#fff', color:'var(--ink)', fontSize:14, fontWeight:500,
-                         display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-                         opacity: entrando ? .6 : 1 }}>
-          <svg width="17" height="17" viewBox="0 0 48 48" aria-hidden="true">
-            <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.6l6.7-6.7C35.6 2.6 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.2 17.7 9.5 24 9.5z"/>
-            <path fill="#4285F4" d="M46.1 24.6c0-1.6-.1-2.8-.4-4.1H24v8.4h12.4c-.3 2.1-1.6 5.2-4.6 7.3l7.6 5.9c4.5-4.2 6.7-10.3 6.7-17.5z"/>
-            <path fill="#FBBC05" d="M10.4 28.7A14.7 14.7 0 0 1 9.6 24c0-1.6.3-3.2.8-4.7l-7.8-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.8-6.1z"/>
-            <path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.8-5.8l-7.6-5.9c-2 1.4-4.8 2.4-8.2 2.4-6.3 0-11.7-3.7-13.6-9.8l-7.8 6.1C6.5 42.6 14.6 48 24 48z"/>
-          </svg>
-          {entrando ? 'Redirecionando…' : 'Entrar com Google'}
-        </button>
-        {erro && (
-          <div style={{ marginTop:18, fontSize:12, color:'var(--red)', lineHeight:1.5 }}>{erro}</div>
-        )}
+      </div>
+
+      <div className="login-footer" style={{ position:'absolute', bottom:22, fontSize:11,
+        color:'rgba(255,255,255,0.3)', letterSpacing:'0.12em', zIndex:2,
+        fontFamily:"'Barlow Condensed', sans-serif", textTransform:'uppercase' }}>
+        MSE Engenharia © {new Date().getFullYear()}
       </div>
     </div>
   );
