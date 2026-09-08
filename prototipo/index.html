@@ -570,6 +570,9 @@ const OBRAS = MSEConfig.OBRAS;
 const OBRA_FOTOS = MSEConfig.OBRA_FOTOS;
 
 const SETORES = MSEConfig.SETORES;
+const SETORES_FINANCEIROS = MSEConfig.SETORES_FINANCEIROS;
+// true quando ESTE setor deve ser escondido da sessão atual.
+const setorBloqueado = (slug) => SETORES_FINANCEIROS.has(slug) && MSEAuth.restringirFinanceiro();
 MSEConfig.validarConfiguracao(OBRAS, SETORES);
 
 const OBRA_TOUR_360 = MSEConfig.OBRA_TOUR_360;
@@ -973,7 +976,7 @@ function TabsSetores({ atual, onIr, obraId }){
       {/* Desktop: abas dividem o espaço. Mobile (@media 768): flex 0 0 auto
           + scroll-x no .tabs-scroll para todas serem alcançáveis no dedo. */}
       <div ref={scrollRef} className="card tabs-scroll">
-        {SETORES.filter(s => !(s.slug === 'medicoes' && MSEAuth.restringirFinanceiro())).map(s => {
+        {SETORES.filter(s => !setorBloqueado(s.slug)).map(s => {
           const ativo = s.slug === atual.slug;
           return (
             <button key={s.slug} aria-current={ativo ? 'page' : undefined} className={`tab-btn${ativo ? ' ativo' : ''}`} onClick={() => onIr(s)}
@@ -9696,7 +9699,14 @@ function App(){
       <Header obraAtual={obraAtual} obras={OBRAS} onSelecionarObra={setObraId} foto={OBRA_FOTOS[obraAtual.id]} />
       <TabsSetores atual={setor} onIr={setSetor} obraId={obraAtual.id} />
       <div key={setor.slug} className="screen-slide app-main">
-        {setor.slug === 'curva-s'
+        {setorBloqueado(setor.slug)
+          /* Chegou por URL direta num setor escondido. Mensagem de PERMISSÃO, e
+             não tela vazia: Medições/OC-CO sem linhas se leria como "não houve
+             faturamento" (ADR-005 — ausência nunca deve parecer dado). Quem
+             recusa o dado é o RLS; isto apenas explica o porquê. */
+          ? <CartaoEstado maxHeight={620}
+              texto={`🔒 ${setor.label} é restrito — seu acesso não inclui informação financeira. Fale com o Planejamento se precisar.`} />
+          : setor.slug === 'curva-s'
           ? <ModuloCurvaS linhas={linhasCurva} info={infoCurva} carregando={linhasCurva === null} erro={curvasErro} obraId={obraAtual.id} obraNome={obraAtual.nome}
               curvas={obraAtual.curvas} curvaAtual={curvaChaveAtual} onTrocarCurva={setCurvaEscolhida} />
           : setor.slug === 'histograma'
@@ -9708,14 +9718,7 @@ function App(){
                 : setor.slug === 'restricoes'
                   ? <ModuloRestricoes obraId={obraAtual.id} obraNome={obraAtual.nome} />
                   : setor.slug === 'medicoes'
-                    ? (MSEAuth.restringirFinanceiro()
-                        // Alguém que chegou por URL direta. Mensagem de PERMISSÃO,
-                        // não tela vazia: Medições vazia se lê como "não houve
-                        // faturamento" (ADR-005 — nunca deixar ausência parecer
-                        // dado). Quem recusa o dado é o RLS; isto só explica.
-                        ? <CartaoEstado maxHeight={620}
-                            texto="🔒 Medições é restrito — seu acesso não inclui informação financeira. Fale com o Planejamento se precisar." />
-                        : <ModuloMedicoes obraId={obraAtual.id} obraNome={obraAtual.nome} />)
+                    ? <ModuloMedicoes obraId={obraAtual.id} obraNome={obraAtual.nome} />
                     : setor.slug === 'tour-360'
                       ? <ModuloTour360 obraId={obraAtual.id} obraNome={obraAtual.nome} />
                       : setor.slug === 'oc-co'

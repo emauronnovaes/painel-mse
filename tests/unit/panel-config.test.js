@@ -26,6 +26,20 @@ test('configurações de apresentação preservam foto, tour e ortofoto', () => 
   assert.match(config.OBRA_TOUR_360[106], /^https:\/\/visi\.constructin\.com\.br/);
   assert.deepEqual(config.OBRA_ORTOFOTO[94], { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' });
 });
+test('setores financeiros são exatamente Medições e OC/CO', () => {
+  // Conferido pelo que cada módulo consulta, não por suposição:
+  //   'medicoes' -> contratos_medicao + boletins_medicao (restritas no RLS)
+  //   'oc-co'    -> orcamentos_complementares_obra (restrita), e só ela
+  // Se um setor novo passar a ler tabela financeira, tem que entrar aqui — senão
+  // fica visível pra quem não está em public.acesso_total (ver docs/15).
+  assert.equal(config.SETORES_FINANCEIROS.has('medicoes'), true);
+  assert.equal(config.SETORES_FINANCEIROS.has('oc-co'), true);
+  assert.equal(config.SETORES_FINANCEIROS.size, 2);
+  // Todo slug listado tem que existir de fato em SETORES.
+  for (const slug of config.SETORES_FINANCEIROS) {
+    assert.ok(config.SETORES.some(s => s.slug === slug), `slug inexistente: ${slug}`);
+  }
+});
 test('configurações de Suprimentos preservam escopo e exportação', () => {
   assert.equal(config.OBRAS_SUPRIMENTOS_VALIDADAS.has(114), true);
   // 114 saiu do conjunto em 2026-09-08, a pedido explícito ("permita atribuir

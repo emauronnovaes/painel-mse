@@ -27,6 +27,14 @@
     { num: 8, slug: 'medicoes', label: 'Medições', estado: 'pronto' },
     { num: 9, slug: 'tour-360', label: 'Tour 360°', estado: 'pronto' },
   ]);
+  // Setores cujo conteúdo é financeiro e que ficam ocultos para quem não está
+  // em `public.acesso_total` (ver docs/15). Conferido pelo que cada módulo
+  // consulta, não por suposição:
+  //   'medicoes' -> contratos_medicao + boletins_medicao (restritas) + curvas_s
+  //   'oc-co'    -> orcamentos_complementares_obra (restrita), e só ela
+  // Esconder é cosmético; quem recusa o dado são as policies RESTRITIVAS e o
+  // WHERE de v_indices_financeiros_diario.
+  const SETORES_FINANCEIROS = Object.freeze(new Set(['medicoes', 'oc-co']));
   const OBRA_FOTOS = Object.freeze({
     106: 'assets/images/cnpem-faseado.jpg', 110: 'assets/images/hitachi.jpg',
     94: 'assets/images/porto.jpg', 107: 'assets/images/AP.jpg',
@@ -290,5 +298,5 @@
     }
     return resultado;
   }
-  return Object.freeze({ OBRAS, SETORES, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, CONFIG_SUPRIMENTOS_POR_OBRA, validarConfiguracao, validarConfiguracaoSuprimentos, mesclarConfiguracaoSuprimentos });
+  return Object.freeze({ OBRAS, SETORES, SETORES_FINANCEIROS, OBRA_FOTOS, OBRA_TOUR_360, OBRA_ORTOFOTO, OBRAS_SUPRIMENTOS_VALIDADAS, OBRAS_STATUS_MANUAL_DESATIVADO, NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA, OBRAS_SEM_EXPORTACAO_GRAFICOS, STATUS_MANUAL_OPCOES, ORDEM_STATUS_RMI, CONFIG_SUPRIMENTOS_POR_OBRA, validarConfiguracao, validarConfiguracaoSuprimentos, mesclarConfiguracaoSuprimentos });
 }));
