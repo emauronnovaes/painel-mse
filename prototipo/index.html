@@ -851,6 +851,25 @@ function getDiaAderenciaComFallback(temDadosNoDia){
     d.setDate(d.getDate() - 1);
   }
 }
+// Diferente de `getDiaAderenciaComFallback`: aqui TODO dia exige dado de
+// verdade (`temDadosNoDia`), não só fim de semana — porque este é o dia que
+// vai APARECER no campo "Data de Status", e o campo tem que lastrear o que
+// está sendo exibido (pedido explícito, 2026-09-09). Dia útil sem dado
+// nenhum (fonte atrasada) não pode fingir que tem só porque é dia útil.
+// `desde` é o dia de partida: ontem (automático) ou a data escolhida à mão
+// (manual) — a busca sempre recua, nunca avança.
+function getDiaComDadoReal(temDadosNoDia, desde){
+  const ymdLocal = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  const d = desde ? new Date(desde + 'T12:00:00') : (() => { const x = new Date(); x.setHours(12, 0, 0, 0); x.setDate(x.getDate() - 1); return x; })();
+  // Teto de 180 dias: sem isso, uma obra genuinamente sem nenhum dado em
+  // nenhuma das 4 fontes recuaria pra sempre, travando o navegador.
+  for (let i = 0; i < 180; i++) {
+    const ymd = ymdLocal(d);
+    if (temDadosNoDia(ymd)) return ymd;
+    d.setDate(d.getDate() - 1);
+  }
+  return null;
+}
 // Dado que a Data de Status exige dia exato, uma fonte com sincronização
 // atrasada (achado real: `v_indices_financeiros_diario` parada há dias em
 // toda a base, não só numa obra) fazia o indicador sumir por inteiro em vez
@@ -2555,13 +2574,16 @@ function ModuloEncarregados({ obraId, obraNome }){
   // últimos 7 dias úteis, ver cálculo em `linhas`/`assiduidade` abaixo.
   const [showAssiduidade, setShowAssiduidade] = useState(false);
   // "Data de Status" ajustável (pedido explícito, 2026-08-27: "o default
-  // seguirá a lógica, mas permitirá a visualização de outro dia") — null
-  // = comportamento padrão de sempre (`getDiaAderenciaComFallback`); com
-  // valor, esse dia (YMD) é usado DIRETO no lugar do cálculo automático
-  // pra Aderência/Qualidade/Ausente/Última liberação de PT — os únicos
-  // indicadores que já tinham o conceito de "dia de referência". Produtividade/
-  // Produtividade (Hh)/Colaboradores continuam mostrando o snapshot mais
-  // recente disponível (não têm esse conceito hoje, fora de escopo aqui).
+  // seguirá a lógica, mas permitirá a visualização de outro dia") — o dia
+  // escolhido (ou, sem escolha, o dia de partida automático) é só o PONTO DE
+  // PARTIDA da busca. Qualidade/Performance/Colaboradores/Produtividade
+  // (unificados em 2026-09-09) recuam a partir daqui até a fonte combinada
+  // (tvRaw + Apontamentos + v_indices_financeiros_diario +
+  // apontamento_efetivo) ter alguma linha — ver `diaStatusExibido` abaixo,
+  // que é o resultado dessa busca e o que de fato aparece no campo (pedido
+  // explícito: "a Data de Status deve lastrear o que está sendo exibido").
+  // Aderência/Ausente/Última liberação de PT continuam com o cálculo
+  // per-pessoa que já tinham (não entram nesta unificação).
   const [dataStatusOverride, setDataStatusOverride] = useState(null);
   // Troca de obra volta pro dia de referência padrão — override de uma
   // obra não faz sentido carregar pra outra.
@@ -2610,13 +2632,25 @@ function ModuloEncarregados({ obraId, obraNome }){
       .catch(() => { setCardsErro(true); setCardsRaw([]); });
   }, [obraId]);
 
-  // Qualidade (Apontamentos.status_qualidade no dia de referência de cada
-  // card), Produtividade (v_indices_financeiros_diario, valor mais recente) e
-  // Colaboradores (apontamento_efetivo, snapshot mais recente) — as 3 usam os
-  // mesmos card_id de cards_ativos, buscados em lotes de 200.
+  // Dia efetivamente refletido pela tela — o que aparece no campo "Data de
+  // Status" TEM que ser o dia de que os números vêm (pedido explícito,
+  // 2026-09-09: "se for exibir outro dia, a Data de Status deve exibir o dia
+  // correto"). Antes, o campo mostrava um "alvo" calculado só de `tvRaw`, e
+  // cada indicador podia recuar (fonte atrasada) pra um dia mais antigo sem
+  // o campo acompanhar — a tela dizia um dia e mostrava outro. Agora o dia é
+  // decidido DEPOIS de ver os 4 dado (tvRaw + os 3 lotes abaixo): é o mais
+  // recente <= o alvo em que ALGUMA fonte tem alguma linha, e é isso, não o
+  // alvo, que fica no state e aparece no campo.
+  const [diaStatusExibido, setDiaStatusExibido] = useState(null);
+  useEffect(() => { setDiaStatusExibido(null); }, [obraId]);
+
+  // Qualidade (Apontamentos.status_qualidade), Performance
+  // (v_indices_financeiros_diario) e Colaboradores (apontamento_efetivo) —
+  // as 3 usam os mesmos card_id de cards_ativos, buscados em lotes de 200, e
+  // o mesmo dia efetivo calculado aqui dentro.
   useEffect(() => {
-    if (!cardsRaw) return;
-    if (cardsRaw.length === 0) { setQualidadeEnc({}); setProdutividadeEnc({}); setProdutividadeHhEnc({}); setColaboradoresEnc({}); setNumColabObra(0); return; }
+    if (!cardsRaw || !tvRaw) return;
+    if (cardsRaw.length === 0) { setQualidadeEnc({}); setProdutividadeEnc({}); setProdutividadeHhEnc({}); setColaboradoresEnc({}); setNumColabObra(0); setDiaStatusExibido(null); return; }
     let cancelado = false;
     const headers = MSEAuth.headers();
     const ids = cardsRaw.map(c => String(c.card_id));
@@ -2652,12 +2686,35 @@ function ModuloEncarregados({ obraId, obraNome }){
         return Object.entries(cont).sort((a, b) => b[1].n - a[1].n || rank(a[0]) - rank(b[0]))[0][1].label;
       };
 
-      const apontPorCard = await emLotes('Apontamentos', 'id,status_qualidade,data_do_input', 'id');
+      // Busca as 3 fontes ANTES de decidir o dia — só depois de ver os dados
+      // de verdade dá pra saber qual é o dia mais recente que alguma delas
+      // realmente tem, em vez de adivinhar (era o que `tvRaw` sozinho fazia).
+      const [apontPorCard, prodPorCard, efPorCard] = await Promise.all([
+        emLotes('Apontamentos', 'id,status_qualidade,data_do_input', 'id'),
+        emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id'),
+        emLotes('apontamento_efetivo', 'tarefa_id,funcionario_nome,data_consulta', 'tarefa_id'),
+      ]);
+
+      const diasComTv = new Set(tvRaw.map(r => parseBRDateParaYMD(r.DATA)).filter(Boolean));
+      const diasComApont = new Set();
+      Object.values(apontPorCard).forEach(rows => rows.forEach(r => { if (r.data_do_input) diasComApont.add(String(r.data_do_input).slice(0, 10)); }));
+      const diasComProd = new Set();
+      Object.values(prodPorCard).forEach(rows => rows.forEach(r => { if (r.data) diasComProd.add(String(r.data).slice(0, 10)); }));
+      const diasComEf = new Set();
+      Object.values(efPorCard).forEach(rows => rows.forEach(r => { if (r.data_consulta) diasComEf.add(String(r.data_consulta).slice(0, 10)); }));
+
+      const alvo = dataStatusOverride || getDiaAderencia();
+      const diaEfetivo = getDiaComDadoReal(
+        ymd => diasComTv.has(ymd) || diasComApont.has(ymd) || diasComProd.has(ymd) || diasComEf.has(ymd),
+        alvo,
+      ) || alvo; // 180 dias sem NADA em nenhuma fonte: usa o alvo mesmo, não trava a tela
+      if (!cancelado) setDiaStatusExibido(diaEfetivo);
+
       const statusPorCard = {};
       Object.keys(apontPorCard).forEach(k => {
         const rows = apontPorCard[k].filter(r => r.data_do_input);
         if (!rows.length) return;
-        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => (r.data_do_input || '').startsWith(ymd)));
+        const dia = diaEfetivo;
         // `Apontamentos.id` não é único por dia — o mesmo card pode ter
         // mais de 1 linha no mesmo `data_do_input` (dado real: até 3
         // linhas no mesmo dia, misturando `status_qualidade` nulo e
@@ -2681,21 +2738,19 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEnc).forEach(([nome, lista]) => { resumo[nome] = resumoQualidade(lista); });
       if (!cancelado) setQualidadeEnc(resumo);
 
-      // Performance NÃO segue a "Data de Status" (revertido 2026-08-28,
-      // pedido explícito: "qualidade e efetivo precisam da data de status,
-      // somente a performance que não") — diferente de Qualidade/Efetivo
-      // abaixo, aqui é sempre o valor mais recente disponível em
-      // `v_indices_financeiros_diario`, independente da data escolhida no
-      // seletor. (Tinha passado a seguir a Data de Status em 2026-08-27,
-      // depois corrigido pra tolerar atraso de sincronização em 2026-08-28
-      // — ambas as mudanças foram revertidas aqui a pedido do usuário.)
-      const prodPorCard = await emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id');
+      // Performance volta a seguir a "Data de Status" (revertida a reversão de
+      // 2026-08-28 a pedido explícito — agora com o MESMO dia efetivo que
+      // Qualidade/Colaboradores usam, e a mesma tolerância de atraso de
+      // sincronização que Qualidade já tinha desde 2026-08-28
+      // (`linhasDoDiaMaisRecenteAte`): sem isso, uma fonte atrasada faria o
+      // card sumir por inteiro em vez de mostrar o último valor conhecido.
       const produtividadePorCard = {};
       Object.keys(prodPorCard).forEach(k => {
         const comValor = prodPorCard[k].filter(r => r.indice_receita_custo_incorrido != null && r.data);
         if (!comValor.length) return;
-        const maisRecente = comValor.reduce((max, r) => (!max || r.data > max.data) ? r : max, null);
-        produtividadePorCard[k] = maisRecente.indice_receita_custo_incorrido;
+        const rowsDoDia = linhasDoDiaMaisRecenteAte(comValor, 'data', diaEfetivo);
+        if (!rowsDoDia.length) return;
+        produtividadePorCard[k] = rowsDoDia[0].indice_receita_custo_incorrido;
       });
       const porEncProd = {};
       cardsRaw.forEach(c => {
@@ -2708,33 +2763,18 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEncProd).forEach(([nome, lista]) => { resumoProd[nome] = lista.reduce((a, b) => a + b, 0) / lista.length; });
       if (!cancelado) setProdutividadeEnc(resumoProd);
 
-      // Colaboradores idem (mesmo pedido) — era sempre o snapshot mais
-      // recente de `apontamento_efetivo`, vira o snapshot mais recente <=
-      // a Data de Status (não exige o dia exato, mesmo ajuste 2026-08-28
-      // de Qualidade/Performance acima — tolera atraso na fonte). Sem
-      // nenhum apontamento até a data -> Set vazio (0 colaboradores), mesmo
-      // tratamento gracioso que `colabPorEnc` já dava pra card sem dado.
-      const efPorCard = await emLotes('apontamento_efetivo', 'tarefa_id,funcionario_nome,data_consulta', 'tarefa_id');
+      // Colaboradores idem — snapshot mais recente <= `diaEfetivo` (mesmo dia
+      // de Qualidade/Performance acima), tolerando atraso na fonte tanto no
+      // automático quanto no manual (revertido o ajuste de 2026-09-08 que
+      // exigia dia exato no manual, a pedido explícito — volta a valer
+      // `linhasDoDiaMaisRecenteAte` sempre). Sem nenhum apontamento até a
+      // data -> Set vazio (0 colaboradores), mesmo tratamento gracioso que
+      // `colabPorEnc` já dava pra card sem dado.
       const nomesPorCard = {};
-      // Data de Status escolhida à MÃO exige o dia EXATO — pedido explícito
-      // (2026-09-08: "dias sem colaboradores alocados estão exibindo contagem").
-      //
-      // O recuo `<=` dia veio do ajuste de 2026-08-28, pra tolerar atraso na
-      // fonte, e continua valendo no modo AUTOMÁTICO: lá o
-      // `getDiaAderenciaComFallback` já pula feriado e fim de semana, então o dia
-      // que ele escolhe é um dia útil de verdade.
-      //
-      // No modo manual o recuo produz mentira: selecionar 07/09 (feriado) no
-      // CNPEM devolvia os 30 colaboradores de 04/09, num dia em que
-      // `apontamento_efetivo` não tem linha alguma. O Porto, sem apontamento há
-      // mais de 9 dias, recuaria semanas.
       let houveApontamentoNoDia = false;
       Object.keys(efPorCard).forEach(k => {
         const rows = efPorCard[k].filter(r => r.data_consulta);
-        const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
-        const rowsDoDia = dataStatusOverride
-          ? rows.filter(r => String(r.data_consulta).slice(0, 10) === dia)
-          : linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', diaEfetivo);
         if (rowsDoDia.length) houveApontamentoNoDia = true;
         nomesPorCard[k] = new Set(rowsDoDia.filter(r => r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
       });
@@ -2801,7 +2841,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       if (!cancelado) setProdutividadeHhEnc(resumoProdHh);
     })().catch(() => {});
     return () => { cancelado = true; };
-  }, [cardsRaw, dataStatusOverride]);
+  }, [cardsRaw, tvRaw, dataStatusOverride]);
 
   // Última liberação de PT por encarregado — só existe pra Novo Nordisk
   // (AP/UB), únicas obras com `origemPTS` mapeado.
@@ -2868,8 +2908,8 @@ function ModuloEncarregados({ obraId, obraNome }){
   // apontamento nele) + elegibilidade: só entra quem tem card ativo nesta
   // obra OU apontou no seu próprio dia de referência — mesma regra corrigida
   // no dashboard atual (ver [[cap-1000-linhas-supabase]]/RankingScreen).
-  const { linhas, diaAderenciaObra } = useMemo(() => {
-    if (tvRaw == null || cardsRaw == null) return { linhas: null, diaAderenciaObra: null };
+  const { linhas } = useMemo(() => {
+    if (tvRaw == null || cardsRaw == null) return { linhas: null };
     const cardsEncsUpper = new Set(cardsRaw.map(c => c.responsavel_encarregado.trim().toUpperCase()));
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
@@ -2948,8 +2988,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       (a.semApontamentos ? 1 : 0) - (b.semApontamentos ? 1 : 0) ||
       b.score - a.score);
 
-    const diaAderenciaObra = dataStatusOverride || getDiaAderenciaComFallback(ymd => tvRaw.some(r => parseBRDateParaYMD(r.DATA) === ymd));
-    return { linhas: arr, diaAderenciaObra };
+    return { linhas: arr };
   }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride]);
 
   const [ordenarEnc, setOrdenarEnc] = useState('aderencia');
@@ -3009,7 +3048,7 @@ function ModuloEncarregados({ obraId, obraNome }){
   // dashboard-main (levemente diferente) — consistência com o resto do
   // painel-mse, não com a origem do código.
   const exportarPNG = async () => {
-    const diaYMD = diaAderenciaObra;
+    const diaYMD = diaStatusExibido;
     if (!diaYMD || !rankingRows.length) return;
     const [yy, mm, dd] = diaYMD.split('-');
     const dataLabel = `${dd}/${mm}/${yy}`;
@@ -3321,19 +3360,19 @@ function ModuloEncarregados({ obraId, obraNome }){
         </button>
         {/* "Data de Status" (pedido explícito, 2026-08-27: "coloque junto
             ao botão de assiduidade" + "terá de ser ajustável, o default
-            seguirá a lógica, mas permitirá a visualização de outro dia")
-            — default é `diaAderenciaObra` (mesmo dia de referência que
-            Aderência/Qualidade/Ausente/Última liberação de PT já usavam);
-            escolher outra data aqui troca `dataStatusOverride`, que passa
-            a valer NO LUGAR do cálculo automático nesses 4 indicadores
-            (Produtividade/Colaboradores continuam no snapshot mais
-            recente — não têm esse conceito hoje). `max` trava em HOJE
-            (pedido explícito, 2026-08-27: "está bloqueando o hoje, o
-            hoje deverá ser permitido") — não em futuro. */}
-        <div className="mono" title="Dia de referência usado por Aderência/Qualidade/Ausente/Última liberação de PT — clique pra ver outro dia"
+            seguirá a lógica, mas permitirá a visualização de outro dia") —
+            o campo mostra `diaStatusExibido`, não `dataStatusOverride` puro
+            (pedido explícito, 2026-09-09: "a Data de Status deve lastrear o
+            que está sendo exibido, se for exibir outro dia a Data de Status
+            deve exibir o dia correto"). Escolher um dia sem dado em NENHUMA
+            fonte recua pro mais recente que tem — e o campo se atualiza pra
+            mostrar esse dia, não o que foi clicado. `max` trava em HOJE
+            (pedido explícito, 2026-08-27: "está bloqueando o hoje, o hoje
+            deverá ser permitido") — não em futuro. */}
+        <div className="mono" title="Dia de referência de todos os indicadores da tela — pode recuar sozinho se o escolhido não tiver dado; clique pra ver outro dia"
           style={{ display:'inline-flex', alignItems:'center', gap:4, padding:'4px 6px 4px 11px', borderRadius:8, background:'#eef0f3', color:T.mut }}>
           <span style={{ fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>Data de Status</span>
-          <input type="date" value={dataStatusOverride || diaAderenciaObra || ''}
+          <input type="date" value={diaStatusExibido || ''}
             max={new Date().toISOString().slice(0, 10)}
             onChange={e => setDataStatusOverride(e.target.value || null)}
             style={{ border:'none', background:'transparent', fontFamily:"'IBM Plex Sans', sans-serif", fontSize:11, fontWeight:700, color:T.ink }} />
