@@ -101,13 +101,35 @@ variantes no `vinicius.tadashi` (global → obra 91 → sem linha) e restaurando
 23 linhas em `acesso_total`: 7 globais, 16 por obra cobrindo 12 pessoas.
 Os e-mails foram conferidos pelo usuário em 09/09/2026.
 
+## SSO do Portal MSE (09/09/2026)
+
+Painel é servido DENTRO do portal, como superapp em iframe. O lado do painel
+está pronto: `window.__MSE_PORTAL = {access_token, refresh_token}` vira sessão
+real via `setSession()`. A Edge Function `portal-sso` está no ar e configurada,
+validando o mesmo token HMAC que o portal já emite para o `planejamento_dash`.
+
+**Falta só o lado PHP** — chamar a função e injetar o retorno no HTML. Contrato
+em [[15 - Integração Portal MSE (superapp)]], seção 1d.
+
+Por que sessão e não identidade: sem JWT o painel lê como `anon`, isento das
+policies do financeiro. Medido: `anon` vê 461 nfs; quem tem recorte deveria ver
+17. Portar o `__SSO_BOOTSTRAP` do `planejamento_dash` como está anularia o
+controle de acesso inteiro.
+
+Alternativa mais simples e mais segura (ID token do Google) foi levantada e
+ADIADA pelo usuário — registrada na mesma seção.
+
 ## Pendências para retomada
 
-1. **Deploy do front quando a cota liberar** — ver bloco acima. É o único passo
-   entre o que está pronto e o que as pessoas veem.
-2. Extrair componentes React grandes ainda embutidos no HTML.
-3. Revisar performance, acessibilidade e segurança.
-4. Validar a **execução** do workflow n8n de Suprimentos dentro do n8n. O export
+1. **Levar o front atualizado para produção.** O banco já mudou; o painel servido
+   ainda é o antigo. O `firebase deploy` está travado por cota, mas o Firebase é
+   só backup — quem serve o painel é o portal, então o caminho real de
+   atualização passa por lá. Enquanto não for, as 12 pessoas com recorte não
+   veem Medições nem na própria obra, e o SSO não funciona.
+2. **Lado PHP do SSO** — ver bloco acima.
+3. Extrair componentes React grandes ainda embutidos no HTML.
+4. Revisar performance, acessibilidade e segurança.
+5. Validar a **execução** do workflow n8n de Suprimentos dentro do n8n. O export
    está versionado, mas a reestruturação (loop por obra + ramo de requisições +
    troca de credencial) nunca foi rodada de ponta a ponta.
 

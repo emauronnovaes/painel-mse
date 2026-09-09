@@ -291,6 +291,38 @@ procurar quem resolve. Lá o botão é **"Voltar ao Portal MSE"**.
 Fora do portal (Firebase, localhost) a tela segue oferecendo o Google
 normalmente — há teste para as duas metades.
 
+### Alternativa considerada e ADIADA: ID token do Google
+
+Levantado em 09/09/2026, depois de a Edge Function já estar no ar: **o portal
+também autentica via Google**. Se o PHP tiver o `id_token` (o JWT que o Google
+assina, devolvido junto do `access_token` no fluxo authorization code), o painel
+poderia trocar tudo isto por uma linha:
+
+```js
+supabase.auth.signInWithIdToken({ provider: 'google', token: idTokenDoGoogle })
+```
+
+O Supabase valida a assinatura contra as chaves públicas do Google e emite a
+sessão. Sumiriam: o segredo HMAC compartilhado, a Edge Function `portal-sso`, a
+tabela `sso_nonce`, o uso da `service_role` e o par `generate_link`+`verify`.
+
+**O argumento mais forte não é simplicidade, é segurança.** Com HMAC, o portal
+pode emitir sessão para QUALQUER e-mail — segredo vazado ou portal comprometido,
+e alguém forja um token para um e-mail da lista de acesso total e vê o
+financeiro inteiro; o painel não tem como distinguir. Com ID token, o portal só
+consegue repassar o que o Google assinou: não pode inventar identidade nem se
+quiser. A confiança sai do portal e vai para o Google, que já é onde ela está no
+login normal do painel.
+
+**Decisão do usuário: fica como está** (09/09/2026). O caminho HMAC funciona,
+está testado 16/16, e reaproveita o gerador que o portal já tem para o
+`planejamento_dash` — zero código novo lá.
+
+Se um dia valer trocar, os dois pré-requisitos são: (a) o PHP reter o `id_token`
+(se ele guarda só o `access_token` ou o perfil, o `id_token` foi descartado e
+precisa de mudança no portal); (b) o Client ID que o portal usa estar em
+*Authorized Client IDs* do provider Google no Supabase.
+
 ### Fora do escopo
 
 O **Histograma lê outro projeto Supabase** (`wnldmumgjwujveeimyef`, Efetivo),
