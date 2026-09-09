@@ -39,35 +39,62 @@
   // Alisson, com recorte em CP273, veria as 461 NFs de todas as obras em vez
   // das 17 dele. Ver docs/15, seção 2.
   //
-  // Por isso o contrato é outro: o portal entrega uma SESSÃO REAL do Supabase,
-  // emitida server-side pela Admin API com a `service_role`. O painel só a
-  // instala. O token é assinado pelo próprio Supabase, então o RLS o entende
-  // nativamente e `mse_acesso_total()` / `mse_obras_financeiro()` funcionam sem
-  // precisar saber que a pessoa veio do portal.
+  // Transporte: EXATAMENTE igual ao planejamento_dash — o portal manda o mesmo
+  // token HMAC que já manda pra lá, pela URL (`?sso=<token>` no `<iframe src>`).
+  // Zero código novo de geração ou transporte do lado do PHP.
   //
-  // Forma do bootstrap, injetado pelo PHP no HTML servido:
-  //   window.__MSE_PORTAL = { access_token, refresh_token } | { erro: "..." }
-  const BOOTSTRAP_PORTAL = '__MSE_PORTAL';
+  // A diferença fica do lado do painel: o planejamento_dash troca o token só
+  // por IDENTIDADE (`window.__SSO_BOOTSTRAP.user`, sem JWT do Supabase) — não
+  // serve aqui, porque o RLS do financeiro precisa de `auth.jwt()->>'email'`.
+  // Por isso o painel troca o MESMO token pela Edge Function `portal-sso`
+  // (docs/15, seção 1d), que devolve uma sessão REAL do Supabase.
+  const PORTAL_SSO_URL = 'https://gebjlhkywtnpfqjrakok.supabase.co/functions/v1/portal-sso';
 
-  function bootstrapPortal() {
-    try {
-      const b = (typeof window !== 'undefined') ? window[BOOTSTRAP_PORTAL] : null;
-      return (b && typeof b === 'object') ? b : null;
-    } catch (e) { return null; }
+  let veioDoPortal = false;
+  let erroPortalDetalhe = null;
+
+  function tokenPortalDaUrl() {
+    try { return new URLSearchParams(location.search).get('sso'); } catch (e) { return null; }
   }
 
-  // Verdadeiro quando a pessoa chegou pelo portal. Muda só a UI (o botão "sair"
-  // vira "Portal"); não afeta permissão nenhuma.
-  function viaPortal() { return bootstrapPortal() !== null; }
+  // Tira o `sso=` da URL assim que lido. O token é de uso único (nonce) — um
+  // F5 reenviando o mesmo token bateria em "nonce já usado", e não há motivo
+  // pra ele sobreviver no histórico do navegador.
+  function limparTokenDaUrl() {
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete('sso');
+      history.replaceState(null, '', url.toString());
+    } catch (e) { /* ambiente sem History API: token fica, sem quebrar nada */ }
+  }
+
+  async function trocarTokenPortal(token) {
+    try {
+      const r = await fetch(PORTAL_SSO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token }),
+      });
+      const dados = await r.json().catch(function () { return {}; });
+      if (!r.ok || !dados.access_token || !dados.refresh_token) {
+        return { erro: dados.erro || ('HTTP ' + r.status) };
+      }
+      return { access_token: dados.access_token, refresh_token: dados.refresh_token };
+    } catch (e) {
+      return { erro: 'Falha de rede ao validar o acesso pelo Portal.' };
+    }
+  }
+
+  // Verdadeiro quando a pessoa chegou pelo portal (havia `?sso=` na URL de
+  // entrada). Muda só a UI (o botão "sair" vira "Portal"); não afeta permissão
+  // nenhuma.
+  function viaPortal() { return veioDoPortal; }
 
   // Motivo, quando veio do portal e mesmo assim não há sessão. Serve pra tela de
   // login dizer algo útil em vez de oferecer "entrar com Google" — que dentro do
   // iframe do portal frequentemente nem completa.
-  let erroPortalDetalhe = null;
   function erroPortal() {
-    if (!viaPortal() || sessaoAtual) return null;
-    const b = bootstrapPortal();
-    if (b && b.erro) return String(b.erro);
+    if (!veioDoPortal || sessaoAtual) return null;
     return erroPortalDetalhe;
   }
 
@@ -327,28 +354,35 @@
     // dentro do superapp, quem manda é quem está logado no portal agora. Sem
     // isso, uma sessão antiga de outra pessoa no mesmo navegador venceria a do
     // portal — e o RLS obedeceria a ela, não ao portal.
-    const doPortal = bootstrapPortal();
-    if (doPortal && doPortal.access_token && doPortal.refresh_token) {
-      // `setSession` PERSISTE e passa a renovar sozinha (autoRefreshToken), que
-      // é a diferença de mandar o token só no header: aqui o supabase-js assume
-      // o ciclo de vida e o painel não precisa saber quando o token vence.
-      const { data: dp, error: ep } = await cliente.auth.setSession({
-        access_token: doPortal.access_token,
-        refresh_token: doPortal.refresh_token,
-      });
-      if (ep) {
+    const tokenPortal = tokenPortalDaUrl();
+    if (tokenPortal) {
+      veioDoPortal = true;
+      limparTokenDaUrl();
+
+      const trocado = await trocarTokenPortal(tokenPortal);
+      if (trocado.erro) {
         // Falha alto e NÃO entra: token do portal recusado significa que a
         // identidade não vale. Cair no fluxo normal mostra a tela de login, que
         // é o comportamento certo — melhor pedir login do que entrar sem
         // identidade e ler como `anon`, isento das policies do financeiro.
-        console.error('[MSEAuth] sessao do portal recusada pelo Supabase', ep);
-        erroPortalDetalhe = 'A sessão enviada pelo Portal não foi aceita pelo Supabase '
-          + '(pode ter expirado). Recarregue a página pelo Portal.';
-      } else if (dp && dp.session) {
-        sessaoAtual = dp.session;
+        console.error('[MSEAuth] token do portal recusado', trocado.erro);
+        erroPortalDetalhe = 'Acesso pelo Portal não validado. Recarregue a página pelo Portal.';
+      } else {
+        // `setSession` PERSISTE e passa a renovar sozinha (autoRefreshToken),
+        // que é a diferença de mandar o token só no header: aqui o supabase-js
+        // assume o ciclo de vida e o painel não precisa saber quando ele vence.
+        const { data: dp, error: ep } = await cliente.auth.setSession({
+          access_token: trocado.access_token,
+          refresh_token: trocado.refresh_token,
+        });
+        if (ep) {
+          console.error('[MSEAuth] sessao do portal recusada pelo Supabase', ep);
+          erroPortalDetalhe = 'A sessão do Portal não foi aceita pelo Supabase. '
+            + 'Recarregue a página pelo Portal.';
+        } else if (dp && dp.session) {
+          sessaoAtual = dp.session;
+        }
       }
-    } else if (doPortal && doPortal.erro) {
-      console.error('[MSEAuth] portal nao emitiu sessao:', doPortal.erro);
     }
 
     // Só consulta o armazenamento local se o portal não resolveu. O `if` é o
