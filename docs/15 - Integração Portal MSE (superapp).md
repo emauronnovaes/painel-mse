@@ -238,6 +238,29 @@ ignora RLS por completo — a primeira rodada de conferência deu "tudo liberado
 e parecia sucesso. Precisa de `set local role authenticated` junto, dentro de
 `begin/rollback`.
 
+### ⚠️ Obra sem contrato CP: o acesso vira aba vazia
+
+O IPEN (obra 114) **não tem código CP** em `obra_chaves` e não tem uma linha
+sequer em `boletins_medicao`, `nfs` ou `orcamentos_complementares_obra`.
+
+Dar acesso financeiro a uma obra assim produz um estado incoerente, verificado
+em 09/09/2026 com `leonardo.bernardino@mse.com.br`:
+
+| | |
+|---|---|
+| `mse_obras_financeiro()` | `[114]` |
+| `mse_cps_financeiro()` | `NULL` — nenhum CP |
+| `mse_financeiro_obra(114)` | `true` → **as abas aparecem** |
+| boletins / nfs / OCs | **0 / 0 / 0** |
+
+Ou seja: Medições e OC/CO ficam visíveis e **vazias**, que se lê como "não houve
+faturamento" — o ADR-005 ao contrário. Não é causado pelo recorte: um usuário
+GLOBAL vê o IPEN igualmente vazio hoje.
+
+**Quando o IPEN ganhar contrato**, é obrigatório inserir
+`(114,'cp','<código>')` em `obra_chaves`. Sem isso o acesso continua sem efeito
+nas tabelas de Medições, mesmo com a linha em `acesso_total` no lugar certo.
+
 ### Fora do escopo
 
 O **Histograma lê outro projeto Supabase** (`wnldmumgjwujveeimyef`, Efetivo),
