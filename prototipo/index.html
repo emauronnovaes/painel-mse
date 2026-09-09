@@ -9828,9 +9828,18 @@ function ChipUsuario() {
                   borderRadius:999, padding:'6px 10px', boxShadow:'0 2px 8px rgba(25,34,49,.10)' }}>
       {u.foto && <img src={u.foto} alt="" width="22" height="22" style={{ borderRadius:'50%' }} />}
       <span style={{ fontSize:12, color:'var(--body)' }}>{u.email}</span>
-      <button onClick={() => MSEAuth.sair()}
-              style={{ border:'none', background:'transparent', color:'var(--mut)', fontSize:12,
-                       textDecoration:'underline', padding:0 }}>sair</button>
+      {/* Dentro do superapp, "sair" faria a coisa errada: encerraria a sessão do
+          Supabase e deixaria a pessoa sem identidade DENTRO do portal, ainda
+          logada nele — o painel voltaria a ler como `anon`. Lá o botão leva de
+          volta ao portal, que é o que "sair daqui" significa nesse contexto.
+          Mesma escolha do planejamento_dash. */}
+      {MSEAuth.viaPortal()
+        ? <button onClick={irParaPortal} title="Voltar ao Portal MSE"
+                  style={{ border:'none', background:'transparent', color:'var(--mut)', fontSize:12,
+                           textDecoration:'underline', padding:0 }}>Portal</button>
+        : <button onClick={() => MSEAuth.sair()}
+                  style={{ border:'none', background:'transparent', color:'var(--mut)', fontSize:12,
+                           textDecoration:'underline', padding:0 }}>sair</button>}
     </div>
   );
 }
@@ -9944,7 +9953,10 @@ const raizReact = ReactDOM.createRoot(document.getElementById('root'));
 function renderizar(erroAuth) {
   const temSessao = !!MSEAuth.sessao();
   if (MSEAuth.loginObrigatorio() && !temSessao) {
-    raizReact.render(<TelaLogin erro={erroAuth} />);
+    // Veio do portal e mesmo assim não há sessão = o token foi recusado. Dizer
+    // isso é melhor que oferecer "entrar com Google", que dentro do iframe do
+    // portal costuma nem completar — a pessoa ficaria clicando num botão morto.
+    raizReact.render(<TelaLogin erro={MSEAuth.erroPortal() || erroAuth} />);
     return;
   }
   raizReact.render(<><App />{temSessao && <ChipUsuario />}</>);

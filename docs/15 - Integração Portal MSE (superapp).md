@@ -276,6 +276,84 @@ O **Histograma lê outro projeto Supabase** (`wnldmumgjwujveeimyef`, Efetivo),
 com RLS própria, via Edge Function. Não é financeiro, e o acesso geral às obras
 não é restrito — então hoje não há nada a fazer lá.
 
+## 1d. Entrada pelo Portal — o que o painel já aceita (09/09/2026)
+
+Confirmado que o painel é **servido dentro do portal**, como superapp. O lado do
+painel está implementado; falta o lado PHP.
+
+### O contrato, em uma linha
+
+O portal injeta, no HTML que serve, **antes** dos scripts do painel:
+
+```html
+<script>window.__MSE_PORTAL = {
+  access_token:  "eyJ...",   // sessão REAL do Supabase
+  refresh_token: "..."
+};</script>
+```
+
+Ou, quando não conseguir emitir: `window.__MSE_PORTAL = { erro: "motivo" }`.
+
+O `MSEAuth.iniciar()` instala isso com `supabase.auth.setSession()`. A partir daí
+é uma sessão normal: renova sozinha, o RLS a entende, e
+`mse_acesso_total()` / `mse_obras_financeiro()` funcionam sem saber que a pessoa
+veio do portal.
+
+### ⚠️ O que NÃO serve, e por quê
+
+O `planejamento_dash` resolve isso de outro jeito: HMAC assinado, validado pelo
+Flask (`app.py`), que injeta `window.__SSO_BOOTSTRAP = { user }`. A validação
+dele é boa — assinatura no servidor, nonce de uso único, janela de validade.
+
+**Mas o usuário resultante não tem JWT do Supabase.** O próprio código diz:
+
+> `if (window.__SSO_BOOTSTRAP?.user) return; // sessão do portal: sem token Supabase próprio`
+
+Lá não dói, porque não há RLS por usuário. Aqui dói muito: sem JWT o painel lê
+como `anon`, que é **isento de todas as policies do financeiro**. Medido em
+09/09/2026:
+
+| Perfil | nfs | boletins |
+|---|---|---|
+| `anon` | **461** | **184** |
+| alisson (recorte CP273) | 17 | 32 |
+
+Portar o mecanismo do `planejamento_dash` como está faria o alisson ver as 461
+NFs de todas as obras. As 16 linhas de recorte e o `acesso_total` inteiro
+virariam decoração. Por isso o contrato aqui é **sessão**, não identidade.
+
+### O que o PHP precisa fazer
+
+No **servidor**, com a `service_role` (nunca no navegador), emitir uma sessão
+para o usuário já logado no portal — Admin API do Supabase, seção 2 abaixo. O
+e-mail da sessão tem que ser o mesmo cadastrado em `acesso_total`, senão a
+pessoa entra mas fica restrita.
+
+Se a Admin API não for viável, a alternativa é reaproveitar o HMAC do
+`planejamento_dash` com uma **Edge Function** do Supabase no lugar do `app.py`
+(já existe uma no projeto, `supabase/functions/efetivo`): ela valida o token e
+devolve a sessão emitida com `service_role`. O painel continua estático.
+
+### Comportamento implementado
+
+| Situação | O que acontece |
+|---|---|
+| Bootstrap com tokens válidos | entra direto, sem tela de login |
+| Tokens recusados pelo Supabase | **não entra** — tela de login explicando |
+| `{ erro: "..." }` | tela de login com a mensagem do portal |
+| Sem bootstrap | fluxo normal (login Google), nada muda |
+
+A sessão do portal tem **precedência** sobre a do `localStorage`: dentro do
+superapp quem manda é quem está logado no portal agora, senão uma sessão antiga
+de outra pessoa no mesmo navegador venceria — e o RLS obedeceria a ela.
+
+Recusar fecha, nunca abre: entrar sem identidade seria ler como `anon`, o oposto
+do que o SSO deveria garantir. Coberto por `tests/sso-portal.spec.js`.
+
+Dentro do portal o botão "sair" vira **"Portal"** — deslogar do Supabase deixaria
+a pessoa sem identidade e ainda logada no portal, lendo como `anon`. Mesma
+escolha do `planejamento_dash`.
+
 ## 2. O caminho recomendado (se o papel vier do portal)
 
 **O portal PHP cria uma sessão real do Supabase e entrega o access token ao

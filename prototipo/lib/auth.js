@@ -30,6 +30,47 @@
   // `auth.jwt()->>'email'` (Fase 3). Não confiar nisto pra autorizar nada.
   const DOMINIO_SUGERIDO = 'mse.com.br';
 
+  // ── Entrada pelo Portal MSE (superapp) ─────────────────────────────────────
+  // O painel é servido DENTRO do portal, que já autenticou a pessoa. Repetir a
+  // tela de login ali seria absurdo — mas a alternativa óbvia (o portal mandar
+  // "quem é o usuário" e o painel acreditar) é o antipadrão que o ADR-007
+  // existe pra eliminar, e aqui teria consequência concreta: quem entrasse por
+  // esse caminho leria como `anon`, que é ISENTO das policies do financeiro.
+  // Alisson, com recorte em CP273, veria as 461 NFs de todas as obras em vez
+  // das 17 dele. Ver docs/15, seção 2.
+  //
+  // Por isso o contrato é outro: o portal entrega uma SESSÃO REAL do Supabase,
+  // emitida server-side pela Admin API com a `service_role`. O painel só a
+  // instala. O token é assinado pelo próprio Supabase, então o RLS o entende
+  // nativamente e `mse_acesso_total()` / `mse_obras_financeiro()` funcionam sem
+  // precisar saber que a pessoa veio do portal.
+  //
+  // Forma do bootstrap, injetado pelo PHP no HTML servido:
+  //   window.__MSE_PORTAL = { access_token, refresh_token } | { erro: "..." }
+  const BOOTSTRAP_PORTAL = '__MSE_PORTAL';
+
+  function bootstrapPortal() {
+    try {
+      const b = (typeof window !== 'undefined') ? window[BOOTSTRAP_PORTAL] : null;
+      return (b && typeof b === 'object') ? b : null;
+    } catch (e) { return null; }
+  }
+
+  // Verdadeiro quando a pessoa chegou pelo portal. Muda só a UI (o botão "sair"
+  // vira "Portal"); não afeta permissão nenhuma.
+  function viaPortal() { return bootstrapPortal() !== null; }
+
+  // Motivo, quando veio do portal e mesmo assim não há sessão. Serve pra tela de
+  // login dizer algo útil em vez de oferecer "entrar com Google" — que dentro do
+  // iframe do portal frequentemente nem completa.
+  let erroPortalDetalhe = null;
+  function erroPortal() {
+    if (!viaPortal() || sessaoAtual) return null;
+    const b = bootstrapPortal();
+    if (b && b.erro) return String(b.erro);
+    return erroPortalDetalhe;
+  }
+
   let cliente = null;
   let sessaoAtual = null;
   let anonKeyPortal = null;
@@ -282,9 +323,44 @@
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
 
-    const { data, error } = await cliente.auth.getSession();
-    if (error) console.error('[MSEAuth] getSession falhou', error);
-    sessaoAtual = (data && data.session) || null;
+    // A sessão do portal tem PRECEDÊNCIA sobre a que estiver no localStorage:
+    // dentro do superapp, quem manda é quem está logado no portal agora. Sem
+    // isso, uma sessão antiga de outra pessoa no mesmo navegador venceria a do
+    // portal — e o RLS obedeceria a ela, não ao portal.
+    const doPortal = bootstrapPortal();
+    if (doPortal && doPortal.access_token && doPortal.refresh_token) {
+      // `setSession` PERSISTE e passa a renovar sozinha (autoRefreshToken), que
+      // é a diferença de mandar o token só no header: aqui o supabase-js assume
+      // o ciclo de vida e o painel não precisa saber quando o token vence.
+      const { data: dp, error: ep } = await cliente.auth.setSession({
+        access_token: doPortal.access_token,
+        refresh_token: doPortal.refresh_token,
+      });
+      if (ep) {
+        // Falha alto e NÃO entra: token do portal recusado significa que a
+        // identidade não vale. Cair no fluxo normal mostra a tela de login, que
+        // é o comportamento certo — melhor pedir login do que entrar sem
+        // identidade e ler como `anon`, isento das policies do financeiro.
+        console.error('[MSEAuth] sessao do portal recusada pelo Supabase', ep);
+        erroPortalDetalhe = 'A sessão enviada pelo Portal não foi aceita pelo Supabase '
+          + '(pode ter expirado). Recarregue a página pelo Portal.';
+      } else if (dp && dp.session) {
+        sessaoAtual = dp.session;
+      }
+    } else if (doPortal && doPortal.erro) {
+      console.error('[MSEAuth] portal nao emitiu sessao:', doPortal.erro);
+    }
+
+    // Só consulta o armazenamento local se o portal não resolveu. O `if` é o
+    // que dá a precedência descrita acima — e ficar FORA de um `return`
+    // antecipado é o que garante que o `onAuthStateChange` abaixo seja sempre
+    // registrado, inclusive na entrada pelo portal (senão o refresh automático
+    // atualizaria o token sem o painel re-renderizar).
+    if (!sessaoAtual) {
+      const { data, error } = await cliente.auth.getSession();
+      if (error) console.error('[MSEAuth] getSession falhou', error);
+      sessaoAtual = (data && data.session) || null;
+    }
 
     cliente.auth.onAuthStateChange(function (_evento, novaSessao) {
       sessaoAtual = novaSessao || null;
@@ -302,7 +378,7 @@
   return Object.freeze({
     iniciar, entrarComGoogle, sair, aoMudar,
     headers, headersEfetivo,
-    sessao, usuario, ehDaMSE, loginObrigatorio,
+    sessao, usuario, ehDaMSE, loginObrigatorio, viaPortal, erroPortal,
     carregarAcessoTotal, acessoTotal, restringirFinanceiro,
     carregarAcessoObras, restringirFinanceiroObra,
     DOMINIO_SUGERIDO,
