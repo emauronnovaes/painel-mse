@@ -270,6 +270,27 @@ select c.cp_codigo, c.contrato_nome
                     where k.tipo='cp' and k.chave = c.cp_codigo);
 ```
 
+### Se o SSO falhar, o que a pessoa vê
+
+Todo caminho de falha termina na tela de login — nunca no painel sem identidade,
+que leria como `anon` e é o oposto do que o SSO garante.
+
+| Falha | Resultado |
+|---|---|
+| Edge Function fora do ar / PHP não consegue chamar | PHP injeta `{erro}` → tela com a mensagem dele |
+| Token recusado (assinatura, replay, expirado) | PHP injeta `{erro}` → tela com a mensagem |
+| Tokens chegam mas o Supabase os recusa | tela com "sessão não aceita, recarregue pelo Portal" |
+| PHP não injeta nada | fluxo normal, login Google |
+
+⚠️ **Dentro do portal a tela NÃO oferece o Google.** O painel roda em iframe, e
+`signInWithOAuth` redireciona a janela — `accounts.google.com` recusa ser
+enquadrado (X-Frame-Options), então o botão levaria a uma tela em branco. Botão
+que não funciona é pior que botão nenhum: a pessoa fica tentando em vez de
+procurar quem resolve. Lá o botão é **"Voltar ao Portal MSE"**.
+
+Fora do portal (Firebase, localhost) a tela segue oferecendo o Google
+normalmente — há teste para as duas metades.
+
 ### Fora do escopo
 
 O **Histograma lê outro projeto Supabase** (`wnldmumgjwujveeimyef`, Efetivo),

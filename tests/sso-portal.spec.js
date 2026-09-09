@@ -84,6 +84,27 @@ test.describe('SSO do Portal MSE', () => {
     expect(await page.evaluate(() => MSEAuth.erroPortal())).toContain('não foi aceita');
   });
 
+  test('falha dentro do portal NAO oferece Google — oferece voltar ao Portal', async ({ page }) => {
+    // O painel roda em IFRAME do portal. `signInWithOAuth` redireciona a janela,
+    // e `accounts.google.com` recusa ser enquadrado — o botao levaria a uma tela
+    // em branco. Botao que nao funciona e pior que botao nenhum.
+    await abrirViaPortal(page, BOOTSTRAP_OK, { setSessionOk: false });
+    await page.waitForTimeout(3000);
+    await expect(page.locator('body')).toContainText('Voltar ao Portal MSE');
+    await expect(page.locator('body')).not.toContainText('Continuar com Google');
+    await expect(page.locator('body')).toContainText('Seu acesso vem do Portal MSE');
+  });
+
+  test('FORA do portal a tela de login segue oferecendo Google', async ({ page }) => {
+    // Regressao: o caminho normal (Firebase/localhost, sem bootstrap) nao pode
+    // ter perdido o login.
+    await page.addInitScript(() => { try { localStorage.clear(); } catch (e) {} });
+    await page.goto('/#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(2500);
+    await expect(page.locator('body')).toContainText('Continuar com Google');
+    await expect(page.locator('body')).not.toContainText('Voltar ao Portal MSE');
+  });
+
   test('portal sem sessão emitida mostra o erro que ele mandou', async ({ page }) => {
     await abrirViaPortal(page, { erro: 'Usuario sem permissao no Portal.' }, { setSessionOk: false });
     await page.waitForTimeout(2000);

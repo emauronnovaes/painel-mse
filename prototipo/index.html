@@ -9895,6 +9895,22 @@ function TelaLogin({ erro }) {
             Acesso restrito
           </div>
 
+          {/* Dentro do portal o Google NÃO é oferecido, e não é por estilo: o
+              `signInWithOAuth` redireciona a JANELA, e aqui a janela é o
+              iframe do portal — `accounts.google.com` recusa ser enquadrado
+              (X-Frame-Options), então o botão levaria a uma tela em branco. Um
+              botão que não funciona é pior que botão nenhum: a pessoa fica
+              tentando em vez de procurar quem resolve.
+
+              Quem chegou pelo portal e caiu aqui tem um problema de SSO, que se
+              resolve recarregando pelo portal ou avisando o Planejamento — não
+              logando por outro caminho, que criaria uma segunda identidade
+              dentro do superapp. */}
+          {MSEAuth.viaPortal() ? (
+            <button className="login-google-btn" type="button" onClick={irParaPortal}>
+              Voltar ao Portal MSE
+            </button>
+          ) : (
           <button className="login-google-btn" type="button" onClick={entrar} disabled={entrando}>
             <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
               <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
@@ -9904,10 +9920,13 @@ function TelaLogin({ erro }) {
             </svg>
             {entrando ? 'Redirecionando…' : 'Continuar com Google'}
           </button>
+          )}
 
           <div style={{ marginTop:18, fontSize:11, color:'#475569', letterSpacing:'0.04em',
                         fontFamily:"'Barlow', sans-serif", textAlign:'center', lineHeight:1.5 }}>
-            Contas <strong style={{ color:'#64748b' }}>@{MSEAuth.DOMINIO_SUGERIDO}</strong>
+            {MSEAuth.viaPortal()
+              ? 'Seu acesso vem do Portal MSE'
+              : <>Contas <strong style={{ color:'#64748b' }}>@{MSEAuth.DOMINIO_SUGERIDO}</strong></>}
           </div>
 
           {mensagem && (
