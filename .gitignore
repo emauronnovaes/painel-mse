@@ -1,3 +1,17 @@
 node_modules/
 package-lock.json
 .firebase/
+
+# Saida do Playwright (regerada a cada run, nao e fonte)
+test-results/
+playwright-report/
+
+# Backup local do pre-refactor. O estado equivalente esta no historico do git
+# (ponto de partida da branch), entao versionar seria duplicar.
+backups/
+
+# apresentacao/ e um alvo de deploy separado (ver firebase.json) cujos assets sao
+# copia byte-identica de prototipo/assets/ — 178MB, 13.418 tiles + 9 imagens, zero
+# conteudo exclusivo (verificado por md5 em 08/09/2026). Somente o index.html da
+# apresentacao e fonte propria e vai versionado.
+apresentacao/assets/

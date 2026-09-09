@@ -1,0 +1,163 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const config = require('../../prototipo/lib/panel-config.js');
+
+const obras = [{ id: 106 }, { id: 110 }];
+const setores = [{ num: 1, slug: 'curva-s', label: 'Curva S' }];
+
+test('validarConfiguracao aceita configuração válida', () => {
+  assert.equal(config.validarConfiguracao(obras, setores), true);
+});
+test('SETORES expõe a ordem declarativa do painel', () => {
+  assert.equal(config.SETORES.length, 9);
+  assert.equal(config.SETORES[0].slug, 'curva-s');
+  assert.equal(config.SETORES[8].slug, 'tour-360');
+});
+test('OBRAS preserva contratos e curvas alternativas', () => {
+  assert.equal(config.OBRAS.length, 7);
+  assert.equal(config.OBRAS.find(obra => obra.id === 106).origemCP, 'CP029');
+  assert.deepEqual(config.OBRAS.find(obra => obra.id === 107).curvas.map(curva => curva.label), ['Estudo', 'PPU']);
+  assert.equal(config.OBRAS.find(obra => obra.id === 91).curvas[0].label, 'Take-Off');
+  assert.equal(config.OBRAS.find(obra => obra.id === 114).origemCP, undefined);
+});
+test('configurações de apresentação preservam foto, tour e ortofoto', () => {
+  assert.equal(config.OBRA_FOTOS[106], 'assets/images/cnpem-faseado.jpg');
+  assert.match(config.OBRA_TOUR_360[106], /^https:\/\/visi\.constructin\.com\.br/);
+  assert.deepEqual(config.OBRA_ORTOFOTO[94], { dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' });
+});
+test('setores financeiros são exatamente Medições e OC/CO', () => {
+  // Conferido pelo que cada módulo consulta, não por suposição:
+  //   'medicoes' -> contratos_medicao + boletins_medicao (restritas no RLS)
+  //   'oc-co'    -> orcamentos_complementares_obra (restrita), e só ela
+  // Se um setor novo passar a ler tabela financeira, tem que entrar aqui — senão
+  // fica visível pra quem não está em public.acesso_total (ver docs/15).
+  assert.equal(config.SETORES_FINANCEIROS.has('medicoes'), true);
+  assert.equal(config.SETORES_FINANCEIROS.has('oc-co'), true);
+  assert.equal(config.SETORES_FINANCEIROS.size, 2);
+  // Todo slug listado tem que existir de fato em SETORES.
+  for (const slug of config.SETORES_FINANCEIROS) {
+    assert.ok(config.SETORES.some(s => s.slug === slug), `slug inexistente: ${slug}`);
+  }
+});
+test('configurações de Suprimentos preservam escopo e exportação', () => {
+  assert.equal(config.OBRAS_SUPRIMENTOS_VALIDADAS.has(114), true);
+  // 114 saiu do conjunto em 2026-09-08, a pedido explícito ("permita atribuir
+  // status manualmente novamente"). Hoje NENHUMA obra tem o status manual
+  // desativado — o conjunto existe vazio, pronto pra receber um id se alguma
+  // precisar ser desativada de novo.
+  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.has(114), false);
+  assert.equal(config.OBRAS_STATUS_MANUAL_DESATIVADO.size, 0);
+  assert.equal(config.NIVEL_EXPORTACAO_GRAFICOS_POR_OBRA[107], 'area');
+  assert.equal(config.OBRAS_SEM_EXPORTACAO_GRAFICOS.has(94), true);
+});
+test('configuração da Hitachi fica disponível no módulo externo', () => {
+  const hitachi = config.CONFIG_SUPRIMENTOS_POR_OBRA[110];
+  assert.deepEqual(hitachi.escoposPermitidos, ['cp281', 'cp001', 'cp006']);
+  assert.deepEqual(hitachi.catalogoExtra['Equipamentos de TI'], ['NOTEBOOK']);
+  assert.equal(hitachi.catalogoExtra['Conectores e Ferragens de Linha (AT)'].length, 11);
+});
+test('configuração do reforço Novo Nordisk preserva exclusões e catálogo', () => {
+  const reforco = config.CONFIG_SUPRIMENTOS_POR_OBRA[108];
+  assert.deepEqual(reforco.rmisExcluidos, [262]);
+  assert.deepEqual(reforco.linhasExcluidas, [147454]);
+  assert.deepEqual(reforco.catalogoExtra['Estrutura e Suportação Metálica'], ['VIGAMENTO', 'REFORCO VIGA', 'TRELICA', 'GUSSET']);
+});
+test('configuração da IPEN preserva filtros, catálogo e prioridade', () => {
+  const ipen = config.CONFIG_SUPRIMENTOS_POR_OBRA[114];
+  assert.deepEqual(ipen.escoposExcluidos, ['INDIRETOS', 'MAO DE OBRA']);
+  assert.equal(ipen.trocarAreaDisciplina, true);
+  assert.equal(ipen.catalogoExtra['Tubulação de Cobre'][0], 'TUBULACAO DE COBRE');
+  assert.deepEqual(ipen.catalogoPrioritario, ['Estrutura e Suportação Metálica', 'Válvulas e acessórios', 'Suportes e Acessórios de Tubulação']);
+});
+test('configuração do Novo Nordisk AP preserva regras globais de RMI', () => {
+  const ap = config.CONFIG_SUPRIMENTOS_POR_OBRA[107];
+  assert.deepEqual(ap.rmisExcluidos, [217]);
+  assert.equal(ap.usarNomeRmiComoArea, true);
+  assert.equal(ap.curvaAObrigatoria, false);
+  assert.deepEqual(ap.descricoesExcluidas, ['CORTADORES DE TUBOS']);
+  assert.deepEqual(ap.catalogoExtra['Plataformas e Escadas Metálicas'], ['PLATAFORMA DE ACO', 'ESCADA DE EMERGENCIA']);
+  assert.equal(ap.catalogoExtra['Conexões e Acessórios de Tubulação'].length, 41);
+  assert.equal(ap.catalogoExtra.Instrumentação.length, 10);
+  assert.equal(ap.catalogoExtra.Painéis.length, 4);
+  assert.equal(ap.catalogoExtra['Detecção e Alarme'].length, 14);
+  assert.equal(ap.catalogoExtra['Sistema de Supressão a Gás (Cilindro Piloto)'].length, 8);
+  assert.deepEqual(ap.catalogoExtra['Poço de Visita'], ['POCO DE VISITA']);
+});
+test('configuração do Novo Nordisk UB/SP preserva RMI e catálogo', () => {
+  const ub = config.CONFIG_SUPRIMENTOS_POR_OBRA[91];
+  assert.deepEqual(ub.rmisExcluidos, [43]);
+  assert.deepEqual(ub.catalogoExtra['Cabos'], ['PROFIBUS', 'AS-I CABLE']);
+});
+test('configuração do Porto preserva filtros estruturais e áreas canônicas', () => {
+  const porto = config.CONFIG_SUPRIMENTOS_POR_OBRA[94];
+  assert.deepEqual(porto.rmisExcluidos, [182]);
+  assert.equal(porto.codigoNivel0Min, 2);
+  assert.equal(porto.codigoNivel0Max, 29);
+  assert.equal(porto.zonaCodigoMax, 24);
+  assert.equal(porto.mapaAreaCanonica['PATIO G1'], 'Pátio G1');
+  assert.equal(porto.mapaAreaCanonica['GATE ACESSO AO PATIO G'], 'Acesso ao Pátio G');
+});
+test('merge incremental preserva catálogos legados ao adicionar regras externas', () => {
+  const merged = config.mesclarConfiguracaoSuprimentos({ 94: { catalogoExtra: { Cabos: ['BASE'], Base: ['BASE'] } } }, { 94: { rmisExcluidos: [182], catalogoExtra: { Cabos: ['EXTERNA', 'BASE'], Externa: ['EXTERNA'] } } });
+  assert.deepEqual(merged[94].rmisExcluidos, [182]);
+  assert.deepEqual(merged[94].catalogoExtra, { Cabos: ['BASE', 'EXTERNA'], Base: ['BASE'], Externa: ['EXTERNA'] });
+});
+
+test('merge não ativa catálogo de disciplina ausente', () => {
+  const merged = config.mesclarConfiguracaoSuprimentos({}, {
+    110: { catalogoExtra: { Cabos: ['CONDUTOR'] } },
+  });
+  assert.equal(Object.hasOwn(merged[110], 'catalogoDisciplinaExtra'), false);
+});
+test('Porto expõe catálogo externo de disciplinas', () => {
+  const disciplinas = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoDisciplinaExtra;
+  assert.deepEqual(disciplinas['Caixas e Eletrodutos'], ['CAIXAS E ELETRODUTO', 'CAIXAS E ELETRODUTOS']);
+  assert.deepEqual(disciplinas['Cercamento'], ['VIGA BALDRAME']);
+});
+test('Porto expõe primeira fatia externa do catálogo de materiais', () => {
+  const catalogo = config.CONFIG_SUPRIMENTOS_POR_OBRA[94].catalogoExtra;
+  assert.deepEqual(catalogo.Geradores, ['GRUPO GERADOR', 'GERADOR DIESEL']);
+  assert.deepEqual(catalogo.Transformadores, ['TRANSFORMADOR']);
+  assert.equal(catalogo.Aterramento.length, 6);
+  assert.equal(catalogo['Drenagem (tubos e acessórios)'].length, 13);
+  assert.equal(catalogo['Agregados (Areia/Brita)'][0] instanceof RegExp, true);
+  assert.equal(catalogo['Estrutura e Suportação Metálica'].length, 8);
+  assert.equal(catalogo.Painéis.length, 5);
+  assert.equal(catalogo['Combate a Incêndio'].length, 6);
+  assert.equal(catalogo['Sinalização de Segurança'].length, 5);
+  assert.equal(catalogo.Cabos.length, 4);
+  assert.equal(catalogo['Válvulas e acessórios'].length, 3);
+  assert.deepEqual(catalogo['Tubulação Aço Carbono'], ['TUBO ACO PTO NBR']);
+  assert.deepEqual(catalogo.Instrumentação, ['PRESSOSTATO']);
+  assert.equal(catalogo['Parafusos e Fixação'].length, 7);
+  assert.equal(catalogo['Miscelâneas'][0] instanceof RegExp, true);
+  assert.equal(catalogo['Terraplanagem e Movimentação de Terra'].length, 7);
+  assert.equal(catalogo['Estações de Tratamento (ETA/ETE)'][0] instanceof RegExp, true);
+  assert.deepEqual(catalogo['Fundações e Estacas'], ['ESTACA']);
+});
+test('obras integralmente migradas não mantêm bloco ativo duplicado no HTML', () => {
+  const html = fs.readFileSync(require('node:path').join(__dirname, '../../prototipo/index.html'), 'utf8');
+  for (const id of [106, 110, 94, 107, 108, 91, 114]) {
+    assert.equal((html.match(new RegExp(`^  ${id}: \\{`, 'gm')) || []).length, 0, `obra ${id} ainda possui bloco ativo`);
+  }
+});
+test('vocabulário de status mantém opções e ordem do fluxo', () => {
+  assert.deepEqual(config.STATUS_MANUAL_OPCOES, ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']);
+  assert.equal(config.ORDEM_STATUS_RMI[0], 'Atrasado');
+  assert.equal(config.ORDEM_STATUS_RMI.at(-1), 'Entregue');
+});
+test('validarConfiguracaoSuprimentos rejeita obra desconhecida e tipos inválidos', () => {
+  assert.equal(config.validarConfiguracaoSuprimentos({ 106: { escoposPermitidos: [] } }, obras), true);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 999: {} }, obras), /obra desconhecida/);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 106: { escoposExcluidos: 'INDIRETOS' } }, obras), /escoposExcluidos/);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 106: { catalogoExtra: { Cabos: 'PROFIBUS' } } }, obras), /categoria Cabos/);
+  assert.throws(() => config.validarConfiguracaoSuprimentos({ 106: { catalogoPrioritario: [1] } }, obras), /catalogoPrioritario/);
+});
+test('validarConfiguracao rejeita IDs de obra duplicados', () => {
+  assert.throws(() => config.validarConfiguracao([{ id: 106 }, { id: 106 }], setores), /IDs de obra duplicados/);
+});
+test('validarConfiguracao rejeita slugs inválidos ou duplicados', () => {
+  assert.throws(() => config.validarConfiguracao(obras, [{ num: 1, slug: 'Curva S', label: 'Curva S' }]), /slug de setor inválido/);
+  assert.throws(() => config.validarConfiguracao(obras, [{ num: 1, slug: 'curva-s', label: 'A' }, { num: 2, slug: 'curva-s', label: 'B' }]), /slugs de setor duplicados/);
+});

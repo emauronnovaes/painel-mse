@@ -7,13 +7,21 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "playwright test",
+    "test:all": "npm run test:unit && npm run test:local",
+    "test:chromium": "playwright test --project=chromium",
+    "test:supply-works": "playwright test --project=chromium tests/supply-works.spec.js",
+    "test:ui": "playwright test --ui",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:local": "playwright test --project=chromium --grep-invert @smoke",
+    "test:smoke": "playwright test --project=chromium --grep @smoke"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "sharp": "^0.35.3"
   }
 }

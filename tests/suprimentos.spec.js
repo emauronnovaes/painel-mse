@@ -1,134 +1,133 @@
+// Setor Suprimentos — obra 106 (CNPEM - Faseado).
+//
+// REESCRITO em 08/09/2026. A versão anterior tinha 11 testes verdes que não
+// afirmavam nada:
+//   * 6 deles eram `if (await table.isVisible()) { ...asserções... }`, e esta
+//     tela NÃO TEM <table> — é uma árvore Área/Disciplina/Material. A condição
+//     era sempre falsa, o corpo nunca rodava, e o teste passava vazio.
+//   * `expect(count).toBeGreaterThanOrEqual(0)` e `expect(true).toBe(true)`
+//     passam por construção.
+//   * `expect(searchInput).toBeDefined()` — um locator está sempre definido,
+//     mesmo apontando pra nada.
+//   * procurava o texto "Nenhum suprimento", que não existe no app (a mensagem
+//     real é "Nenhum material com valor lançado para esta obra"), e usava
+//     `text=A|B`, que o Playwright trata como literal, não como alternativa.
+// Suíte verde que não pode falhar é pior que suíte vermelha: dá permissão pra
+// mergear sem informação.
+//
+// Os estados terminais reais estão em index.html:6898-6901.
+//
+// ARMADILHA, custou 3 falhas: os títulos aparecem em CAIXA ALTA na tela, mas o
+// maiúsculo vem de `text-transform` no CSS. `toContainText` compara com
+// `textContent` (DOM cru), onde o texto é "Área / Disciplina / Material". Ou
+// seja: asserção escrita a partir do que se VÊ na tela falha. Daí os regex
+// insensíveis a caixa abaixo, que sobrevivem tanto ao CSS quanto à grafia.
 const { test, expect } = require('@playwright/test');
+const { abrirPainel } = require('./helpers');
+
+const BUSCA = 'input[placeholder*="Buscar"]';
+
+/** A tela leva ~6,5s pra paginar `itens_rmi`. O teste antigo esperava 2s fixos e
+ *  falhava por isso. Aqui se espera o FIM do carregamento, não um relógio. */
+async function esperarCarregar(page) {
+  await page.waitForFunction(
+    () => !/Carregando itens de RMI/i.test(document.body.innerText),
+    null, { timeout: 60_000 },
+  );
+}
 
 test.describe('Setor Suprimentos', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('https://painel-mse-prototipo.web.app/#/obra/106/suprimentos-criticos');
-    await page.waitForLoadState('networkidle');
+    await abrirPainel(page, '/#/obra/106/suprimentos-criticos');
   });
 
-  test('Deve carregar a página sem erros', async ({ page }) => {
-    const heading = page.locator('text=/Suprimentos/i');
-    await expect(heading).toBeVisible({ timeout: 5000 });
+  test('sai do carregamento e chega num estado terminal conhecido', async ({ page }) => {
+    await esperarCarregar(page);
+    const texto = await page.locator('body').innerText();
+    const arvore = /área \/ disciplina \/ material/i.test(texto);
+    const terminais = [
+      'Em desenvolvimento',                              // obra não validada
+      'Erro ao carregar itens_rmi',                       // erro de dado
+      'Nenhum material com valor lançado para esta obra', // vazio legítimo
+    ].filter(t => texto.includes(t));
+    expect(arvore || terminais.length > 0,
+      `nem árvore nem estado terminal. Texto: ${texto.slice(0, 300)}`).toBe(true);
   });
 
-  test('Deve exibir mensagem apropriada quando não há dados', async ({ page }) => {
-    // Aguarda o carregamento
-    await page.waitForTimeout(2000);
-
-    // Verifica se há erro ou mensagem de vazio
-    const erro = page.locator('text=Erro ao carregar|Nenhum suprimento');
-    const exists = await erro.isVisible().catch(() => false);
-
-    expect(exists).toBe(true);
+  test('a obra 106 renderiza a árvore com dado, não um estado vazio', async ({ page }) => {
+    await esperarCarregar(page);
+    // Esta obra é validada e tem material lançado: qualquer estado vazio ou de
+    // erro aqui é regressão, não "sem dado".
+    await expect(page.locator('body')).not.toContainText('Erro ao carregar itens_rmi');
+    await expect(page.locator('body')).not.toContainText('Nenhum material com valor lançado');
+    await expect(page.locator('body')).toContainText(/área \/ disciplina \/ material/i);
   });
 
-  test('Deve ter campo de busca funcional', async ({ page }) => {
-    const searchInput = page.locator('input[placeholder*="Buscar"]');
-    const isVisible = await searchInput.isVisible().catch(() => false);
+  test('os três botões de nível existem e respondem', async ({ page }) => {
+    await esperarCarregar(page);
+    const niveis = page.locator('.btn-nivel');
+    await expect(niveis).toHaveCount(3);
+    // Nível 1 fecha tudo, 3 abre tudo — o texto visível tem que mudar entre os
+    // dois, senão o botão não está agindo sobre a árvore.
+    await niveis.nth(0).click();
+    const nivel1 = await page.locator('body').innerText();
+    await niveis.nth(2).click();
+    const nivel3 = await page.locator('body').innerText();
+    expect(nivel3.length, 'abrir até o nível 3 deve revelar mais linhas que o nível 1')
+      .toBeGreaterThan(nivel1.length);
+  });
 
-    if (isVisible) {
-      expect(searchInput).toBeDefined();
+  test('a busca filtra a árvore', async ({ page }) => {
+    await esperarCarregar(page);
+    const busca = page.locator(BUSCA);
+    await expect(busca).toBeVisible();
+    const antes = (await page.locator('body').innerText()).length;
+    await busca.fill('zzzzzznaoexiste');
+    await page.waitForFunction(
+      n => document.body.innerText.length < n,
+      antes, { timeout: 10_000 },
+    );
+    const depois = (await page.locator('body').innerText()).length;
+    expect(depois, 'busca sem resultado deve encolher a árvore').toBeLessThan(antes);
+  });
+
+  test('o painel de status agregado aparece', async ({ page }) => {
+    await esperarCarregar(page);
+    await expect(page.locator('body')).toContainText(/status dos materiais/i);
+    await expect(page.locator('body')).toContainText(/total geral/i);
+  });
+
+  test('a exportação em PDF está oferecida', async ({ page }) => {
+    await esperarCarregar(page);
+    await expect(page.locator('body')).toContainText(/pdf completo/i);
+  });
+
+  test('o status manual pode ser atribuído item por item', async ({ page }) => {
+    await esperarCarregar(page);
+    // O `<select>` de status é da linha de MATERIAL, e a árvore inicia recolhida
+    // (só o nível Área). Sem abrir até o nível 3 não existe select nenhum na
+    // página — foi o que me fez achar, num primeiro teste, que a feature estava
+    // quebrada quando era só a árvore fechada.
+    await page.locator('.btn-nivel').nth(2).click();
+    const selects = page.locator('select').filter({ has: page.locator('option', { hasText: 'Em cotação' }) });
+    await expect(selects.first()).toBeVisible();
+    await expect(selects.first()).toBeEnabled();
+    // As 5 opções manuais mais a primeira, que é o status automático e serve de
+    // "voltar ao automático" (grava value="" e o app faz DELETE do override).
+    const opcoes = await selects.first().locator('option').allTextContents();
+    for (const o of ['Em cotação', 'Comprado Parcial', 'Comprado', 'Entregue Parcial', 'Entregue']) {
+      expect(opcoes, `falta a opção "${o}"`).toContain(o);
     }
+    expect(opcoes.length, 'deve haver a opção de voltar ao automático além das 5 manuais')
+      .toBeGreaterThan(5);
   });
 
-  test('Deve ter tabela com colunas de suprimentos', async ({ page }) => {
-    const table = page.locator('table');
-    const isVisible = await table.isVisible().catch(() => false);
-
-    if (isVisible) {
-      // Verifica se as colunas esperadas existem
-      const columns = ['Item', 'Fornecedor', 'Prazo', 'Status', 'Crítico', 'Impacto'];
-
-      for (const col of columns) {
-        const header = page.locator(`th:has-text("${col}")`);
-        expect(await header.isVisible().catch(() => false)).toBe(true);
-      }
-    }
-  });
-
-  test('Deve ter KPIs visíveis', async ({ page }) => {
-    const kpis = page.locator('text=/Total de Itens|Críticos|Prazo Médio|Impacto Total/');
-    const count = await kpis.count();
-
-    // Pelo menos alguns KPIs devem estar visíveis
-    expect(count).toBeGreaterThanOrEqual(0);
-  });
-
-  test('Deve permitir ordenação por coluna', async ({ page }) => {
-    const table = page.locator('table');
-    const isVisible = await table.isVisible().catch(() => false);
-
-    if (isVisible) {
-      const headers = page.locator('th');
-      const count = await headers.count();
-
-      // Deve ter pelo menos 1 cabeçalho clicável
-      expect(count).toBeGreaterThan(0);
-
-      // Tenta clicar no primeiro header
-      if (count > 0) {
-        await headers.first().click();
-        await page.waitForTimeout(500);
-        // Se chegou aqui sem erro, a ordenação funciona
-        expect(true).toBe(true);
-      }
-    }
-  });
-
-  test('Deve ter filtro de busca funcional', async ({ page }) => {
-    const searchInput = page.locator('input[placeholder*="Buscar"]');
-    const isVisible = await searchInput.isVisible().catch(() => false);
-
-    if (isVisible) {
-      await searchInput.fill('teste');
-      await page.waitForTimeout(500);
-
-      // Verifica se algum resultado ou "nenhum item encontrado" aparece
-      const results = page.locator('text=/nenhum item encontrado|de/');
-      expect(await results.isVisible().catch(() => false)).toBe(true);
-    }
-  });
-
-  test('Deve preservar agregados ao filtrar', async ({ page }) => {
-    const table = page.locator('table');
-    const isVisible = await table.isVisible().catch(() => false);
-
-    if (isVisible) {
-      // Obtém os valores dos KPIs antes de filtrar
-      const totalAntes = page.locator('text=/Total de Itens/').locator('..').locator('div').last();
-      const totalBeforeText = await totalAntes.textContent().catch(() => '');
-
-      // Filtra por algo
-      const searchInput = page.locator('input[placeholder*="Buscar"]');
-      if (await searchInput.isVisible()) {
-        await searchInput.fill('xyz123');
-        await page.waitForTimeout(500);
-
-        // Os agregados devem continuar os mesmos
-        const totalDepois = page.locator('text=/Total de Itens/').locator('..').locator('div').last();
-        const totalAfterText = await totalDepois.textContent().catch(() => '');
-
-        // Verifica que o total não muda ao filtrar (agregados preservados)
-        expect(totalBeforeText).toBe(totalAfterText);
-      }
-    }
-  });
-
-  test('Deve navegar entre setores', async ({ page }) => {
-    // Tenta ir para setor anterior/próximo
-    const navArrows = page.locator('button.nav-arrow');
-    const count = await navArrows.count();
-
-    expect(count).toBeGreaterThanOrEqual(0);
-  });
-
-  test('Deve ter layout responsivo', async ({ page }) => {
-    // Testa em viewport mobile
+  test('sobrevive a viewport mobile', async ({ page }) => {
+    await esperarCarregar(page);
     await page.setViewportSize({ width: 375, height: 667 });
-
-    const heading = page.locator('text=/Suprimentos/i');
-    const isVisible = await heading.isVisible().catch(() => false);
-
-    expect(isVisible).toBe(true);
+    // A barra de setores tem que continuar presente: se sumir, o layout quebrou
+    // de um jeito que deixa a tela inalcançável no celular.
+    await expect(page.locator('.tabs-scroll')).toBeVisible();
+    await expect(page.locator('body')).toContainText(/área \/ disciplina \/ material/i);
   });
 });
