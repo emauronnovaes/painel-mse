@@ -324,15 +324,74 @@ virariam decoração. Por isso o contrato aqui é **sessão**, não identidade.
 
 ### O que o PHP precisa fazer
 
-No **servidor**, com a `service_role` (nunca no navegador), emitir uma sessão
-para o usuário já logado no portal — Admin API do Supabase, seção 2 abaixo. O
-e-mail da sessão tem que ser o mesmo cadastrado em `acesso_total`, senão a
-pessoa entra mas fica restrita.
+Escolhido em 09/09/2026: **Edge Function**, reaproveitando o token HMAC que o
+portal já emite para o `planejamento_dash`. Zero código novo de geração no PHP.
 
-Se a Admin API não for viável, a alternativa é reaproveitar o HMAC do
-`planejamento_dash` com uma **Edge Function** do Supabase no lugar do `app.py`
-(já existe uma no projeto, `supabase/functions/efetivo`): ela valida o token e
-devolve a sessão emitida com `service_role`. O painel continua estático.
+1. Emitir o token exatamente como hoje (mesmo segredo, mesmo formato
+   `base64url(payload).base64url(hmac_sha256)`).
+2. **Do servidor**, `POST` para
+   `https://gebjlhkywtnpfqjrakok.supabase.co/functions/v1/portal-sso`
+   com `{"token": "<o token>"}`.
+3. Receber `{ access_token, refresh_token, expires_in, email }`.
+4. Injetar no HTML servido, **antes** dos scripts do painel:
+   `<script>window.__MSE_PORTAL = {access_token, refresh_token};</script>`
+   ou `{erro: "..."}` se o passo 2 falhar.
+
+⚠️ Servidor-para-servidor. O token não deve ir para a barra de endereços do
+navegador — diferente do `?sso=` do `planejamento_dash`, aqui o PHP já está
+servindo o HTML, então não há motivo para o token passar pelo cliente.
+
+⚠️ **O e-mail da sessão tem que ser o mesmo cadastrado em `acesso_total`.** Se o
+portal emitir com outro endereço, a pessoa entra normalmente e fica restrita,
+sem erro nenhum.
+
+#### A Edge Function
+
+`supabase/functions/portal-sso/index.ts`, deployada em 09/09/2026 com
+`verify_jwt: false` — obrigatório e não é frouxidão: ela é o que EMITE o JWT,
+exigir um seria circular. A autenticação dela é a assinatura HMAC.
+
+O que ela valida, em paridade com o `app.py`: assinatura (via
+`crypto.subtle.verify`, tempo constante), `iat`/`exp`, **teto de TTL de 120s**
+independente do que o token pedir, formato do e-mail, enums de `origem` e
+`perfil`, e nonce de uso único.
+
+O nonce mudou de lugar: o Flask grava arquivo no `/tmp`, e Edge Function é
+stateless com várias instâncias. Virou a tabela `public.sso_nonce`, com o nonce
+como PK — **o INSERT conflitante É a detecção de replay**, sem
+SELECT-antes-de-INSERT, que teria corrida entre duas requisições simultâneas
+com o mesmo token.
+
+Emitir a sessão são dois passos porque o GoTrue não tem "crie uma sessão para
+este e-mail": `admin/generate_link` devolve um `hashed_token` de uso único, e
+`/verify` o troca por access/refresh. O `/verify` roda com a **anon key** de
+propósito — é o mesmo caminho de um login normal, então a sessão sai com
+`role: authenticated`; usar a service_role ali produziria um token com
+privilégio de serviço.
+
+Toda recusa devolve a MESMA mensagem pública ("Acesso pelo portal nao
+validado"). O motivo real vai só para o log — distinguir "assinatura inválida"
+de "nonce já usado" para quem chama é entregar um oráculo a quem estiver
+tentando forjar token.
+
+#### Configuração pendente
+
+Falta **um** segredo: `PORTAL_SSO_SECRET` nos secrets da Edge Function
+(Dashboard → Edge Functions → portal-sso → Secrets). Tem que ser **o mesmo** que
+o portal usa hoje — ele está em `planejamento_dash/config/sso.local.json`
+(gitignored) ou na env `SUPER_APP_SSO_SECRET`. Mínimo de 32 caracteres,
+verificado em runtime.
+
+`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_ANON_KEY` são injetadas
+pela plataforma e não precisam ser configuradas.
+
+Enquanto o segredo não existir, a função responde 500 e **não emite sessão
+nenhuma** — falha fechada, verificado.
+
+Para testar sem o portal: `node scripts/testar-portal-sso.js <email>`, com
+`MSE_PORTAL_SSO_SECRET` na env. Ele cobre caminho feliz, replay, assinatura
+adulterada, expiração, TTL acima do teto e enums inválidos — e confere que o
+Supabase realmente aceita o token emitido.
 
 ### Comportamento implementado
 
