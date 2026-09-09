@@ -1,16 +1,16 @@
-// Entrada pelo Portal MSE (superapp) — ver docs/15, seção 2.
+// Entrada pelo Portal MSE (superapp) — ver docs/15, seção 1d/2.
 //
-// O painel é servido DENTRO do portal, que já autenticou a pessoa. O portal
-// injeta `window.__MSE_PORTAL = { access_token, refresh_token }` no HTML, e o
-// MSEAuth instala isso como SESSÃO REAL do Supabase (`setSession`).
+// Transporte EXATAMENTE igual ao planejamento_dash: o portal manda o token
+// HMAC pela URL, `?sso=<token>`. A diferença fica do lado do painel: em vez de
+// só confiar na identidade (como o `app.py` faz com `__SSO_BOOTSTRAP`), o
+// painel troca esse token pela Edge Function `portal-sso`, que devolve uma
+// SESSÃO REAL do Supabase (`setSession`).
 //
 // POR QUE SESSÃO REAL E NÃO "o portal diz quem é": quem entra sem JWT lê como
 // `anon`, que é ISENTO das policies do financeiro. Alisson, com recorte em
 // CP273, veria as 461 NFs de todas as obras em vez das 17 dele. O teste
 // "token recusado NÃO entra" é o que trava essa regressão.
 const { test, expect } = require('@playwright/test');
-
-const REF = 'gebjlhkywtnpfqjrakok';
 
 function jwtFalso(email) {
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
@@ -22,10 +22,21 @@ function jwtFalso(email) {
   ].join('.');
 }
 
-// Injeta o bootstrap do portal ANTES de qualquer script da página, que é como o
-// PHP faria ao servir o HTML.
-async function abrirViaPortal(page, bootstrap, { setSessionOk = true } = {}) {
-  await page.addInitScript((b) => { window.__MSE_PORTAL = b; }, bootstrap);
+const SESSAO_OK = {
+  access_token: jwtFalso('portal.user@mse.com.br'),
+  refresh_token: 'refresh-do-portal',
+};
+
+// Simula a Edge Function `portal-sso` e o resto da cadeia (setSession + RPCs),
+// e abre o painel com `?sso=<token qualquer>` na URL — o conteúdo do token não
+// importa aqui porque quem "valida" é a rota interceptada, não o Supabase real.
+async function abrirViaPortal(page, { edgeFunctionOk = true, edgeFunctionErro = 'Acesso pelo portal nao validado.',
+  setSessionOk = true } = {}) {
+  await page.route('**/functions/v1/portal-sso', (rota) => rota.fulfill(
+    edgeFunctionOk
+      ? { status: 200, contentType: 'application/json', body: JSON.stringify(SESSAO_OK) }
+      : { status: 401, contentType: 'application/json', body: JSON.stringify({ erro: edgeFunctionErro }) }
+  ));
 
   // `setSession` valida o access_token em GET /auth/v1/user (NAO em
   // /auth/v1/token, que e o refresh). Interceptar o endpoint errado deixa o
@@ -48,36 +59,47 @@ async function abrirViaPortal(page, bootstrap, { setSessionOk = true } = {}) {
   await page.route('**/rest/v1/rpc/mse_obras_financeiro', (r) => r.fulfill({
     status: 200, contentType: 'application/json', body: '[106,110,94,107,108,91,114]' }));
 
-  await page.goto('/#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
+  await page.goto('/?sso=token-qualquer#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
 }
-
-const BOOTSTRAP_OK = {
-  access_token: jwtFalso('portal.user@mse.com.br'),
-  refresh_token: 'refresh-do-portal',
-};
 
 test.describe('SSO do Portal MSE', () => {
   test('entra direto, sem tela de login', async ({ page }) => {
-    await abrirViaPortal(page, BOOTSTRAP_OK);
+    await abrirViaPortal(page);
     await page.waitForSelector('.tabs-scroll', { timeout: 45_000 });
     expect(await page.evaluate(() => !!MSEAuth.sessao())).toBe(true);
     expect(await page.evaluate(() => MSEAuth.usuario().email)).toBe('portal.user@mse.com.br');
     await expect(page.locator('body')).not.toContainText('Entrar com Google');
   });
 
+  test('a URL fica limpa depois de trocar o token', async ({ page }) => {
+    // O token é de uso único (nonce) — não pode sobreviver a um F5.
+    await abrirViaPortal(page);
+    await page.waitForSelector('.tabs-scroll', { timeout: 45_000 });
+    const url = new URL(page.url());
+    expect(url.searchParams.has('sso')).toBe(false);
+  });
+
   test('a sessão do portal é uma sessão REAL do Supabase', async ({ page }) => {
-    await abrirViaPortal(page, BOOTSTRAP_OK);
+    await abrirViaPortal(page);
     await page.waitForSelector('.tabs-scroll', { timeout: 45_000 });
     // O ponto inteiro do desenho: o header de leitura carrega o token do
     // usuário, NÃO a anon key. É isso que faz o RLS enxergar a pessoa.
     const auth = await page.evaluate(() => MSEAuth.headers().Authorization);
-    expect(auth).toBe('Bearer ' + BOOTSTRAP_OK.access_token);
+    expect(auth).toBe('Bearer ' + SESSAO_OK.access_token);
   });
 
-  test('token recusado NAO entra — cai no login com motivo', async ({ page }) => {
+  test('Edge Function recusa o token NAO entra — cai no login com motivo', async ({ page }) => {
     // Fail-closed. Entrar sem identidade seria ler como `anon`, que é isento
     // das policies do financeiro — o oposto do que o SSO deveria garantir.
-    await abrirViaPortal(page, BOOTSTRAP_OK, { setSessionOk: false });
+    await abrirViaPortal(page, { edgeFunctionOk: false });
+    await page.waitForTimeout(3000);
+    expect(await page.evaluate(() => !!MSEAuth.sessao())).toBe(false);
+    await expect(page.locator('body')).toContainText('Portal');
+    expect(await page.evaluate(() => MSEAuth.erroPortal())).toContain('não validado');
+  });
+
+  test('sessao recusada pelo Supabase NAO entra — cai no login com motivo', async ({ page }) => {
+    await abrirViaPortal(page, { setSessionOk: false });
     await page.waitForTimeout(3000);
     expect(await page.evaluate(() => !!MSEAuth.sessao())).toBe(false);
     await expect(page.locator('body')).toContainText('Portal');
@@ -88,7 +110,7 @@ test.describe('SSO do Portal MSE', () => {
     // O painel roda em IFRAME do portal. `signInWithOAuth` redireciona a janela,
     // e `accounts.google.com` recusa ser enquadrado — o botao levaria a uma tela
     // em branco. Botao que nao funciona e pior que botao nenhum.
-    await abrirViaPortal(page, BOOTSTRAP_OK, { setSessionOk: false });
+    await abrirViaPortal(page, { setSessionOk: false });
     await page.waitForTimeout(3000);
     await expect(page.locator('body')).toContainText('Voltar ao Portal MSE');
     await expect(page.locator('body')).not.toContainText('Continuar com Google');
@@ -96,7 +118,7 @@ test.describe('SSO do Portal MSE', () => {
   });
 
   test('FORA do portal a tela de login segue oferecendo Google', async ({ page }) => {
-    // Regressao: o caminho normal (Firebase/localhost, sem bootstrap) nao pode
+    // Regressao: o caminho normal (Firebase/localhost, sem `?sso=`) nao pode
     // ter perdido o login.
     await page.addInitScript(() => { try { localStorage.clear(); } catch (e) {} });
     await page.goto('/#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
@@ -105,17 +127,9 @@ test.describe('SSO do Portal MSE', () => {
     await expect(page.locator('body')).not.toContainText('Voltar ao Portal MSE');
   });
 
-  test('portal sem sessão emitida mostra o erro que ele mandou', async ({ page }) => {
-    await abrirViaPortal(page, { erro: 'Usuario sem permissao no Portal.' }, { setSessionOk: false });
-    await page.waitForTimeout(2000);
-    expect(await page.evaluate(() => MSEAuth.viaPortal())).toBe(true);
-    expect(await page.evaluate(() => MSEAuth.erroPortal())).toBe('Usuario sem permissao no Portal.');
-    await expect(page.locator('body')).toContainText('Usuario sem permissao');
-  });
-
-  test('sem bootstrap, nada muda no fluxo normal', async ({ page }) => {
+  test('sem `?sso=` na URL, nada muda no fluxo normal', async ({ page }) => {
     // Regressão: o caminho fora do portal (Firebase, localhost) não pode ter
-    // sido afetado. Sem `window.__MSE_PORTAL`, viaPortal() é false.
+    // sido afetado.
     await page.goto('/#/obra/106/curva-s', { waitUntil: 'domcontentloaded' });
     await page.waitForTimeout(1500);
     expect(await page.evaluate(() => MSEAuth.viaPortal())).toBe(false);
