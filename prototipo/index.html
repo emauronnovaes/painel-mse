@@ -9963,7 +9963,16 @@ function useAcessoTotal() {
       setPronto(true);
     }
     return () => { vivo = false; };
-  }, []);
+    // SEM array de dependências, de propósito: precisa rodar a cada render, não
+    // só na montagem. `onAuthStateChange` (auth.js) limpa o cache a cada evento
+    // — inclusive o TOKEN_REFRESHED automático, que dispara sozinho depois de um
+    // tempo com a página aberta — e é essa releitura que preenche o cache de
+    // novo. Com `[]`, o cache ficava `null` pra sempre após o primeiro refresh
+    // de token, e `restringirFinanceiro()` trata `null` como restrito: Medições
+    // e OC/CO somem sem nenhum erro visível. `carregarAcessoTotal()` já
+    // devolve o cache na hora quando já resolvido, então rodar a cada render
+    // não repete requisição — só reage quando o cache de fato foi limpo.
+  });
   return { pronto };
 }
 
