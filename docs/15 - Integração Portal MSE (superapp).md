@@ -374,24 +374,50 @@ validado"). O motivo real vai só para o log — distinguir "assinatura inválid
 de "nonce já usado" para quem chama é entregar um oráculo a quem estiver
 tentando forjar token.
 
-#### Configuração pendente
+#### Configuração
 
-Falta **um** segredo: `PORTAL_SSO_SECRET` nos secrets da Edge Function
-(Dashboard → Edge Functions → portal-sso → Secrets). Tem que ser **o mesmo** que
-o portal usa hoje — ele está em `planejamento_dash/config/sso.local.json`
-(gitignored) ou na env `SUPER_APP_SSO_SECRET`. Mínimo de 32 caracteres,
-verificado em runtime.
+`PORTAL_SSO_SECRET` nos secrets da Edge Function — **configurado em
+09/09/2026**, com o mesmo valor que o portal usa
+(`planejamento_dash/config/sso.local.json`, gitignored, ou a env
+`SUPER_APP_SSO_SECRET`). Mínimo de 32 caracteres, verificado em runtime.
 
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` e `SUPABASE_ANON_KEY` são injetadas
-pela plataforma e não precisam ser configuradas.
+pela plataforma.
 
-Enquanto o segredo não existir, a função responde 500 e **não emite sessão
-nenhuma** — falha fechada, verificado.
+⚠️ **Se o segredo for rotacionado, muda nos DOIS lugares.** Trocar só no portal
+faz o painel parar de aceitar entrada por SSO enquanto o `planejamento_dash`
+continua funcionando — sintoma confuso de diagnosticar.
 
 Para testar sem o portal: `node scripts/testar-portal-sso.js <email>`, com
-`MSE_PORTAL_SSO_SECRET` na env. Ele cobre caminho feliz, replay, assinatura
-adulterada, expiração, TTL acima do teto e enums inválidos — e confere que o
-Supabase realmente aceita o token emitido.
+`MSE_PORTAL_SSO_SECRET` na env.
+
+#### Verificado em 09/09/2026 — 16/16
+
+Caminho feliz, replay, assinatura adulterada, **payload trocado com assinatura
+antiga** (o ataque real: pôr o e-mail de outra pessoa), expiração, TTL acima do
+teto, enums inválidos. E o que mais importa: o Supabase aceita o token emitido,
+`GET /auth/v1/user` devolve a pessoa certa com `role: authenticated`.
+
+#### Dois bugs achados na implantação, e o que eles ensinam
+
+**1. `otp_expired` no PRIMEIRO acesso de cada pessoa.** Quando
+`admin/users` cria a conta, ela nasce com confirmação pendente, e o
+`generate_link` seguinte devolve um link de **`signup`** — não de `magiclink`.
+Verificar com o tipo errado responde `otp_expired`, que se lê como "o token
+venceu" e manda investigar relógio e TTL. O sintoma era 502 na primeira chamada
+e 200 na segunda: o pior tipo de falha, porque some quando se tenta reproduzir.
+Corrigido usando o `verification_type` que o próprio servidor devolve, em vez de
+fixar o tipo.
+
+**2. `assinatura invalida` por causa de `
+`.** O segredo foi colado com uma
+quebra de linha no fim (`node -p ... | clip` arrasta a quebra). O sintoma manda
+desconfiar do algoritmo de HMAC, não de espaço em branco. A função passou a
+aplicar `.trim()` no segredo.
+
+E um terceiro, no próprio teste: adulterar o **último** caractere da assinatura
+em base64url pode decodificar para os mesmos bytes, porque ele carrega bits não
+usados. O teste acusava falha numa função correta. Agora mexe no meio.
 
 ### Comportamento implementado
 

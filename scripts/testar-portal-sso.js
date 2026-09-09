@@ -90,8 +90,22 @@ function ok(cond, texto) {
   ok(p2.status === 401, `replay do mesmo token -> 401 (veio ${p2.status})`);
 
   // 4. Assinatura adulterada.
-  const adulterado = emitirToken().replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
-  ok((await chamar(adulterado)).status === 401, 'assinatura adulterada -> 401');
+  //
+  // Mexe no MEIO da assinatura, nao no ultimo caractere. Em base64url o ultimo
+  // caractere carrega bits que nao sao usados, entao trocar so ele pode
+  // decodificar para os MESMOS bytes -- a primeira versao deste teste fazia
+  // isso e acusava falha na funcao quando a funcao estava certa.
+  const [pOk, sigOk] = emitirToken().split('.');
+  const meio = Math.floor(sigOk.length / 2);
+  const sigRuim = sigOk.slice(0, meio) + (sigOk[meio] === 'A' ? 'B' : 'A') + sigOk.slice(meio + 1);
+  ok((await chamar(`${pOk}.${sigRuim}`)).status === 401, 'assinatura adulterada -> 401');
+
+  // 4b. Payload adulterado com a assinatura original: e o ataque real -- trocar
+  // o e-mail para o de outra pessoa e reaproveitar a assinatura.
+  const outro = Buffer.from(JSON.stringify(Object.assign(
+    JSON.parse(Buffer.from(pOk, 'base64url').toString()), { email: 'outra.pessoa@mse.com.br' },
+  ))).toString('base64url');
+  ok((await chamar(`${outro}.${sigOk}`)).status === 401, 'payload trocado com assinatura antiga -> 401');
 
   // 5. Token expirado e TTL acima do teto (120s).
   const agora = Math.floor(Date.now() / 1000);

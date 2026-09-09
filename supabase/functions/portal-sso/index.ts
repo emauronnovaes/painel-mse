@@ -165,13 +165,13 @@ async function consumirNonce(nonce: string, service: string): Promise<boolean> {
 }
 
 // Emite a sessão. Dois passos porque o GoTrue não tem "crie uma sessão para
-// este e-mail": `generate_link` devolve um `hashed_token` de uso único, e
-// `verify` o troca por access/refresh. É o mesmo par que o supabase-js usa por
+// este e-mail": `admin/generate_link` devolve um token de uso único, e
+// `/verify` o troca por access/refresh. É o mesmo par que o supabase-js usa por
 // baixo de `admin.generateLink` + `verifyOtp`.
 async function emitirSessao(email: string, nome: string, service: string, anon: string) {
   const hService = { apikey: service, Authorization: `Bearer ${service}`, "Content-Type": "application/json" };
 
-  const gerar = async () =>
+  const gerar = () =>
     fetch(`${AUTH}/admin/generate_link`, {
       method: "POST",
       headers: hService,
@@ -181,8 +181,7 @@ async function emitirSessao(email: string, nome: string, service: string, anon: 
   let r = await gerar();
 
   // Primeiro acesso de alguém que existe no portal mas nunca entrou no painel:
-  // `magiclink` exige usuário existente. Cria e repete — `email_confirm: true`
-  // porque a confirmação já foi feita pelo portal, não há e-mail a enviar.
+  // `magiclink` exige usuário existente, então cria e repete.
   if (!r.ok) {
     const criar = await fetch(`${AUTH}/admin/users`, {
       method: "POST",
@@ -196,17 +195,38 @@ async function emitirSessao(email: string, nome: string, service: string, anon: 
 
   const link = await r.json();
   const hashed = link?.hashed_token ?? link?.properties?.hashed_token;
-  if (!hashed) return { erro: "generate_link sem hashed_token" };
+  const otp = link?.email_otp ?? link?.properties?.email_otp;
 
-  // `verify` roda com a ANON key de propósito: é o mesmo caminho de um login
+  // ⚠️ O TIPO VEM DO SERVIDOR, não é fixo — foi o bug do primeiro acesso.
+  // Logo depois de `admin/users` criar a conta, o `generate_link` devolve um
+  // link de `signup` (a conta nasce com confirmação pendente), não de
+  // `magiclink`. Verificar com o tipo errado responde `otp_expired`, que se lê
+  // como "token venceu" e manda investigar relógio e TTL — quando o problema é
+  // outro. Sintoma exato: 502 no PRIMEIRO acesso de cada pessoa e 200 no
+  // segundo, o pior tipo de falha pra diagnosticar em produção.
+  const tipo = link?.verification_type ?? link?.properties?.verification_type ?? "magiclink";
+  if (!hashed && !otp) return { erro: `generate_link sem token (tipo=${tipo})` };
+
+  // `verificar` roda com a ANON key de propósito: é o mesmo caminho de um login
   // normal, então a sessão sai com as claims de sempre (`role: authenticated`).
   // Usar a service_role aqui produziria um token com privilégio de serviço.
-  const v = await fetch(`${AUTH}/verify`, {
-    method: "POST",
-    headers: { apikey: anon, "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "magiclink", token_hash: hashed }),
-  });
-  if (!v.ok) return { erro: `verify ${v.status}: ${await v.text()}` };
+  const verificar = (corpo: Record<string, string>) =>
+    fetch(`${AUTH}/verify`, {
+      method: "POST",
+      headers: { apikey: anon, "Content-Type": "application/json" },
+      body: JSON.stringify(corpo),
+    });
+
+  let v = hashed ? await verificar({ type: tipo, token_hash: hashed }) : null;
+
+  // Rede de segurança: `email` + `email_otp` é o caminho clássico e aceita os
+  // mesmos tipos. Se a forma `token_hash` falhar por diferença de versão do
+  // GoTrue, isto ainda resolve em vez de derrubar o login.
+  if ((!v || !v.ok) && otp) {
+    if (v) console.error(`[portal-sso] verify por token_hash falhou (tipo=${tipo}, ${v.status}); tentando email_otp`);
+    v = await verificar({ type: tipo, email, token: otp });
+  }
+  if (!v || !v.ok) return { erro: `verify ${v ? v.status : "sem tentativa"} (tipo=${tipo}): ${v ? await v.text() : ""}` };
 
   const s = await v.json();
   if (!s?.access_token || !s?.refresh_token) return { erro: "verify sem tokens" };
@@ -217,7 +237,12 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return erro(405, "Use POST.");
 
-  const segredo = Deno.env.get("PORTAL_SSO_SECRET");
+  // `.trim()` porque colar segredo no painel arrasta 
+ com muita facilidade
+  // (`node -p ... | clip` faz isso), e o sintoma seria "assinatura invalida" —
+  // que manda desconfiar do algoritmo, não do espaço em branco. Aconteceu na
+  // primeira configuração desta função.
+  const segredo = Deno.env.get("PORTAL_SSO_SECRET")?.trim();
   // Injetadas pela plataforma, não são secrets a configurar — ao contrário da
   // `efetivo`, que precisa da chave de OUTRO projeto. Aqui é o mesmo projeto.
   const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
