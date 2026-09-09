@@ -14,7 +14,7 @@
 -- IDENTICAMENTE até a fatia D (RLS nas tabelas financeiras) entrar.
 --
 -- Aplicar no projeto "API - Portal" (gebjlhkywtnpfqjrakok), pelo SQL Editor do
--- dashboard (o Table Editor não serve: a tabela nasce com GRANT revogado).
+-- dashboard (o Table Editor também serve para `acesso_total`, ver 20260909_acesso_total_guardas.sql).
 
 -- ── 1. Mapa de obras ───────────────────────────────────────────────
 -- O banco não sabia o que é uma obra: a identidade aparece em 5 formatos de
