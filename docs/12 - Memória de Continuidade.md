@@ -2,7 +2,9 @@
 
 ## Estado atual
 
-- Branch ativa: `refactor/prototipo-incremental`.
+- Branch ativa: `develop`. A `refactor/prototipo-incremental` foi absorvida
+  por fast-forward e apagada em 09/09/2026 — os 92 commits estão em `develop`,
+  nada se perdeu. `main` segue atrás, e promover é passo à parte.
 - Arquivo principal: `prototipo/index.html`.
 - Backup inicial: `backups/pre-refactor-20260904-133720`.
 - Documentação de processo: `docs/11 - Plano de Implantação Incremental.md`.

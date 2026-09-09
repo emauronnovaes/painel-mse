@@ -29,8 +29,12 @@ console. Critério: todas as rotas atuais continuam abrindo sem regressão.
 
 ### 1. Segurança operacional do Git
 
-Trabalhar em branch própria (`refactor/prototipo-incremental`) e manter commits
-pequenos por fase. Não misturar refatoração com mudanças de regra de negócio.
+Manter commits pequenos por fase e não misturar refatoração com mudanças de
+regra de negócio.
+
+A refatoração rodou em branch própria (`refactor/prototipo-incremental`) até
+09/09/2026, quando foi absorvida por fast-forward em `develop` e apagada — o
+trabalho passou a sair direto na `develop`.
 
 ### 2. Camada de dados sem alterar o visual
 
