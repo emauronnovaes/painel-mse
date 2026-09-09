@@ -137,6 +137,73 @@
 
   function acessoTotal() { return acessoTotalCache; }
 
+  // ── Financeiro por obra ────────────────────────────────────────────────────
+  // `mse_obras_financeiro()` devolve as obras em que este e-mail vê Medições e
+  // OC/CO (docs/15, seção 1c). Terceiro nível de acesso, entre "vê tudo" e
+  // "não vê financeiro nenhum".
+  //
+  // Mesmo desenho do acesso total: o painel não LÊ a lista (o GRANT de
+  // `acesso_total` está revogado), ele pergunta sobre si mesmo e recebe só os
+  // ids das obras em que ELE tem financeiro.
+  //
+  // ⚠️ O recorte é SÓ do financeiro. A lista de obras do seletor continua
+  // inteira para todo mundo (decisão do usuário, 09/09/2026: "não vai
+  // restringir o acesso geral das obras"). Uma versão anterior tinha uma
+  // segunda dimensão, `acesso_obra`, que escondia obras do seletor; foi
+  // removida por não ter consumidor — recuperável pelo histórico do git.
+  let obrasFinanceiroCache = null;   // null = ainda não sabido
+  let acessoObrasPromessa = null;
+
+  async function chamarRpcIds(nome) {
+    const r = await fetch(anonKeyPortalUrl + '/rest/v1/rpc/' + nome, {
+      method: 'POST',
+      headers: Object.assign(headers(), { 'Content-Type': 'application/json' }),
+      body: '{}',
+    });
+    if (!r.ok) throw new Error('rpc ' + nome + ': HTTP ' + r.status);
+    const dados = await r.json();
+    if (!Array.isArray(dados)) throw new Error('rpc ' + nome + ': resposta não é lista');
+    // `returns setof int` chega como [{ mse_obras_financeiro: 106 }, ...] ou
+    // como [106, ...] dependendo da versão do PostgREST. Aceita as duas.
+    return dados.map(function (d) {
+      return typeof d === 'number' ? d : Number(d[nome] !== undefined ? d[nome] : Object.values(d)[0]);
+    }).filter(function (n) { return Number.isFinite(n); });
+  }
+
+  async function carregarAcessoObras() {
+    if (obrasFinanceiroCache !== null) return obrasFinanceiroCache;
+    if (acessoObrasPromessa) return acessoObrasPromessa;
+    acessoObrasPromessa = (async () => {
+      try {
+        obrasFinanceiroCache = await chamarRpcIds('mse_obras_financeiro');
+      } catch (e) {
+        // FECHA, mesma regra de `carregarAcessoTotal`: `[]` = nenhuma obra com
+        // financeiro. Mostrar Medições por falha de rede é o erro caro; a aba a
+        // menos é o barato.
+        console.error('[MSEAuth] nao foi possivel checar financeiro por obra', e);
+        obrasFinanceiroCache = [];
+      } finally {
+        acessoObrasPromessa = null;
+      }
+      return obrasFinanceiroCache;
+    })();
+    return acessoObrasPromessa;
+  }
+
+  // Financeiro AGORA É POR OBRA. Mantém a regra de `restringirFinanceiro()` —
+  // sem sessão não restringe, e restringe até prova em contrário — só que a
+  // prova passou a depender de QUAL obra está aberta.
+  //
+  // O acesso global (linha com `obra_id` NULL em `acesso_total`) continua
+  // valendo: o RPC devolve todas as obras nesse caso, então quem tinha acesso
+  // total antes desta mudança segue com as 9 abas em todas as obras.
+  function restringirFinanceiroObra(obraId) {
+    if (!sessaoAtual) return false;
+    if (acessoTotalCache === true) return false;       // acesso global
+    if (obrasFinanceiroCache === null) return true;    // ainda não sabido: esconde
+    return obrasFinanceiroCache.indexOf(obraId) === -1;
+  }
+
   // Sem sessão devolve `false` de propósito: o RLS restringe apenas
   // `authenticated`, e produção ainda lê como `anon` (a Fase 4 do docs/14 não
   // aconteceu). Se a UI restringisse sem sessão, o painel em produção perderia
@@ -189,6 +256,8 @@
     sessaoAtual = null;
     acessoTotalCache = null;
     acessoTotalPromessa = null;
+    obrasFinanceiroCache = null;
+    acessoObrasPromessa = null;
     notificar();
   }
 
@@ -219,9 +288,11 @@
 
     cliente.auth.onAuthStateChange(function (_evento, novaSessao) {
       sessaoAtual = novaSessao || null;
-      // Sessao trocou: o acesso total e por e-mail, entao o cache nao vale mais.
+      // Sessao trocou: o acesso e por e-mail, entao nenhum cache vale mais.
       acessoTotalCache = null;
       acessoTotalPromessa = null;
+      obrasFinanceiroCache = null;
+      acessoObrasPromessa = null;
       notificar();
     });
 
@@ -233,6 +304,7 @@
     headers, headersEfetivo,
     sessao, usuario, ehDaMSE, loginObrigatorio,
     carregarAcessoTotal, acessoTotal, restringirFinanceiro,
+    carregarAcessoObras, restringirFinanceiroObra,
     DOMINIO_SUGERIDO,
   });
 }));

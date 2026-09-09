@@ -572,7 +572,10 @@ const OBRA_FOTOS = MSEConfig.OBRA_FOTOS;
 const SETORES = MSEConfig.SETORES;
 const SETORES_FINANCEIROS = MSEConfig.SETORES_FINANCEIROS;
 // true quando ESTE setor deve ser escondido da sessão atual.
-const setorBloqueado = (slug) => SETORES_FINANCEIROS.has(slug) && MSEAuth.restringirFinanceiro();
+// O financeiro passou a ser POR OBRA (docs/15, seção 1c): a mesma pessoa pode
+// ver Medições no CNPEM e não ver no Porto. Por isso `obraId` é obrigatório —
+// sem ele a pergunta não tem resposta.
+const setorBloqueado = (slug, obraId) => SETORES_FINANCEIROS.has(slug) && MSEAuth.restringirFinanceiroObra(obraId);
 MSEConfig.validarConfiguracao(OBRAS, SETORES);
 
 const OBRA_TOUR_360 = MSEConfig.OBRA_TOUR_360;
@@ -959,16 +962,16 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
 // barra (1,2,3,4,5,6,9), porque vinham fixos da config. Renumerar aqui, e não na
 // config, mantém `SETORES` como a lista canônica e faz a barra refletir o que
 // está de fato visível.
-function setoresVisiveis() {
+function setoresVisiveis(obraId) {
   return SETORES
-    .filter(s => !setorBloqueado(s.slug))
+    .filter(s => !setorBloqueado(s.slug, obraId))
     .map((s, i) => ({ ...s, num: i + 1 }));
 }
 
 // ── Faixa de setores + navegação lateral ────────────────────────────────────
 function TabsSetores({ atual, onIr, obraId }){
   const scrollRef = useRef(null);
-  const visiveis = setoresVisiveis();
+  const visiveis = setoresVisiveis(obraId);
   const irPara = (delta) => {
     // Navega SÓ pelos visíveis. Antes ciclava por `SETORES` inteiro, então as
     // setas ‹ › pousavam nos setores escondidos e mostravam o cartão de
@@ -9775,13 +9778,13 @@ function App(){
       <Header obraAtual={obraAtual} obras={OBRAS} onSelecionarObra={setObraId} foto={OBRA_FOTOS[obraAtual.id]} />
       <TabsSetores atual={setor} onIr={setSetor} obraId={obraAtual.id} />
       <div key={setor.slug} className="screen-slide app-main">
-        {setorBloqueado(setor.slug)
+        {setorBloqueado(setor.slug, obraAtual.id)
           /* Chegou por URL direta num setor escondido. Mensagem de PERMISSÃO, e
              não tela vazia: Medições/OC-CO sem linhas se leria como "não houve
              faturamento" (ADR-005 — ausência nunca deve parecer dado). Quem
              recusa o dado é o RLS; isto apenas explica o porquê. */
           ? <CartaoEstado maxHeight={620}
-              texto={`🔒 ${setor.label} é restrito — seu acesso não inclui informação financeira. Fale com o Planejamento se precisar.`} />
+              texto={`🔒 ${setor.label} é restrito — seu acesso não inclui informação financeira em ${obraAtual.nome}. Fale com o Planejamento se precisar.`} />
           : setor.slug === 'curva-s'
           ? <ModuloCurvaS linhas={linhasCurva} info={infoCurva} carregando={linhasCurva === null} erro={curvasErro} obraId={obraAtual.id} obraNome={obraAtual.nome}
               curvas={obraAtual.curvas} curvaAtual={curvaChaveAtual} onTrocarCurva={setCurvaEscolhida} />
@@ -9926,13 +9929,14 @@ function useAcessoTotal() {
   React.useEffect(() => {
     let vivo = true;
     if (MSEAuth.sessao() && MSEAuth.acessoTotal() === null) {
-      MSEAuth.carregarAcessoTotal().then(() => { if (vivo) setPronto(true); });
+      Promise.all([MSEAuth.carregarAcessoTotal(), MSEAuth.carregarAcessoObras()])
+        .then(() => { if (vivo) setPronto(true); });
     } else {
       setPronto(true);
     }
     return () => { vivo = false; };
   }, []);
-  return { pronto, restringir: MSEAuth.restringirFinanceiro() };
+  return { pronto };
 }
 
 const raizReact = ReactDOM.createRoot(document.getElementById('root'));
@@ -9960,7 +9964,13 @@ MSEAuth.iniciar({
   // Custa uma ida ao servidor a mais na carga de quem está logado. É o preço de
   // não piscar informação restrita, e a alternativa (renderizar otimista e
   // corrigir) foi exatamente o bug.
-  if (MSEAuth.sessao()) await MSEAuth.carregarAcessoTotal();
+  //
+  // Os dois acessos vão JUNTOS: o recorte de obras decide qual obra abre, e o
+  // financeiro por obra decide quais abas ela tem. Resolver só um deixaria o
+  // outro se corrigindo depois do primeiro render — que é o flash de volta.
+  if (MSEAuth.sessao()) {
+    await Promise.all([MSEAuth.carregarAcessoTotal(), MSEAuth.carregarAcessoObras()]);
+  }
   renderizar();
 }).catch((e) => {
   // Falha alto (ADR-005): não dá pra saber se existe sessão, então não renderiza

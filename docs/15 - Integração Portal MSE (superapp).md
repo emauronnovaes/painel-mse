@@ -72,6 +72,178 @@ tudo num `raw` JSON com valor dentro: ali não há recorte por coluna (ver seç�
 Quando o portal entrar, esta abordagem continua válida — e se houver papéis mais
 finos que "total vs restrito", aí sim vale o hook da seção 3.
 
+## 1c. Terceiro nível — financeiro por obra
+
+Pedido em 09/09/2026. Um nível intermediário entre "vê tudo" e "não vê
+financeiro nenhum": **vê Medições e OC/CO SÓ da sua obra.**
+
+| Nível | Como se cadastra | Obras no seletor | Medições / OC-CO |
+|---|---|---|---|
+| Vê tudo | linha em `acesso_total` com `obra_id` **NULL** | todas as 7 | todas |
+| Por obra *(novo)* | linha em `acesso_total` com `obra_id` **preenchido** | todas as 7 | só as obras listadas |
+| Restrito *(padrão)* | sem linha nenhuma | todas as 7 | nenhuma |
+
+⚠️ **O recorte é só do financeiro.** A lista de obras do seletor continua
+inteira para todo mundo — decisão explícita do usuário: *"não vai restringir o
+acesso geral das obras"*. Uma versão anterior deste desenho tinha uma segunda
+dimensão (`acesso_obra`, que escondia obras do seletor); foi removida por não
+ter consumidor, e está no histórico do git se algum dia voltar.
+
+A migração é **inerte** por construção: `add column obra_id` entra nulável,
+então as linhas existentes de `acesso_total` ganham NULL — que é exatamente o
+que elas já significavam. Ninguém ganha nem perde acesso ao aplicar.
+
+### O bloqueio que precisou ser resolvido primeiro
+
+**O banco não sabia o que é uma obra.** A identidade da obra aparecia em 5
+formatos de coluna (`id_obra` int, `obra_id` int, `obra` texto-nome, `obra`
+texto-CP, `obra` texto-CP+nome) e 4+ convenções de nome, e o único lugar que
+amarrava tudo era `panel-config.js`.
+
+Para o financeiro isso é concreto: as 5 tabelas financeiras **não têm coluna de
+obra nenhuma**. Chegam lá por dois caminhos indiretos:
+
+- `cp_codigo` (`contratos_medicao`, `boletins_medicao`) e `obra` (`nfs`,
+  `proximos_faturamentos`) — tudo código de contrato, daí
+  `public.obra_chaves (obra_id, tipo, chave)` com `tipo='cp'`;
+- `medicao_acumulada.tarefa_id → tarefas.id_eap → EAP.id_obra` — verificado
+  limpo: 14 pares `id_eap→id_obra`, zero ambiguidade, 558/558 tarefas mapeadas.
+
+`orcamentos_complementares_obra` é a exceção boa: já tem `id_obra`.
+
+A PK `(tipo, chave)` de `obra_chaves` é a invariante: uma chave resolve para no
+máximo UMA obra. Chave ambígua falha no insert em vez de a RLS entregar dado da
+obra errada.
+
+⚠️ **Fora do mapa, e a fatia D precisa decidir:** `nfs.obra` tem 40 códigos CP e
+só 6 são obras do painel (o resto é contrato de outra frente); `CP040` é a obra
+103 (CNPEM - Auditório), real na base mas nunca em `OBRAS`; `CP079` idem.
+`mse_cps_financeiro()` não devolve essas chaves, então só quem tem acesso
+GLOBAL as vê — quem tem recorte por obra, não.
+
+### Fatias
+
+| | O quê | Estado |
+|---|---|---|
+| **A** | Mapa de obras + `acesso_total.obra_id` + funções + UI por obra | ✅ aplicada em 09/09/2026 |
+| **D** | RLS por obra nas 5 tabelas financeiras + `v_indices_financeiros_diario` | ✅ aplicada e verificada em 09/09/2026 |
+
+#### Duas armadilhas resolvidas na fatia D
+
+**1. Policy não lê `obra_chaves`.** A expressão de uma policy roda com as
+permissões de quem consulta, e o GRANT do mapa foi revogado de propósito. Uma
+policy que lesse a tabela direto devolveria vazio para todo mundo — esconderia
+o financeiro até de quem tem acesso. Daí `mse_cps_financeiro()`, SECURITY
+DEFINER, que devolve só os CPs deste e-mail. Como é set-returning e sem
+parâmetro, o `in (select ...)` vira InitPlan avaliado uma vez por consulta.
+
+**2. O ramo `mse_acesso_total()` nas policies não é redundante.** As tabelas têm
+linhas cujo contrato não é obra do painel — **325 das 461** de `nfs`, 26 de
+`boletins_medicao`, 1 de `proximos_faturamentos`. Essas chaves não estão no
+mapa, então filtrar só por ele faria quem tem acesso global ver **um terço** da
+tabela. Para o recorte por obra o efeito é o inverso e desejado: chave não
+mapeada não pertence a obra nenhuma, logo não aparece.
+
+**3. O join da view teria multiplicado por 686 — e acabou dispensado.** O
+desenho inicial recortava a view por obra via `tarefa_id → tarefas.id_eap →
+EAP.id_obra`. `EAP` tem milhares de linhas por `id_eap` (é a árvore de EDT
+inteira): medido, o join ingênuo devolve **4.208.015 linhas** contra as 6.135
+corretas. A solução era juntar contra um `distinct` de 14 linhas — mas a
+decisão de LIBERAR a view (abaixo) tirou o join do caminho de vez. Fica
+registrado porque a armadilha volta em qualquer tentativa futura de recortar
+`medicao_acumulada` por obra.
+
+As fatias B e C do plano original (RLS por obra nas 22 tabelas não-financeiras)
+**deixaram de existir** quando ficou decidido que o acesso geral às obras não é
+restrito. É o que tirou a maior parte do risco: as convenções de nome bagunçadas
+(`curvas_s.obra`, `pts_emitidas.obra`, `suprimentos.obra`) não precisam mais ser
+mapeadas.
+
+A fatia A não altera policy nenhuma — o recorte é só de UI até a D entrar. É de
+propósito: dá pra cadastrar e conferir o comportamento antes de qualquer risco
+de sumir dado de quem deveria ver.
+
+### Como cadastrar
+
+```sql
+-- financeiro só numa obra (nível novo)
+insert into public.acesso_total (email, obra_id, nota)
+values (lower('fulano@mse.com.br'), 106, 'financeiro só CNPEM');
+
+-- rebaixar quem tinha acesso global para uma obra só
+update public.acesso_total set obra_id = 106
+ where email = lower('fulano@mse.com.br');
+```
+
+### Falha fecha, sempre
+
+`carregarAcessoObras()` assume `[]` (nenhuma obra com financeiro) quando o RPC
+falha — mesma regra de `carregarAcessoTotal()`. Mostrar Medições por falha de
+rede é o erro caro; a aba a menos é o barato. Coberto por
+`tests/acesso-por-obra.spec.js`, "RPC fora do ar fecha o financeiro, não abre",
+que também confere que o seletor **não** encolhe nesse caso.
+
+### A view de índices é LIBERADA, não recortada
+
+`v_indices_financeiros_diario` **não alimenta Medições nem OC/CO** — alimenta o
+indicador de Produtividade do **Setor 2, Encarregados**, que não é financeiro e
+nunca é escondido da barra.
+
+Tê-la restringido em 08/09/2026, junto do resto do financeiro, criou um efeito
+colateral silencioso: quem não estava em `acesso_total` abria Encarregados e via
+a coluna Produtividade **vazia, sem explicação** — o modo de falha do ADR-005.
+
+Regra do usuário (09/09/2026): *"se não alimenta a tela de medições/ocs deverá
+estar liberado"*. A fatia D remove o `WHERE` de acesso da view inteiro.
+
+⚠️ **Mas sem as colunas de dinheiro.** A versão restrita expunha `receita`,
+`receita_ponderada` e `custo_incorrido` — R$ por tarefa. Liberar a view com elas
+publicaria receita e custo de toda obra para qualquer sessão logada, o que é
+bem mais que "liberar o indicador de produtividade".
+
+Nenhum consumidor lê essas colunas: as três cópias do painel (`prototipo`,
+`apresentacao`, `combinado`) selecionam sempre e somente
+`tarefa_id,data,indice_receita_custo_incorrido`. O índice que sobra é uma
+**razão** (receita÷custo), não um valor. Os valores continuam em
+`medicao_acumulada`, que segue restrita.
+
+Precisou de `drop view` + `create view`: `create or replace view` não remove
+coluna. Verificado que nada depende dela.
+
+Consequência boa de tabela: com a view livre, o join contra `EAP` deixou de ser
+necessário — e com ele foi embora a armadilha das 4,2 milhões de linhas.
+
+### Verificado em 09/09/2026
+
+Testado ponta a ponta no `localhost:8899` com **sessão Google real** de
+`vinicius.tadashi@mse.com.br`, movido temporariamente para `obra_id = 91` e
+restaurado para `NULL` no fim.
+
+| | Obra 91 (dele) | Obra 106 (CNPEM) |
+|---|---|---|
+| Abas | **9**, com OC/CO e Medições | **7**, numeradas 1-7 sem buraco |
+| `restringirFinanceiroObra()` | `false` | `true` |
+
+Seletor com as 7 obras, e URL direta a `#/obra/106/medicoes` mostra o cartão de
+permissão nomeando a obra.
+
+**O que prova que não é só a UI escondendo:** consultando o PostgREST direto com
+o token dele, `boletins_medicao` devolve 50 no total e 50 filtrando por CP236 —
+ou seja, linha de outra obra não existe para ele. Pedir `cp_codigo=eq.CP029`
+devolve 0, e `orcamentos_complementares_obra?id_obra=eq.106` também.
+
+⚠️ **Armadilha na verificação por SQL:** `set_config('request.jwt.claims', ...)`
+sozinho **não testa RLS**. A conexão administrativa roda como `postgres`, que
+ignora RLS por completo — a primeira rodada de conferência deu "tudo liberado"
+e parecia sucesso. Precisa de `set local role authenticated` junto, dentro de
+`begin/rollback`.
+
+### Fora do escopo
+
+O **Histograma lê outro projeto Supabase** (`wnldmumgjwujveeimyef`, Efetivo),
+com RLS própria, via Edge Function. Não é financeiro, e o acesso geral às obras
+não é restrito — então hoje não há nada a fazer lá.
+
 ## 2. O caminho recomendado (se o papel vier do portal)
 
 **O portal PHP cria uma sessão real do Supabase e entrega o access token ao
