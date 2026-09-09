@@ -117,7 +117,7 @@ obra errada.
 
 ⚠️ **Fora do mapa, e a fatia D precisa decidir:** `nfs.obra` tem 40 códigos CP e
 só 6 são obras do painel (o resto é contrato de outra frente); `CP040` é a obra
-103 (CNPEM - Auditório), real na base mas nunca em `OBRAS`; `CP079` idem.
+103 (CNPEM - Auditório), real na base mas nunca em `OBRAS`.
 `mse_cps_financeiro()` não devolve essas chaves, então só quem tem acesso
 GLOBAL as vê — quem tem recorte por obra, não.
 
@@ -238,28 +238,37 @@ ignora RLS por completo — a primeira rodada de conferência deu "tudo liberado
 e parecia sucesso. Precisa de `set local role authenticated` junto, dentro de
 `begin/rollback`.
 
-### ⚠️ Obra sem contrato CP: o acesso vira aba vazia
+### Lição: chave faltando no mapa é indistinguível de obra sem dado
 
-O IPEN (obra 114) **não tem código CP** em `obra_chaves` e não tem uma linha
-sequer em `boletins_medicao`, `nfs` ou `orcamentos_complementares_obra`.
+O IPEN (obra 114) entrou no mapa só como `tipo='nome'`, sem CP. Concluí que a
+obra não tinha financeiro porque conferi as tabelas **pelo `id_obra`** — coluna
+que as tabelas financeiras não têm — e o join via `obra_chaves` naturalmente
+devolvia zero. O diagnóstico que escrevi ("obra ainda sem CP nem dado
+financeiro") estava errado na segunda metade.
 
-Dar acesso financeiro a uma obra assim produz um estado incoerente, verificado
-em 09/09/2026 com `leonardo.bernardino@mse.com.br`:
+`CP079` era o contrato dele o tempo todo, com 10 boletins e
+`contratos_medicao.contrato_nome = 'Ipen'`. Eu tinha classificado CP079 como
+"contrato de outra frente" junto com CP1708/CP2027/OP153_25.
 
-| | |
-|---|---|
-| `mse_obras_financeiro()` | `[114]` |
-| `mse_cps_financeiro()` | `NULL` — nenhum CP |
-| `mse_financeiro_obra(114)` | `true` → **as abas aparecem** |
-| boletins / nfs / OCs | **0 / 0 / 0** |
+Efeito concreto enquanto durou: `leonardo.bernardino` tinha acesso à obra 114 e
+via **Medições visível e vazia** — `mse_financeiro_obra(114)` dava `true`, então
+as abas apareciam, mas `mse_cps_financeiro()` não devolvia CP079 e o RLS recusava
+os 10 boletins. Corrigido em `20260909_mapeia_cp079_ipen.sql`.
 
-Ou seja: Medições e OC/CO ficam visíveis e **vazias**, que se lê como "não houve
-faturamento" — o ADR-005 ao contrário. Não é causado pelo recorte: um usuário
-GLOBAL vê o IPEN igualmente vazio hoje.
+**O que fica como regra:** para saber se uma obra tem financeiro, procurar o
+CONTRATO (`contratos_medicao.contrato_nome`), não filtrar por `id_obra`. E
+qualquer obra nova em `obra_chaves` precisa da linha `tipo='cp'` junto — sem
+ela o acesso é concedido e não funciona, sem erro nenhum.
 
-**Quando o IPEN ganhar contrato**, é obrigatório inserir
-`(114,'cp','<código>')` em `obra_chaves`. Sem isso o acesso continua sem efeito
-nas tabelas de Medições, mesmo com a linha em `acesso_total` no lugar certo.
+Vale uma checagem periódica: CPs em `contratos_medicao` que não estão em
+`obra_chaves` são candidatos a obra não mapeada.
+
+```sql
+select c.cp_codigo, c.contrato_nome
+  from contratos_medicao c
+ where not exists (select 1 from obra_chaves k
+                    where k.tipo='cp' and k.chave = c.cp_codigo);
+```
 
 ### Fora do escopo
 

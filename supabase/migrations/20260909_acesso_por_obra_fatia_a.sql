@@ -48,7 +48,7 @@ insert into public.obra_chaves (obra_id, tipo, chave, nota) values
   (107,'nome','Novo Nordisk - AP',           null),
   (108,'nome','Novo Nordisk - AP - Reforço', null),
   ( 91,'nome','Novo Nordisk - UB/SP',        null),
-  (114,'nome','IPEN',                        'sem contrato CP conhecido'),
+  (114,'nome','IPEN',                        null),
 
   (106,'cp','CP029', null),
   (110,'cp','CP022', null),
@@ -56,12 +56,13 @@ insert into public.obra_chaves (obra_id, tipo, chave, nota) values
   (107,'cp','CP273', null),
   (108,'cp','CP261', null),
   ( 91,'cp','CP236', null);
+-- NOTA: falta aqui (114,'cp','CP079') -- o IPEN. Corrigido na migração
+-- `20260909_mapeia_cp079_ipen.sql`; ver o porquê lá.
 
 -- ⚠️ FORA do mapa de propósito. Chave não mapeada não é devolvida por
 -- `mse_cps_financeiro()` (fatia D), então só quem tem acesso GLOBAL vê essas
 -- linhas — quem tem recorte por obra, não:
 --   'CP040' -> obra 103 (CNPEM - Auditório), real na base, nunca esteve em OBRAS
---   'CP079' -> idem, sem obra no painel
 --   `nfs.obra` tem 40 códigos CP; 34 são contratos de outras frentes
 --     (CP1708, CP2027, OP153_25...) sem obra correspondente no painel
 --

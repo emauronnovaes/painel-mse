@@ -103,13 +103,9 @@ Os e-mails foram conferidos pelo usuário em 09/09/2026.
 
 1. **Deploy do front quando a cota liberar** — ver bloco acima. É o único passo
    entre o que está pronto e o que as pessoas veem.
-2. **IPEN sem contrato CP.** `leonardo.bernardino` tem acesso à obra 114, mas ela
-   não tem CP em `obra_chaves` nem linha nas tabelas financeiras — as abas vão
-   aparecer VAZIAS. Quando o IPEN ganhar contrato, inserir
-   `(114,'cp','<código>')` em `obra_chaves`, senão o acesso segue sem efeito.
-3. Extrair componentes React grandes ainda embutidos no HTML.
-4. Revisar performance, acessibilidade e segurança.
-5. Validar a **execução** do workflow n8n de Suprimentos dentro do n8n. O export
+2. Extrair componentes React grandes ainda embutidos no HTML.
+3. Revisar performance, acessibilidade e segurança.
+4. Validar a **execução** do workflow n8n de Suprimentos dentro do n8n. O export
    está versionado, mas a reestruturação (loop por obra + ramo de requisições +
    troca de credencial) nunca foi rodada de ponta a ponta.
 
