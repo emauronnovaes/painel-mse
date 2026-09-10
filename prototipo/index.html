@@ -870,19 +870,19 @@ function getDiaComDadoReal(temDadosNoDia, desde){
   }
   return null;
 }
-// Dado que a Data de Status exige dia exato, uma fonte com sincronização
-// atrasada (achado real: `v_indices_financeiros_diario` parada há dias em
-// toda a base, não só numa obra) fazia o indicador sumir por inteiro em vez
-// de mostrar o último valor conhecido. `linhasDoDiaMaisRecenteAte` busca,
-// dentre as linhas de um card, as do dia mais recente <= `dia` (não
-// necessariamente igual) — usada por Qualidade, Performance e Efetivo tanto
-// no Ranking (`ModuloEncarregados`) quanto no popup (`PopupCardsEncarregado`).
-function linhasDoDiaMaisRecenteAte(rows, campoData, dia){
-  const comData = rows.filter(r => r[campoData]);
-  const ateDia = comData.filter(r => String(r[campoData]).slice(0, 10) <= dia);
-  if (!ateDia.length) return [];
-  const diaAlvo = ateDia.reduce((max, r) => { const d = String(r[campoData]).slice(0, 10); return d > max ? d : max; }, ateDia[0][campoData].slice(0, 10));
-  return ateDia.filter(r => String(r[campoData]).slice(0, 10) === diaAlvo);
+// Qualidade/Performance/Colaboradores/Efetivo têm que bater com a Data de
+// Status exibida na tela — pedido explícito 2026-09-10 ("todas as
+// informações exibidas devem ser alinhadas com a data de status"), depois
+// de um caso real: a tela mostrava "Bom" sob Data de Status 09/09 vindo de
+// um apontamento de 04/09, porque a versão anterior buscava o dia mais
+// recente <= a Data de Status em vez do dia exato. `linhasDoDiaExato` filtra
+// só as linhas do card cuja data bate exatamente com `dia` — sem esse
+// apontamento nesse dia específico, o indicador fica sem dado (Pendente/—),
+// não herda um valor de dias atrás. Usada por Qualidade, Performance e
+// Efetivo tanto em `ModuloEncarregados` quanto no popup
+// (`PopupCardsEncarregado`).
+function linhasDoDiaExato(rows, campoData, dia){
+  return rows.filter(r => r[campoData] && String(r[campoData]).slice(0, 10) === dia);
 }
 
 // ── Seletor de obra (dropdown no cabeçalho) ─────────────────────────────────
@@ -944,7 +944,13 @@ function irParaPortal(){
   try { window.top.location.href = 'http://portalmse.com.br/'; }
   catch (_) { window.location.href = 'http://portalmse.com.br/'; }
 }
-function Header({ obraAtual, obras, onSelecionarObra, foto }){
+// Botão "Ranking" (ao lado do seletor de obra, sempre visível) abre a página
+// de Ranking Geral de Encarregados (todas as obras) — pedido explícito
+// 2026-09-10: "outro botão, ao lado do botão de seleção da obra". Enquanto o
+// modo ranking está ativo, o botão de seleção de obra é SUBSTITUÍDO por
+// "Controle" (mesmo pedido) pra voltar ao monitoramento normal — a obra
+// selecionada não muda, só fica escondida atrás do botão.
+function Header({ obraAtual, obras, onSelecionarObra, foto, modoRanking, onAbrirRanking, onFecharRanking }){
   return (
     <div className="header-wrap" style={{ flexShrink:0 }}>
       <div key={foto} className="header-foto screen-enter" style={{ backgroundImage: `url(${foto})` }} />
@@ -967,7 +973,28 @@ function Header({ obraAtual, obras, onSelecionarObra, foto }){
             </svg>
             Portal MSE
           </button>
-          <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+          <button onClick={onAbrirRanking} title="Ranking de todos os encarregados, todas as obras"
+            className="obra-btn" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7,
+              background: modoRanking ? 'rgba(217,145,26,0.28)' : 'rgba(255,255,255,0.09)',
+              border: modoRanking ? '1px solid rgba(217,145,26,0.6)' : '1px solid rgba(255,255,255,0.2)',
+              color:'#fff', padding:'8px 14px', borderRadius:10, cursor:'pointer', fontSize:12.5, fontWeight:600, flexShrink:0 }}>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z" /><path d="M17 5h3a2 2 0 0 1-2 4M7 5H4a2 2 0 0 0 2 4" />
+            </svg>
+            Ranking
+          </button>
+          {modoRanking ? (
+            <button onClick={onFecharRanking} className="obra-btn" title="Voltar ao monitoramento da obra"
+              style={{ display:'flex', alignItems:'center', gap:10, background:'rgba(255,255,255,0.09)',
+                border:'1px solid rgba(255,255,255,0.2)', borderRadius:10, padding:'7px 16px', color:'#fff', fontSize:14, fontWeight:600 }}>
+              <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Controle
+            </button>
+          ) : (
+            <SeletorObra obras={obras} atual={obraAtual} onSelecionar={onSelecionarObra} />
+          )}
         </div>
       </div>
     </div>
@@ -2141,7 +2168,13 @@ function BadgePT({ hhmm, dim }){
   const bg  = hhmm <= '07:00' ? 'rgba(31,157,87,0.13)' : hhmm <= '07:15' ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
   return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:12, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{hhmm}</span>;
 }
-function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, produtividadeEnc, produtividadeHhEnc, colaboradoresEnc, horarioPT, onClickNome }){
+function BadgeRanking({ valor, dim }){
+  if (valor == null) return <span style={{ fontSize:12, color:T.mut }}>—</span>;
+  const cor = valor >= 8 ? T.green : valor >= 5 ? T.amber : T.red;
+  const bg  = valor >= 8 ? 'rgba(31,157,87,0.13)' : valor >= 5 ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
+  return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:13, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{valor.toFixed(2)}</span>;
+}
+function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, produtividadeEnc, produtividadeHhEnc, colaboradoresEnc, horarioPT, onClickNome }){
   const dim = row.semApontamentos;
   const destaque = idx === 0 && !row.ausente && !row.semApontamentos;
   // Ausente: os indicadores do dia (qualidade/produtividade/colaboradores/PT)
@@ -2170,11 +2203,6 @@ function LinhaEncarregado({ row, idx, temPT, showAssiduidade, qualidadeEnc, prod
         {dim && !row.ausente && <div className="mono" style={{ fontSize:9, letterSpacing:'0.06em', color:T.mut2, textTransform:'uppercase', marginTop:2 }}>Sem apontamento no dia de referência</div>}
       </td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeQualidade nome={row.nome} qualidadeEnc={qualidadeEnc} dim={dim} />}</td>
-      {showAssiduidade && (
-        <td className="mono" style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>
-          {row.ausente || dim ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : `${row.assiduidade.toFixed(1)}%`}
-        </td>
-      )}
       <td style={{ padding:'10px 14px', textAlign:'right', fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>{colab ?? '—'}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeEnc} dim={dim} />}</td>
       <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeProdutividade nome={row.nome} produtividadeEnc={produtividadeHhEnc} dim={dim} />}</td>
@@ -2427,7 +2455,7 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose, dataStatusOver
           const rows = efPorCard[k].filter(r => r.data_consulta);
           if (!rows.length) return;
           const dia = dataStatusOverride || getDiaAderenciaComFallback(ymd => rows.some(r => String(r.data_consulta).startsWith(ymd)));
-          const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', dia);
+          const rowsDoDia = linhasDoDiaExato(rows, 'data_consulta', dia);
           if (rowsDoDia.length) efMap[k] = { data: rowsDoDia[0].data_consulta, rows: rowsDoDia };
         });
 
@@ -2438,9 +2466,8 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose, dataStatusOver
           // Mesmo card pode ter mais de 1 linha no mesmo dia (achado real,
           // ver `emLotes` da tela de ranking) — prioriza a que tem status
           // de qualidade preenchido em vez da simplesmente primeira do array.
-          // `linhasDoDiaMaisRecenteAte` (não dia exato, ajuste 2026-08-28,
-          // mesmo motivo de Performance/Efetivo acima).
-          const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_do_input', dia);
+          // `linhasDoDiaExato` (dia exato, ver comentário da função).
+          const rowsDoDia = linhasDoDiaExato(rows, 'data_do_input', dia);
           const rowDoDia = rowsDoDia.find(r => r.status_qualidade?.trim()) || rowsDoDia[0] || null;
           diaAderPorCard[k] = dia;
           apontDiaAder[k] = rowDoDia;
@@ -2568,11 +2595,6 @@ function PopupCardsEncarregado({ nome, obraId, obraNome, onClose, dataStatusOver
 function ModuloEncarregados({ obraId, obraNome }){
   const obraCfg = OBRAS.find(o => o.id === obraId);
   const [nomeSelecionado, setNomeSelecionado] = useState(null);
-  // Toggle "ASSIDUIDADE" — portado do dashboard atual (2026-08-14, pedido
-  // explícito: "O toggle da assiduidade pode ser exibido"). Métrica só
-  // informativa (não entra no score) — % de dias com apontamento nos
-  // últimos 7 dias úteis, ver cálculo em `linhas`/`assiduidade` abaixo.
-  const [showAssiduidade, setShowAssiduidade] = useState(false);
   // "Data de Status" ajustável (pedido explícito, 2026-08-27: "o default
   // seguirá a lógica, mas permitirá a visualização de outro dia") — o dia
   // escolhido (ou, sem escolha, o dia de partida automático) é só o PONTO DE
@@ -2721,10 +2743,10 @@ function ModuloEncarregados({ obraId, obraNome }){
         // preenchido). Pegar só a "primeira" linha que bate a data
         // descartava a real quando ela vinha depois de uma nula — corrigido
         // priorizando qualquer linha do dia que TENHA status preenchido.
-        // `linhasDoDiaMaisRecenteAte` (não dia exato) — achado real
-        // (2026-08-28): fonte com sincronização atrasada fazia o card sumir
-        // por inteiro em vez de mostrar o último status conhecido.
-        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_do_input', dia);
+        // `linhasDoDiaExato` (dia exato, ver comentário da função) — pedido
+        // explícito 2026-09-10: sem apontamento exatamente na Data de
+        // Status, fica "Pendente Qualidade", não herda um status antigo.
+        const rowsDoDia = linhasDoDiaExato(rows, 'data_do_input', dia);
         const rowDoDia = rowsDoDia.find(r => r.status_qualidade?.trim()) || rowsDoDia[0];
         if (rowDoDia?.status_qualidade?.trim()) statusPorCard[k] = rowDoDia.status_qualidade.trim();
       });
@@ -2738,17 +2760,15 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEnc).forEach(([nome, lista]) => { resumo[nome] = resumoQualidade(lista); });
       if (!cancelado) setQualidadeEnc(resumo);
 
-      // Performance volta a seguir a "Data de Status" (revertida a reversão de
-      // 2026-08-28 a pedido explícito — agora com o MESMO dia efetivo que
-      // Qualidade/Colaboradores usam, e a mesma tolerância de atraso de
-      // sincronização que Qualidade já tinha desde 2026-08-28
-      // (`linhasDoDiaMaisRecenteAte`): sem isso, uma fonte atrasada faria o
-      // card sumir por inteiro em vez de mostrar o último valor conhecido.
+      // Performance segue a "Data de Status" com dia EXATO (pedido explícito
+      // 2026-09-10, revertendo a tolerância de atraso de 2026-08-28): sem
+      // apontamento exatamente nesse dia, o card não entra — não herda o
+      // último valor conhecido de dias atrás.
       const produtividadePorCard = {};
       Object.keys(prodPorCard).forEach(k => {
         const comValor = prodPorCard[k].filter(r => r.indice_receita_custo_incorrido != null && r.data);
         if (!comValor.length) return;
-        const rowsDoDia = linhasDoDiaMaisRecenteAte(comValor, 'data', diaEfetivo);
+        const rowsDoDia = linhasDoDiaExato(comValor, 'data', diaEfetivo);
         if (!rowsDoDia.length) return;
         produtividadePorCard[k] = rowsDoDia[0].indice_receita_custo_incorrido;
       });
@@ -2763,18 +2783,16 @@ function ModuloEncarregados({ obraId, obraNome }){
       Object.entries(porEncProd).forEach(([nome, lista]) => { resumoProd[nome] = lista.reduce((a, b) => a + b, 0) / lista.length; });
       if (!cancelado) setProdutividadeEnc(resumoProd);
 
-      // Colaboradores idem — snapshot mais recente <= `diaEfetivo` (mesmo dia
-      // de Qualidade/Performance acima), tolerando atraso na fonte tanto no
-      // automático quanto no manual (revertido o ajuste de 2026-09-08 que
-      // exigia dia exato no manual, a pedido explícito — volta a valer
-      // `linhasDoDiaMaisRecenteAte` sempre). Sem nenhum apontamento até a
-      // data -> Set vazio (0 colaboradores), mesmo tratamento gracioso que
-      // `colabPorEnc` já dava pra card sem dado.
+      // Colaboradores idem — snapshot do dia EXATO da `diaEfetivo` (pedido
+      // explícito 2026-09-10, mesmo alinhamento de Qualidade/Performance
+      // acima). Sem nenhum apontamento exatamente nesse dia -> Set vazio (0
+      // colaboradores), mesmo tratamento gracioso que `colabPorEnc` já dava
+      // pra card sem dado.
       const nomesPorCard = {};
       let houveApontamentoNoDia = false;
       Object.keys(efPorCard).forEach(k => {
         const rows = efPorCard[k].filter(r => r.data_consulta);
-        const rowsDoDia = linhasDoDiaMaisRecenteAte(rows, 'data_consulta', diaEfetivo);
+        const rowsDoDia = linhasDoDiaExato(rows, 'data_consulta', diaEfetivo);
         if (rowsDoDia.length) houveApontamentoNoDia = true;
         nomesPorCard[k] = new Set(rowsDoDia.filter(r => r.funcionario_nome).map(r => r.funcionario_nome.trim().toUpperCase()));
       });
@@ -2913,12 +2931,11 @@ function ModuloEncarregados({ obraId, obraNome }){
     const cardsEncsUpper = new Set(cardsRaw.map(c => c.responsavel_encarregado.trim().toUpperCase()));
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
-    const seteDiasAtras = new Date(ontem); seteDiasAtras.setDate(ontem.getDate() - 6); seteDiasAtras.setHours(0, 0, 0, 0);
     // Janela de COLETA de `aderenciaPorDia`/`diasApontados` é mais larga que
-    // os 7 dias da Assiduidade (`diasBaseObra` abaixo continua exatamente 7
-    // — não muda) — precisa cobrir o horizonte da "Data de Status" ajustável
-    // (pedido explícito, 2026-08-27), mesmo range já buscado em `tvRaw`
-    // acima (21 dias).
+    // a semana da Assiduidade (segunda a sábado, calculada abaixo) —
+    // precisa cobrir o horizonte da "Data de Status" ajustável (pedido
+    // explícito, 2026-08-27), mesmo range já buscado em `tvRaw` acima (21
+    // dias).
     const inicioColeta = new Date(ontem); inicioColeta.setDate(ontem.getDate() - 20); inicioColeta.setHours(0, 0, 0, 0);
 
     const porEnc = {};
@@ -2935,43 +2952,11 @@ function ModuloEncarregados({ obraId, obraNome }){
       }
     });
 
-    // Assiduidade (toggle "ASSIDUIDADE", porta LoopEncSection do dashboard
-    // atual) — % de dias com apontamento nos últimos 7 dias úteis. Só
-    // informativa, não entra no score. Denominador = dias úteis da JANELA em
-    // que a OBRA trabalhou (união de todos os encarregados), excluindo
-    // feriado nacional em que a obra não trabalhou (mesma regra do original).
-    const diasUteisObra = new Set();
-    Object.values(porEnc).forEach(s => {
-      s.diasApontados.forEach(ymd => {
-        const dt = new Date(ymd + 'T12:00:00');
-        if (dt.getDay() !== 0 && dt.getDay() !== 6) diasUteisObra.add(ymd);
-      });
-    });
-    const yearsInWindow = new Set();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
-      yearsInWindow.add(d.getFullYear());
-    }
-    const feriadosNacionais = new Set();
-    yearsInWindow.forEach(y => getFeriadosNacionais(y).forEach(f => feriadosNacionais.add(f)));
-    const diasBaseObra = new Set();
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(seteDiasAtras); d.setDate(seteDiasAtras.getDate() + i);
-      if (d > ontem) break;
-      if (d.getDay() === 0 || d.getDay() === 6) continue;
-      const ymd = d.toISOString().slice(0, 10);
-      if (feriadosNacionais.has(ymd) && !diasUteisObra.has(ymd)) continue;
-      diasBaseObra.add(ymd);
-    }
-    const totalDiasAssiduidade = Math.max(1, diasBaseObra.size);
-
     let arr = Object.values(porEnc).map(s => {
       const diaAderencia = dataStatusOverride || getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
-      const diasUteisEnc = Array.from(s.diasApontados).filter(ymd => diasBaseObra.has(ymd)).length;
-      const assiduidade = (diasUteisEnc / totalDiasAssiduidade) * 100;
-      return { nome: s.nome, diaAderencia, aderenciaLin, assiduidade, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
+      return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
     }).filter(s => cardsEncsUpper.has(s.nome.trim().toUpperCase()) || !s.semApontamentos);
 
     const encNamesSet = new Set(arr.map(s => s.nome.trim().toUpperCase()));
@@ -2979,7 +2964,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: dataStatusOverride || getDiaAderencia(), aderenciaLin: null, assiduidade: 0, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: dataStatusOverride || getDiaAderencia(), aderenciaLin: null, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -3016,7 +3001,6 @@ function ModuloEncarregados({ obraId, obraNome }){
     const valor = (r) => {
       switch (ordenarEnc) {
         case 'qualidade': return rankQualidade(r.nome);
-        case 'assiduidade': return r.assiduidade ?? -1;
         case 'colaboradores': return colaboradoresEnc[up(r.nome)] ?? -1;
         case 'produtividade': return produtividadeEnc[up(r.nome)] ?? -1;
         case 'produtividadeHh': return produtividadeHhEnc[up(r.nome)] ?? -1;
@@ -3334,12 +3318,10 @@ function ModuloEncarregados({ obraId, obraNome }){
   if (erro) return <CartaoEstado texto="Erro ao carregar vw_dados_tv / cards_ativos" maxHeight={620} tom={T.red} />;
 
   const aderenciaGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.aderenciaLin ?? 0), 0) / linhas.length : 0;
-  const assiduidadeGlobal = linhas.length ? linhas.reduce((s, r) => s + (r.assiduidade ?? 0), 0) / linhas.length : 0;
   const colsEncarregados = [
     { label:'Pos', campo:null, align:'left' },
     { label:'Encarregado', campo:'nome', align:'left' },
     { label:'Qualidade', campo:'qualidade', align:'right' },
-    ...(showAssiduidade ? [{ label:'Assiduidade', campo:'assiduidade', align:'right' }] : []),
     { label:'Colaboradores', campo:'colaboradores', align:'right' },
     { label:'Performance', campo:'produtividade', align:'right' },
     { label:'Produtividade', campo:'produtividadeHh', align:'right' },
@@ -3381,16 +3363,11 @@ function ModuloEncarregados({ obraId, obraNome }){
               style={{ border:'none', background:'transparent', color:T.mut, cursor:'pointer', padding:'0 2px', fontSize:14, fontWeight:700, lineHeight:1 }}>×</button>
           )}
         </div>
-        <button onClick={() => setShowAssiduidade(v => !v)} title="Exibir/ocultar assiduidade dos cards (dias com apontamento nos últimos 7 dias úteis — só informativa, não entra no score)"
-          className="mono" style={{ background: showAssiduidade ? 'rgba(31,157,87,0.15)' : '#eef0f3', border:'none', color: showAssiduidade ? T.green : T.mut, padding:'6px 12px', borderRadius:8, cursor:'pointer', fontSize:10.5, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>
-          Assiduidade
-        </button>
       </div>
 
-      <div className={`kpi-row ${showAssiduidade ? 'cols-3' : 'cols-2'}`}>
+      <div className="kpi-row cols-2">
         <Balao titulo="Aderência Média" cor={T.blue} bg="rgba(37,99,235,0.08)" borda="rgba(37,99,235,0.15)" valor={`${aderenciaGlobal.toFixed(1)}%`} />
         <Balao titulo="Colaboradores Alocados" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={numColabObra ?? '—'} />
-        {showAssiduidade && <Balao titulo="Assiduidade Média" cor={T.green} bg="rgba(31,157,87,0.08)" borda="rgba(31,157,87,0.15)" valor={`${assiduidadeGlobal.toFixed(1)}%`} />}
       </div>
 
       <div className="card" style={{ flex:1, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
@@ -3412,7 +3389,7 @@ function ModuloEncarregados({ obraId, obraNome }){
             </thead>
             <tbody>
               {rankingRows.map((row, idx) => (
-                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT} showAssiduidade={showAssiduidade}
+                <LinhaEncarregado key={row.nome} row={row} idx={idx} temPT={temPT}
                   qualidadeEnc={qualidadeEnc} produtividadeEnc={produtividadeEnc} produtividadeHhEnc={produtividadeHhEnc} colaboradoresEnc={colaboradoresEnc}
                   horarioPT={horarioPT} onClickNome={setNomeSelecionado} />
               ))}
@@ -3643,54 +3620,81 @@ function ModuloEfetivo({ obraId, obraNome }){
       .catch(() => { setPrevistoDetalhe([]); setPrevistoDetalheLoading(false); });
   }, [popup, moiModFiltro, obraId]);
 
-  // Quadro-resumo: efetivo total disponível + %MOI/%MOD, do dia de HOJE.
+  // Quadro-resumo: efetivo total disponível + %MOI/%MOD do ÚLTIMO DIA
+  // TRABALHADO — pedido explícito (2026-09-10: "está exibindo corte do dia
+  // vigente, deveria exibir do dia anterior / último dia trabalhado").
   //
-  // NÃO RECUA — pedido explícito (2026-09-08). A versão anterior pegava o último
-  // dia com pelo menos uma presença (`order=periodo.desc&limit=1`), e o efeito
-  // era mostrar feriado como se fosse o efetivo da obra: em 08/09 todas as obras
-  // exibiam 07/09 (feriado da Independência), com NN-Reforço em 1 pessoa contra
-  // 46 na sexta anterior, e Porto em 10 contra 110. Um dia praticamente sem
-  // ninguém alocado virava o número do quadro.
+  // Histórico, porque as duas versões anteriores erraram por motivos
+  // opostos e a regra de hoje existe pra não repetir nenhum dos dois:
+  //   1. A primeira pegava o último dia com QUALQUER presença
+  //      (`order=periodo.desc&limit=1`) e mostrava feriado como se fosse o
+  //      efetivo da obra: em 08/09 todas exibiam 07/09 (Independência), com
+  //      NN-Reforço em 1 pessoa contra 46 na sexta, e Porto em 10 contra 110.
+  //   2. A segunda (2026-09-08) travou no dia corrente e não recuava nunca —
+  //      o que resolveu o feriado, mas fazia o quadro passar a manhã inteira
+  //      dizendo "apontamento não lançado", que é o que motivou este pedido.
   //
-  // Agora consulta o dia corrente e nada mais. Sem apontamento válido hoje, o
-  // quadro diz isso em vez de exibir outro dia — ADR-005: ausência não deve
-  // parecer dado. O custo, aceito na decisão, é perder o último efetivo
-  // conhecido enquanto o apontamento do dia não é lançado.
+  // Agora: o mais recente A PARTIR DE ONTEM que tenha efetivo lançado,
+  // PULANDO feriado nacional. Fim de semana entra se a obra trabalhou (tem
+  // efetivo no dia); feriado não entra, que é exatamente o caso 1.
   //
   // Distingue dois "vazios" diferentes, porque a ação de quem lê muda:
   //   'nao_lancado' — as linhas do dia existem em `efetivo_diario_raw` mas com
   //                   `situacao` em branco. O dia foi carregado e ainda não
   //                   apontado; é normal de manhã, e resolve sozinho.
-  //   'sem_dado'    — não há linha alguma para hoje. A carga não chegou.
+  //   'sem_dado'    — não há linha alguma para o dia. A carga não chegou.
   useEffect(() => {
     setResumo(null); setResumoErro(false);
     if (!obraId) return;
     const headers = MSEAuth.headers();
     // Data LOCAL, não `toISOString()`: em UTC-3 o ISO vira o dia seguinte a
-    // partir das 21h, e o quadro passaria a consultar um dia que nem começou.
-    const d = new Date();
-    const hoje = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    // partir das 21h, e o quadro consultaria um dia que nem começou.
+    const ymdLocal = dt => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    const ontem = new Date(); ontem.setHours(12, 0, 0, 0); ontem.setDate(ontem.getDate() - 1);
+    const JANELA_DIAS = 14;
+    const inicioJanela = new Date(ontem); inicioJanela.setDate(ontem.getDate() - (JANELA_DIAS - 1));
     const pega = (url) => fetchPaginadoCompat(url, headers, 1000)
       .then(r => r.ok ? r.json() : Promise.reject())
       .then(rows => (Array.isArray(rows) && rows[0]) ? rows[0] : null);
-    Promise.all([
-      pega(`${EFETIVO_API}/vw_efetivo_diario_total?obra_id=eq.${obraId}&periodo=eq.${hoje}&select=periodo,qtd`),
-      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOI&periodo=eq.${hoje}&select=periodo,qtd`),
-      pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOD&periodo=eq.${hoje}&select=periodo,qtd`),
-      // Só pra separar 'nao_lancado' de 'sem_dado'; a view já filtrou os brancos.
-      pega(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=eq.${hoje}&select=id&limit=1`),
-    ]).then(([rt, rmoi, rmod, umaLinhaCrua]) => {
-      setResumo({
-        total: rt ? parseValNum(rt.qtd) : null,
-        moi: rmoi ? parseValNum(rmoi.qtd) : null,
-        mod: rmod ? parseValNum(rmod.qtd) : null,
-        periodo: hoje,
-        estado: MSEDomain.estadoResumoEfetivo({ temTotal: !!rt, temLinhaCrua: !!umaLinhaCrua }),
+    const pegaTodos = (url) => fetchPaginadoCompat(url, headers, 1000)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(rows => Array.isArray(rows) ? rows : []);
+
+    pegaTodos(`${EFETIVO_API}/vw_efetivo_diario_total?obra_id=eq.${obraId}&periodo=gte.${ymdLocal(inicioJanela)}&periodo=lte.${ymdLocal(ontem)}&select=periodo,qtd`)
+      .then(linhas => {
+        const comEfetivo = new Set(linhas
+          .filter(l => parseValNum(l.qtd) > 0)
+          .map(l => String(l.periodo).slice(0, 10)));
+        const d = new Date(ontem);
+        let escolhido = null;
+        for (let i = 0; i < JANELA_DIAS; i++) {
+          const ymd = ymdLocal(d);
+          if (comEfetivo.has(ymd) && !getFeriadosNacionais(d.getFullYear()).has(ymd)) { escolhido = ymd; break; }
+          d.setDate(d.getDate() - 1);
+        }
+        // Nenhum dia trabalhado na janela: mostra ontem e deixa o estado
+        // explicar (não lançado / sem dado), em vez de inventar um número.
+        const dia = escolhido || ymdLocal(ontem);
+        return Promise.all([
+          pega(`${EFETIVO_API}/vw_efetivo_diario_total?obra_id=eq.${obraId}&periodo=eq.${dia}&select=periodo,qtd`),
+          pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOI&periodo=eq.${dia}&select=periodo,qtd`),
+          pega(`${EFETIVO_API}/vw_efetivo_diario_moimod_total?obra_id=eq.${obraId}&moi_mod=eq.MOD&periodo=eq.${dia}&select=periodo,qtd`),
+          // Só pra separar 'nao_lancado' de 'sem_dado'; a view já filtrou os brancos.
+          pega(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=eq.${dia}&select=id&limit=1`),
+        ]).then(([rt, rmoi, rmod, umaLinhaCrua]) => {
+          setResumo({
+            total: rt ? parseValNum(rt.qtd) : null,
+            moi: rmoi ? parseValNum(rmoi.qtd) : null,
+            mod: rmod ? parseValNum(rmod.qtd) : null,
+            periodo: dia,
+            estado: MSEDomain.estadoResumoEfetivo({ temTotal: !!rt, temLinhaCrua: !!umaLinhaCrua }),
+          });
+        });
+      })
+      .catch(() => {
+        setResumo({ total: null, moi: null, mod: null, periodo: ymdLocal(ontem), estado: 'erro' });
+        setResumoErro(true);
       });
-    }).catch(() => {
-      setResumo({ total: null, moi: null, mod: null, periodo: hoje, estado: 'erro' });
-      setResumoErro(true);
-    });
   }, [obraId]);
 
   // Detalhe do quadro-resumo (nome, função, MOI/MOD) — mesmo dia usado no balão
@@ -3747,20 +3751,32 @@ function ModuloEfetivo({ obraId, obraNome }){
   const periodosReal = new Map(dados.map(d => [d.periodo, d.qtd]));
   const semanaMostraAmbos = !ocultarReal && !ocultarPrevisto && previstoSemanal.length > 0;
   const MAX_SEMANAS_GRAFICO = semanaMostraAmbos ? 12 : 26;
+  // O diário puxa a série inteira da obra (a view não tem recorte), então sem
+  // teto o gráfico chegava a centenas de colunas — barras de 1px e rótulos
+  // ilegíveis. Mesma proteção do semanal: mostra a janela recente e deixa o
+  // filtro de período (já exposto pro 'dia') como saída pra olhar mais atrás.
+  // 3 semanas quando desenha Previsto+Real (2 barras por dia), ~1 mês quando
+  // só uma série está visível.
+  const MAX_DIAS_GRAFICO = semanaMostraAmbos ? 21 : 31;
   const temFiltroData = (granularidade === 'semana' || granularidade === 'dia') && filtroDataDe && filtroDataAte;
   const dentroDoFiltro = (periodo) => !temFiltroData || (periodo >= filtroDataDe && periodo <= filtroDataAte);
+  const hojeStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
+  // Janela recente: descarta período futuro e corta nos N mais novos. Se o
+  // filtro de data está preenchido, ele manda — o usuário pediu aquele recorte.
+  const janelaRecente = (todos, maximo) => {
+    if (temFiltroData) return todos;
+    const ateHoje = todos.filter(p => p <= hojeStr);
+    const base = ateHoje.length > 0 ? ateHoje : todos;
+    return base.length > maximo ? base.slice(-maximo) : base;
+  };
   const periodosTodos = granularidade === 'mes'
     ? Array.from(new Set([...dados.map(d => d.periodo), ...previstoMensal.map(p => p.periodo), ...realHistoricoPorMes.keys(), ...realHistoricoPorMesViaSemana.keys()])).sort()
     : granularidade === 'semana'
-      ? (() => {
-        const todas = Array.from(new Set([...dados.map(d => d.periodo), ...previstoSemanal.map(p => p.periodo), ...realHistoricoPorSemana.keys()])).sort().filter(dentroDoFiltro);
-        if (temFiltroData) return todas;
-        const hojeStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
-        const ateHoje = todas.filter(p => p <= hojeStr);
-        const base = ateHoje.length > 0 ? ateHoje : todas;
-        return base.length > MAX_SEMANAS_GRAFICO ? base.slice(-MAX_SEMANAS_GRAFICO) : base;
-      })()
-      : dados.map(d => d.periodo).filter(dentroDoFiltro);
+      ? janelaRecente(
+        Array.from(new Set([...dados.map(d => d.periodo), ...previstoSemanal.map(p => p.periodo), ...realHistoricoPorSemana.keys()])).sort().filter(dentroDoFiltro),
+        MAX_SEMANAS_GRAFICO,
+      )
+      : janelaRecente(dados.map(d => d.periodo).filter(dentroDoFiltro), MAX_DIAS_GRAFICO);
   const previstoDoPeriodo = (periodo) => {
     if (granularidade === 'mes') {
       return previstoPorMes.has(mesDoPeriodo(periodo)) ? previstoPorMes.get(mesDoPeriodo(periodo)) : null;
@@ -9630,6 +9646,1350 @@ function ModuloTour360({ obraId, obraNome }){
   );
 }
 
+// ── Ranking Geral de Encarregados — página cheia, TODAS as obras (pedido
+// explícito, 2026-09-10: "abrirá uma nova página, com todos os
+// encarregados"), acessada pelo botão "Ranking" no cabeçalho (ver Header).
+// Ranking SEMANAL (pedido explícito, 2026-09-10: "todas as informações têm
+// que ser calculadas no recorte semanal") — Qualidade, Aderência e
+// Assiduidade são TODAS agregadas na mesma janela segunda-sábado (até
+// ontem), não num "dia de referência" único como ModuloEncarregados faz.
+// Reaproveita os mesmos dados de origem de ModuloEncarregados (Qualidade
+// via Apontamentos, Aderência via vw_dados_tv, Assiduidade via
+// efetivo_diario_raw) só que sem filtrar client-side por uma obra só — os
+// dois fetches de origem (vw_dados_tv, cards_ativos) já trazem a tabela
+// inteira, sem filtro de obra na query, exatamente como ModuloEncarregados
+// já fazia por baixo dos panos. `efetivo_diario_raw` é a única exceção (a
+// query já filtra por `obra_id` no servidor) — repete a mesma chamada uma
+// vez por obra elegível, em paralelo.
+const OBRAS_RANKING = OBRAS.filter(o => o.origemTV);
+
+// Recorte semanal fixo (segunda a sábado) — mesma regra da Assiduidade
+// original, usada por TODAS as métricas desta página. `deltaSemanas` (0 =
+// semana atual, -1 = semana passada, ...) seleciona qual semana calcular —
+// pedido explícito 2026-09-10: "lista suspensa que permita selecionar a
+// semana de análise". Numa semana passada (já encerrada), a janela vai até
+// sábado; na semana atual, só até ontem (dias futuros não existem ainda).
+// Mesmo formato de retorno de `mesDeReferencia` (`inicio`/`fim`/`ontem`/
+// `dias`/`ymds`/`ymd`) — o resto da tela usa um dos dois sem se importar
+// com qual é, ver `periodo` em `ModuloRankingGeral`.
+function semanaDeReferencia(deltaSemanas = 0){
+  const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+  const ontemReal = new Date(hoje); ontemReal.setDate(hoje.getDate() - 1); ontemReal.setHours(23, 59, 59, 999);
+  const diaSemanaOntem = ontemReal.getDay();
+  const deltaSegunda = diaSemanaOntem === 0 ? -6 : (1 - diaSemanaOntem);
+  const segundaAtual = new Date(ontemReal); segundaAtual.setDate(ontemReal.getDate() + deltaSegunda); segundaAtual.setHours(0, 0, 0, 0);
+  const inicio = new Date(segundaAtual); inicio.setDate(segundaAtual.getDate() + deltaSemanas * 7);
+  const fim = new Date(inicio); fim.setDate(inicio.getDate() + 5); fim.setHours(23, 59, 59, 999);
+  const ontem = fim < ontemReal ? fim : ontemReal;
+  const dias = [];
+  for (let d = new Date(inicio); d <= ontem; d.setDate(d.getDate() + 1)) dias.push(new Date(d));
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { inicio, fim, ontem, dias, ymds: new Set(dias.map(ymd)), ymd };
+}
+// Quantas semanas passadas oferecer no seletor, além da atual.
+const SEMANAS_SELECIONAVEIS = 11;
+
+// Recorte mensal (mês cheio) — mesma ideia da semana, mas o mês inteiro;
+// pedido explícito 2026-09-10 ("toggle de Semanal e Mensal... o mensal
+// seguirá a mesma ideia, contemplando o mês cheio"). `deltaMeses` (0 = mês
+// atual, -1 = mês passado, ...). Mês corrente fica limitado a ontem; mês já
+// encerrado usa o mês inteiro. Como o mês tem domingos (a semana nunca
+// tinha), `calcAssiduidade` precisa saber excluir domingo da conta — ver
+// comentário lá.
+function mesDeReferencia(deltaMeses = 0){
+  const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+  const ontemReal = new Date(hoje); ontemReal.setDate(hoje.getDate() - 1); ontemReal.setHours(23, 59, 59, 999);
+  const mesBase = new Date(ontemReal.getFullYear(), ontemReal.getMonth() + deltaMeses, 1);
+  const inicio = new Date(mesBase.getFullYear(), mesBase.getMonth(), 1);
+  const fim = new Date(mesBase.getFullYear(), mesBase.getMonth() + 1, 0); fim.setHours(23, 59, 59, 999);
+  const ontem = fim < ontemReal ? fim : ontemReal;
+  const dias = [];
+  for (let d = new Date(inicio); d <= ontem; d.setDate(d.getDate() + 1)) dias.push(new Date(d));
+  const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return { inicio, fim, ontem, dias, ymds: new Set(dias.map(ymd)), ymd };
+}
+// Quantos meses passados oferecer no seletor, além do atual.
+const MESES_SELECIONAVEIS = 5;
+const MESES_LABEL = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const DIAS_SEMANA_LABEL = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+const fmtDataYMD = ymd => ymd ? fmtDataCurta(new Date(`${ymd}T12:00:00`)) : '—';
+
+// Popup "memória de cálculo" — pedido explícito 2026-09-10: "ao clicar
+// veremos no pop-up uma memória de como chegou naquele número", pros 3
+// critérios (Qualidade/Aderência/Assiduidade) e também pro Score final.
+function PopupExplicacaoCriterio({ tipo, row, onClose }){
+  const titulos = { qualidade: 'Qualidade', aderencia: 'Aderência', assiduidade: 'Assiduidade', ranking: 'Score do Ranking' };
+  const notas = { qualidade: row.q10, aderencia: row.ader10, assiduidade: row.assid10, ranking: row.rankingScore };
+  return (
+    <div onClick={onClose} className="modal-overlay-in" style={{ position:'fixed', inset:0, zIndex:10000, background:'rgba(16,24,40,0.45)', backdropFilter:'blur(3px)', display:'flex', alignItems:'center', justifyContent:'center', padding:24 }}>
+      <div onClick={e => e.stopPropagation()} className="modal-card-in" style={{ background:'#fff', border:'1px solid #e4e7ec', borderRadius:16, width:'100%', maxWidth:560, maxHeight:'76vh', display:'flex', flexDirection:'column', overflow:'hidden', boxShadow:'0 24px 60px -12px rgba(16,24,40,0.25)' }}>
+        <div style={{ padding:'16px 22px', borderBottom:'1px solid #eef0f3', display:'flex', alignItems:'center', gap:14, flexShrink:0 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div className="mono" style={{ fontSize:10, letterSpacing:'0.16em', color:T.mut2, textTransform:'uppercase', fontWeight:600, marginBottom:4 }}>{titulos[tipo]} · {row.nome.toUpperCase()}</div>
+            <div style={{ fontSize:12, color:T.mut }}>{row.obra.nome}</div>
+          </div>
+          <div style={{ fontSize:30, fontWeight:800, lineHeight:1, color:T.amber, flexShrink:0 }}>{notas[tipo].toFixed(2)}<span style={{ fontSize:12, fontWeight:600, color:T.mut2, marginLeft:4 }}>/10</span></div>
+          <button onClick={onClose} style={{ background:'#eef0f3', border:'none', color:T.mut, borderRadius:10, padding:'8px 13px', cursor:'pointer', fontSize:16, lineHeight:1, flexShrink:0 }}>✕</button>
+        </div>
+        <div style={{ padding:'16px 22px', overflowY:'auto', flex:1 }}>
+          {tipo === 'qualidade' && <ExplicacaoQualidade row={row} />}
+          {tipo === 'aderencia' && <ExplicacaoAderencia row={row} />}
+          {tipo === 'assiduidade' && <ExplicacaoAssiduidade row={row} />}
+          {tipo === 'ranking' && <ExplicacaoRanking row={row} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+function ExplicacaoQualidade({ row }){
+  const dias = row.qualidadeDias || [];
+  if (!dias.length) return <div style={{ fontSize:13, color:T.mut }}>Nenhum apontamento de qualidade avaliado nesta semana (sem status, ou só "Pendente") — sem nota calculável.</div>;
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+      <div style={{ fontSize:13, color:T.body }}>Cada apontamento de qualidade vira um ponto (Bom=10, Satisfatório=6, Corrigir=0). O valor do DIA é a média de todos os pontos daquele dia (todos os cards juntos); a nota da semana é a média dos dias:</div>
+      {dias.map(d => (
+        <div key={d.dia} style={{ border:'1px solid #eef0f3', borderRadius:10, padding:'8px 12px' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:6 }}>
+            <span className="mono" style={{ fontSize:12, fontWeight:700, color:T.ink }}>{fmtDataYMD(d.dia)}</span>
+            <span style={{ fontSize:12, color:T.mut }}>{d.itens.map(it => it.pontos).join(' + ')} ÷ {d.itens.length} = <b style={{ color:T.ink }}>{d.media.toFixed(2)}</b></span>
+          </div>
+          <table style={{ width:'100%', fontSize:12, borderCollapse:'collapse' }}>
+            <tbody>
+              {d.itens.map((it, i) => (
+                <tr key={i} style={{ borderTop: i > 0 ? '1px solid #f3f4f6' : 'none' }}>
+                  <td className="mono" style={{ padding:'4px 8px 4px 0', color:T.mut }}>#{it.cardId}</td>
+                  <td style={{ padding:'4px 8px' }}>{it.status}</td>
+                  <td className="mono" style={{ padding:'4px 0', textAlign:'right', fontWeight:600 }}>{it.pontos}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>
+        Média da semana: {dias.map(d => d.media.toFixed(2)).join(' + ')} ÷ {dias.length} = {row.q10.toFixed(2)}/10
+      </div>
+    </div>
+  );
+}
+function ExplicacaoAderencia({ row }){
+  const dias = row.aderenciaDias || [];
+  if (!dias.length) return <div style={{ fontSize:13, color:T.mut }}>Nenhum apontamento de aderência nesta semana — sem nota calculável (mostrado como "Alocado").</div>;
+  const media = dias.reduce((a, d) => a + d.valor, 0) / dias.length;
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      <div style={{ fontSize:13, color:T.body }}>Aderência linear média por dia da semana ({dias.length} dia(s) com apontamento):</div>
+      <table style={{ width:'100%', fontSize:12.5, borderCollapse:'collapse' }}>
+        <thead><tr style={{ color:T.mut, textAlign:'left' }}><th style={{ padding:'4px 8px 4px 0' }}>Data</th><th style={{ padding:'4px 0', textAlign:'right' }}>Aderência do dia</th></tr></thead>
+        <tbody>
+          {dias.map(d => (
+            <tr key={d.ymd} style={{ borderTop:'1px solid #eef0f3' }}>
+              <td style={{ padding:'6px 8px 6px 0' }}>{fmtDataYMD(d.ymd)}</td>
+              <td className="mono" style={{ padding:'6px 0', textAlign:'right', fontWeight:600 }}>{d.valor.toFixed(1)}%</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>
+        Média da semana: {media.toFixed(1)}% → nota {media.toFixed(1)}% ÷ 10 = {row.ader10.toFixed(2)}/10
+      </div>
+    </div>
+  );
+}
+function ExplicacaoAssiduidade({ row }){
+  const dias = row.assiduidadeDias || [];
+  const contabilizados = dias.filter(d => d.contabilizado);
+  const contam = contabilizados.filter(d => d.contouAFavor).length;
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+      <div style={{ fontSize:13, color:T.body }}>Dia útil (seg-sex) sempre exige apontamento, exceto se ausente no efetivo (excusado). Sábado só entra na conta, e sempre a favor, se houver presença registrada:</div>
+      <table style={{ width:'100%', fontSize:12.5, borderCollapse:'collapse' }}>
+        <thead><tr style={{ color:T.mut, textAlign:'left' }}><th style={{ padding:'4px 8px 4px 0' }}>Data</th><th style={{ padding:'4px 8px' }}>Dia</th><th style={{ padding:'4px 8px' }}>Situação</th><th style={{ padding:'4px 0', textAlign:'right' }}>Contou?</th></tr></thead>
+        <tbody>
+          {dias.map(d => (
+            <tr key={d.ymd} style={{ borderTop:'1px solid #eef0f3' }}>
+              <td style={{ padding:'6px 8px 6px 0' }}>{fmtDataYMD(d.ymd)}</td>
+              <td style={{ padding:'6px 8px', color:T.mut }}>{d.diaSemana}</td>
+              <td style={{ padding:'6px 8px', color:T.mut }}>{d.motivo}</td>
+              <td style={{ padding:'6px 0', textAlign:'right', fontWeight:700, color: !d.contabilizado ? T.mut2 : d.contouAFavor ? T.green : T.red }}>
+                {!d.contabilizado ? 'Excluído' : d.contouAFavor ? 'Sim' : 'Não'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontSize:13, fontWeight:700, color:T.ink }}>
+        {row.assiduidade != null
+          ? `${contam} de ${contabilizados.length} dias contam → ${row.assiduidade.toFixed(0)}% → nota ${row.assid10.toFixed(2)}/10`
+          : 'Nenhum dia entrou na conta esta semana — sem nota calculável.'}
+      </div>
+    </div>
+  );
+}
+function ExplicacaoRanking({ row }){
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:10, fontSize:13 }}>
+      <div style={{ color:T.body }}>Score = Qualidade × 0,3 + Aderência × 0,5 + Assiduidade × 0,2 (cada nota de 0 a 10):</div>
+      <div className="mono" style={{ fontSize:14, color:T.ink }}>
+        {(row.q10 ?? 0).toFixed(2)} × 0,3 + {row.ader10.toFixed(2)} × 0,5 + {row.assid10.toFixed(2)} × 0,2 = <b>{row.rankingScore.toFixed(2)}</b>
+      </div>
+      <div style={{ fontSize:12.5, color:T.mut }}>Falta de dado em qualquer critério conta como 0 nesse critério, pra não inflar quem ainda não tem avaliação.</div>
+    </div>
+  );
+}
+
+// Nota (0-10) de cada critério, clicável — abre a memória de cálculo (pedido
+// explícito 2026-09-10: "veremos nota '10', ao clicar veremos... uma
+// memória de como chegou naquele número"). `null` = sem dado, não clicável.
+function CelulaNota({ valor, dim, onClick }){
+  if (valor == null) return <span style={{ fontSize:12, color:T.mut2 }}>—</span>;
+  return (
+    <button onClick={onClick} title="Ver como esta nota foi calculada"
+      style={{ border:'none', background:'none', padding:0, cursor:'pointer' }}>
+      <BadgeRanking valor={valor} dim={dim} />
+    </button>
+  );
+}
+// Ícones dos 3 critérios — mesmo pictograma da peça "Encarregado da Semana"
+// (guia de campanha, 2026-09-10): check pra Qualidade, alvo pra Aderência,
+// calendário pra Assiduidade.
+function IconCheck({ color, size = 12 }){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>;
+}
+function IconTarget({ color, size = 12 }){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.3" fill={color} stroke="none" /></svg>;
+}
+function IconCalendar({ color, size = 12 }){
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="3" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>;
+}
+// Selo de posição — só as 5 primeiras (premiadas nesta semana, ver guia da
+// campanha) recebem o selo; as demais mantêm o "#N" simples de sempre.
+// Metal grafite com faixa vermelha fina embaixo — a mesma linguagem do
+// troféu da campanha (capacete prata sobre base grafite com faixa
+// vermelha), em miniatura.
+function SeloPosicao({ n, premiado, dim }){
+  if (!premiado) return <span className="mono" style={{ fontSize:14, fontWeight:700, color:T.mut2, opacity: dim ? 0.45 : 1 }}>{dim ? '—' : `#${n}`}</span>;
+  return (
+    <div style={{
+      width:28, height:28, borderRadius:8, flexShrink:0, position:'relative', overflow:'hidden',
+      background:'linear-gradient(150deg, #7b8394 0%, #2b303c 82%)',
+      boxShadow:'0 1px 3px rgba(31,35,45,0.35)',
+      display:'flex', alignItems:'center', justifyContent:'center',
+    }}>
+      <span className="mono" style={{ fontSize:13, fontWeight:800, color:'#fff' }}>{n}</span>
+      <div style={{ position:'absolute', left:0, right:0, bottom:0, height:4, background:T.red }} />
+    </div>
+  );
+}
+// `row.posicao` é a posição no RANKING (por Score), não a linha da tabela —
+// empatados dividem a mesma posição e ela não muda quando a tabela é
+// reordenada por outra coluna.
+function LinhaRankingGeral({ row, onAbrirExplicacao, onClickNome, limitePremiados }){
+  const dim = row.semApontamentos;
+  const premiado = !dim && row.posicao != null && row.posicao <= limitePremiados;
+  return (
+    <tr style={{
+      borderTop: premiado ? '1px solid rgba(210,59,59,0.14)' : '1px solid #eef0f3',
+      background: premiado ? 'linear-gradient(90deg, rgba(210,59,59,0.05) 0%, rgba(210,59,59,0.015) 55%, transparent 100%)' : 'transparent',
+    }}>
+      <td style={{ padding:'10px 14px 10px 11px', opacity: dim ? 0.45 : 1, borderLeft: premiado ? `3px solid ${T.red}` : '3px solid transparent' }}>
+        <SeloPosicao n={row.posicao} premiado={premiado} dim={dim} />
+      </td>
+      <td style={{ padding:'10px 14px', opacity: dim ? 0.45 : 1 }}>
+        {/* Mesmo gesto da tela de Encarregados: clicar no nome abre os
+            cards ativos da pessoa (`PopupCardsEncarregado`, reaproveitado
+            sem mudança) — pedido explícito 2026-09-10. */}
+        <div onClick={() => onClickNome(row)} title="Ver cards ativos deste encarregado"
+          style={{ fontSize: premiado ? 14.5 : 13.5, fontWeight:700, color:T.ink, cursor:'pointer',
+            textDecoration:'underline', textDecorationColor:T.mut2, textUnderlineOffset:3 }}>
+          {row.nome.toUpperCase()}
+        </div>
+        {dim && <div className="mono" style={{ fontSize:9, letterSpacing:'0.06em', color:T.mut2, textTransform:'uppercase', marginTop:2 }}>Sem apontamento nesta semana</div>}
+      </td>
+      <td className="mono" style={{ padding:'10px 14px', fontSize:11.5, fontWeight:600, color:T.mut, opacity: dim ? 0.45 : 1 }}>{row.obra.nome}</td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>
+        <CelulaNota valor={row.q10} dim={dim} onClick={() => onAbrirExplicacao('qualidade', row)} />
+      </td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>
+        {row.aderenciaLin != null
+          ? <CelulaNota valor={row.ader10} dim={dim} onClick={() => onAbrirExplicacao('aderencia', row)} />
+          : <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11.5, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', background:'#eef0f3', color:T.mut2, opacity:0.6 }}>Alocado</span>}
+      </td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>
+        <CelulaNota valor={row.assiduidade != null ? row.assid10 : null} dim={dim} onClick={() => onAbrirExplicacao('assiduidade', row)} />
+      </td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>
+        <CelulaNota valor={row.rankingScore} dim={dim} onClick={() => onAbrirExplicacao('ranking', row)} />
+      </td>
+    </tr>
+  );
+}
+// Selo "5 premiados / semana · 1 premiado / mês" — regras da campanha
+// "Encarregado da Semana" (guia de campanha, 2026-09-10), reproduzidas
+// aqui só como contexto; nenhuma regra nova inventada.
+//
+// `ativo` marca a regra que vale pro enfoque escolhido no toggle: no
+// semanal valem os 5, no mensal vale 1. A outra continua visível (a
+// campanha tem as duas), só que apagada — quem lê precisa saber qual das
+// duas está sendo apurada agora.
+function PillCampanha({ numero, texto, sub, ativo }){
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10, flex:'0 1 auto',
+      background: ativo ? '#fff' : 'rgba(255,255,255,0.5)',
+      border:`1px solid ${ativo ? 'rgba(210,59,59,0.30)' : 'rgba(31,36,48,0.09)'}`,
+      boxShadow: ativo ? '0 1px 6px rgba(31,36,48,0.06)' : 'none',
+      borderRadius:12, padding:'7px 13px', opacity: ativo ? 1 : 0.62,
+      transition:'opacity .2s, background .2s, border-color .2s' }}>
+      <span className="mono" style={{ fontSize:21, fontWeight:800, color:T.red, lineHeight:1 }}>{numero}</span>
+      <div style={{ lineHeight:1.25 }}>
+        <div style={{ fontSize:12, fontWeight:600, color:SLIDE_GRAFITE, whiteSpace:'nowrap' }}>{texto}</div>
+        <div className="mono" style={{ fontSize:9.5, color:T.mut, textTransform:'uppercase', letterSpacing:'0.06em', whiteSpace:'nowrap' }}>{sub}</div>
+      </div>
+    </div>
+  );
+}
+
+// Cinza do balão do ranking, AMOSTRADO do PNG aprovado da campanha
+// (campanha-mse-regras-ranking-1920x1080-v7.png): campo claro em #EEEAE6,
+// sombra de margem em #E3DFDB. São pixels lidos da peça, não estimativa —
+// os valores anotados no guia (#F2EFE9 / #E1DCD5) são de outra amostragem
+// e leem mais claros e mais amarelos que a arte real.
+// Separados do `SLIDE_PEROLA` do PNG de exportação de propósito: a troca
+// (2026-09-10) foi pedida só pro banner.
+const BANNER_CINZA_CLARO = '#EEEAE6';
+const BANNER_CINZA = '#E3DFDB';
+
+// Grafismo do infográfico v7 da campanha: arquitetura contínua ocupando
+// TODO o layout (pedido registrado no guia), silhuetas e linhas de baixo
+// contraste em cinza, cruzadas por poucas linhas vermelhas finas e nós
+// esparsos.
+//
+// O que NÃO entra, por decisão registrada no guia: capacete (suprimido
+// nesta peça a partir da v5), dourado, estrelas e medalhas (pertencem a
+// outra campanha), e qualquer painel digital denso ou estética neon.
+//
+// Só o CONTEÚDO, sem o <svg> externo: o balão do painel e o PNG exportado
+// usam a mesma geometria em escalas diferentes, e SVG puro é requisito do
+// export (`<foreignObject>` contamina o canvas no Chrome).
+//
+// Skyline irregular, sem repetição de ritmo — [x, largura, altura].
+const PREDIOS_CAMPANHA = [
+  [-20, 84, 96], [72, 56, 140], [136, 98, 70], [242, 64, 126], [314, 112, 90],
+  [434, 50, 158], [492, 90, 112], [590, 70, 82], [668, 106, 136], [782, 58, 98],
+  [848, 94, 120], [950, 66, 76], [1024, 102, 148], [1134, 72, 104], [1214, 90, 84],
+];
+const GRAFISMO_LARGURA = 1280;
+// Mastros vermelhos: [x, altura acima do topo do prédio].
+const MASTROS_CAMPANHA = [[104, 60], [721, 64], [1075, 52]];
+
+function ConteudoGrafismoCampanha({ altura = 200, escala = 1 }){
+  const CINZA = SLIDE_GRAFITE;
+  const BASE = altura;
+  const alturaPredio = (h) => h * escala;
+  const topoPredio = (h) => BASE - alturaPredio(h);
+  // Pavimentos distribuídos pela altura toda, não só sobre os prédios: é o
+  // que faz o grafismo atravessar a peça inteira.
+  const pavimentos = [0.22, 0.39, 0.56, 0.73, 0.9].map(f => Math.round(altura * f));
+  const linhaVermelha = Math.round(altura * 0.655);
+  return (
+    <React.Fragment>
+      {pavimentos.map(y => (
+        <line key={`h${y}`} x1={0} y1={y} x2={GRAFISMO_LARGURA} y2={y} stroke={CINZA} strokeWidth={0.6 * escala} opacity={0.055} />
+      ))}
+      <line x1={0} y1={linhaVermelha} x2={GRAFISMO_LARGURA} y2={linhaVermelha} stroke={T.red} strokeWidth={0.7 * escala} opacity={0.13} />
+
+      {PREDIOS_CAMPANHA.map(([x, w, h], i) => {
+        const y = topoPredio(h);
+        const alt = alturaPredio(h);
+        const larg = w * escala;
+        // Grade de janelas derivada do próprio volume — nada de textura
+        // decorativa solta: a linha existe porque o prédio tem pavimento.
+        const passoAndar = 15 * escala, passoColuna = 17 * escala;
+        const andares = [];
+        for (let ay = y + passoAndar; ay < BASE - 6 * escala; ay += passoAndar) andares.push(ay);
+        const colunas = [];
+        for (let cx = x + passoColuna; cx < x + larg - 8 * escala; cx += passoColuna) colunas.push(cx);
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={larg} height={alt} fill={CINZA} opacity={0.045} />
+            <rect x={x + 0.5} y={y + 0.5} width={larg - 1} height={alt - 1} fill="none" stroke={CINZA} strokeWidth={0.8 * escala} opacity={0.11} />
+            {andares.map(ay => (
+              <line key={`a${ay}`} x1={x + 5 * escala} y1={ay} x2={x + larg - 5 * escala} y2={ay} stroke={CINZA} strokeWidth={0.5 * escala} opacity={0.075} />
+            ))}
+            {colunas.map(cx => (
+              <line key={`c${cx}`} x1={cx} y1={y + 8 * escala} x2={cx} y2={BASE - 6 * escala} stroke={CINZA} strokeWidth={0.5 * escala} opacity={0.055} />
+            ))}
+          </g>
+        );
+      })}
+
+      {/* Detalhes vermelhos: mastros finos e poucos nós, o "cinza suave com
+          pontos/detalhes vermelhos" descrito na identidade da campanha. */}
+      {MASTROS_CAMPANHA.map(([x, alturaMastro], i) => {
+        const predio = PREDIOS_CAMPANHA.find(p => p[0] <= x && x <= p[0] + p[1]) || [0, 0, 120];
+        const topo = topoPredio(predio[2]);
+        return <line key={`m${i}`} x1={x} y1={topo} x2={x} y2={Math.max(0, topo - alturaMastro * escala)} stroke={T.red} strokeWidth={1 * escala} opacity={0.22} />;
+      })}
+      {[[104, 0.11], [463, 0.21], [721, 0.15], [893, 0.4], [1075, 0.17]].map(([cx, fy], i) => (
+        <circle key={`n${i}`} cx={cx} cy={Math.round(altura * fy)} r={2.6 * escala} fill={T.red} opacity={0.28} />
+      ))}
+    </React.Fragment>
+  );
+}
+
+// `slice` com âncora inferior: as silhuetas ficam apoiadas na base do balão
+// e o corte acontece no topo, que é área vazia de propósito.
+function GrafismoCampanha(){
+  return (
+    <svg viewBox={`0 0 ${GRAFISMO_LARGURA} 200`} preserveAspectRatio="xMidYMax slice" aria-hidden="true"
+      style={{ position:'absolute', inset:0, width:'100%', height:'100%', pointerEvents:'none' }}>
+      <ConteudoGrafismoCampanha altura={200} escala={1} />
+    </svg>
+  );
+}
+
+// Alterna o enfoque semanal/mensal do ranking — pedido explícito 2026-09-10.
+function ToggleModoPeriodo({ modo, onMudar }){
+  const opcoes = [{ key:'semanal', label:'Semanal' }, { key:'mensal', label:'Mensal' }];
+  const idxAtivo = opcoes.findIndex(o => o.key === modo);
+  const LARGURA_BOTAO = 78;
+  return (
+    <div role="tablist" aria-label="Enfoque do ranking"
+      style={{ position:'relative', display:'inline-flex', background:'#eef0f3', borderRadius:9, padding:2, flexShrink:0 }}>
+      <div aria-hidden="true" style={{
+        position:'absolute', top:2, bottom:2, left:2, width:LARGURA_BOTAO,
+        transform:`translateX(${idxAtivo * LARGURA_BOTAO}px)`,
+        background:T.red, borderRadius:7, boxShadow:'0 1px 4px rgba(210,59,59,0.35)',
+        transition:'transform .22s cubic-bezier(.4,0,.2,1)',
+      }} />
+      {opcoes.map(o => {
+        const ativo = modo === o.key;
+        return (
+          <button key={o.key} role="tab" aria-selected={ativo} onClick={() => onMudar(o.key)} className="mono"
+            style={{ position:'relative', zIndex:1, width:LARGURA_BOTAO, padding:'6px 0', borderRadius:7, border:'none', cursor:'pointer',
+              background:'transparent', color: ativo ? '#fff' : T.mut,
+              fontSize:10.5, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+              transition:'color .18s ease' }}>
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+// Seletor de período (semana ou mês) — mesmo padrão visual/comportamento de
+// `SeletorObra` (botão + painel com `.card.dropdown-in`, fecha ao clicar
+// fora ou Esc), refinado pra caber no cabeçalho claro desta página em vez do
+// cabeçalho navy do app.
+function SeletorPeriodo({ opcoes, valor, onSelecionar }){
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setAberto(false); };
+    const onEsc = (e) => { if (e.key === 'Escape') setAberto(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onEsc);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onEsc); };
+  }, []);
+  const atual = opcoes.find(o => o.delta === valor) || opcoes[0];
+  return (
+    <div ref={ref} style={{ position:'relative', flexShrink:0 }}>
+      <button onClick={() => setAberto(a => !a)} aria-haspopup="listbox" aria-expanded={aberto} className="mono"
+        style={{ display:'flex', alignItems:'center', gap:8, background:'#fff', border:'1px solid rgba(25,34,49,0.14)', borderRadius:8, padding:'6px 11px', fontSize:11, fontWeight:700, color:T.ink, cursor:'pointer' }}>
+        {atual?.rotulo}
+        <span style={{ fontSize:9, color:T.mut, transform: aberto ? 'rotate(180deg)' : 'none', transition:'transform .15s ease' }}>▾</span>
+      </button>
+      {aberto && (
+        <div className="card dropdown-in" role="listbox" style={{ position:'absolute', top:'calc(100% + 6px)', right:0, minWidth:220, maxHeight:280, overflowY:'auto', padding:6, zIndex:30 }}>
+          {opcoes.map(o => (
+            <button key={o.delta} role="option" aria-selected={o.delta === valor}
+              onClick={() => { onSelecionar(o.delta); setAberto(false); }} className="mono"
+              style={{ display:'block', width:'100%', textAlign:'left', padding:'8px 10px', borderRadius:8, border:'none',
+                background: o.delta === valor ? 'rgba(210,59,59,0.08)' : 'transparent',
+                color: o.delta === valor ? T.red : T.ink, fontSize:12, fontWeight: o.delta === valor ? 700 : 500, cursor:'pointer' }}>
+              {o.rotulo}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Slide de vencedores (1920×1080) — origem do PNG exportado ────────────
+// Pedido explícito (2026-09-10): "mecanismo de exportação dos vencedores,
+// utilizando da memória e do layout já repassado" — o layout segue o guia
+// da campanha "Encarregado da Semana" (GUIA-DE-DESIGN-E-REFERENCIAS.md +
+// infográfico v7): fundo pérola levemente quente, logo VERMELHA no canto
+// superior esquerdo, título grafite com "da"/"do" em peso regular, slogan
+// aprovado "Constância que gera resultado." e nada de dourado, estrela ou
+// medalha (o guia proíbe: é linguagem de outra campanha). A posição usa o
+// mesmo selo grafite com faixa vermelha da tela, que por sua vez cita a
+// base do troféu da campanha.
+//
+// SVG PURO de propósito, sem `<foreignObject>`: ele tainta o canvas no
+// Chrome mesmo sem recurso externo — já custou essa descoberta uma vez, em
+// `exportarGraficosPNG` (ModuloSuprimentos), e o mesmo vale aqui. Pela
+// mesma razão a logo entra como data URI, não como caminho.
+//
+// Fonte: o PNG é rasterizado fora do documento, então as webfonts da
+// página (IBM Plex) não valem lá — cai no sans do sistema. Mesmo
+// comportamento do slide de Suprimentos que já existe.
+// Mesmo cinza do balão do painel — os dois saem dos pixels amostrados do
+// infográfico v7 aprovado. O nome "pérola" fica por herança do guia; o tom
+// real da arte é cinza quente, não off-white.
+const SLIDE_PEROLA = BANNER_CINZA_CLARO;
+const SLIDE_PEROLA_SOMBRA = BANNER_CINZA;
+const SLIDE_GRAFITE = '#1F2430';
+const SLIDE_GRAFITE_SUAVE = '#5A6270';
+const SLIDE_MUT = '#8A93A6';
+function SlideVencedores({ svgRef, vencedores, titulo, rotuloPeriodo, logoDataUri, mensal }){
+  const X0 = 120, X1 = 1800;
+  // O card único (hero) só vale pro mensal SEM empate. Empatados na 1ª
+  // posição viram lista, senão não caberia mais de um nome no hero.
+  const heroUnico = mensal && vencedores.length === 1;
+  const SELO = heroUnico ? 76 : 48;
+  const FONTE_SLIDE = "'IBM Plex Sans','Segoe UI',Arial,sans-serif";
+  // A lista se adapta à quantidade: 5 premiados é o caso normal, mas um
+  // empate na fronteira traz mais gente. Acima de 8 a peça vira uma parede
+  // de nomes — aí lista 8 e diz quantos ficaram de fora.
+  const LISTA_TOPO = 400, LISTA_BASE = 950, MAX_CARDS = 8;
+  const mostrados = vencedores.slice(0, MAX_CARDS);
+  const nLinhas = Math.max(1, mostrados.length);
+  const alturaLinha = Math.min(96, Math.floor((LISTA_BASE - LISTA_TOPO - (nLinhas - 1) * 16) / nLinhas));
+  const passo = alturaLinha + 16;
+  const compacto = alturaLinha < 88;
+  const fonteNome = compacto ? 25 : 30;
+  // Largura estimada por caractere (mesma convenção do slide de
+  // Suprimentos — não dá pra medir `getBBox` num nó fora da tela).
+  const truncar = (txt, larguraMax, fonte) => {
+    const limite = Math.max(4, Math.floor(larguraMax / (fonte * 0.56)));
+    return txt.length > limite ? `${txt.slice(0, limite - 1)}…` : txt;
+  };
+  const criterios = (v) => ([
+    { rotulo: 'Qualidade', valor: v.q10 },
+    { rotulo: 'Aderência', valor: v.ader10 },
+    { rotulo: 'Assiduidade', valor: v.assid10 },
+  ]);
+  const fmtNota = (n) => n == null ? '—' : n.toFixed(2);
+
+  return (
+    <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" width={1920} height={1080}
+      viewBox="0 0 1920 1080" fontFamily={FONTE_SLIDE}>
+      <defs>
+        <linearGradient id="slideVencFundo" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={SLIDE_PEROLA} />
+          <stop offset="100%" stopColor={SLIDE_PEROLA_SOMBRA} />
+        </linearGradient>
+        {/* Véu: mesma função do balão do painel — o grafismo atravessa a peça
+            inteira, mas perde força sob a coluna de texto da esquerda, que o
+            guia manda manter livre. */}
+        <linearGradient id="slideVencVeu" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor={SLIDE_PEROLA} stopOpacity={0.96} />
+          <stop offset="34%" stopColor={SLIDE_PEROLA} stopOpacity={0.9} />
+          <stop offset="70%" stopColor={SLIDE_PEROLA} stopOpacity={0.4} />
+          <stop offset="100%" stopColor={SLIDE_PEROLA} stopOpacity={0.12} />
+        </linearGradient>
+        <linearGradient id="slideVencSelo" x1="0%" y1="0%" x2="70%" y2="100%">
+          <stop offset="0%" stopColor="#7B8394" />
+          <stop offset="82%" stopColor="#2B303C" />
+        </linearGradient>
+        <clipPath id="slideVencClipSelo"><rect width={SELO} height={SELO} rx={mensal ? 18 : 12} /></clipPath>
+      </defs>
+
+      <rect width={1920} height={1080} fill="url(#slideVencFundo)" />
+      {/* Arquitetura da campanha, mesma geometria do balão do painel em
+          escala de peça. O `<svg>` aninhado só existe pra reaproveitar o
+          viewBox do grafismo; continua SVG puro, então não tainta o canvas. */}
+      <svg x={0} y={0} width={1920} height={1080} viewBox={`0 0 ${GRAFISMO_LARGURA} 720`} preserveAspectRatio="xMidYMax slice">
+        <ConteudoGrafismoCampanha altura={720} escala={1.7} />
+      </svg>
+      <rect width={1920} height={1080} fill="url(#slideVencVeu)" />
+
+      {logoDataUri && <image href={logoDataUri} x={X0} y={72} width={176} height={51} preserveAspectRatio="xMidYMid meet" />}
+      <text x={X1} y={104} textAnchor="end" fontSize={26} fontWeight={600} fill={SLIDE_GRAFITE}>{rotuloPeriodo}</text>
+      <text x={X1} y={136} textAnchor="end" fontSize={18} fill={SLIDE_MUT}>Todas as obras</text>
+
+      <text x={X0} y={244} fontSize={92} fill={SLIDE_GRAFITE}>
+        <tspan fontWeight={700}>{titulo.principal}</tspan>
+        <tspan fontWeight={400}> {titulo.ligacao} </tspan>
+        <tspan fontWeight={700}>{titulo.final}</tspan>
+      </text>
+      <rect x={X0} y={274} width={140} height={6} fill={T.red} />
+      <text x={X0} y={336} fontSize={30} fill={SLIDE_GRAFITE_SUAVE}>Constância que gera resultado.</text>
+
+      {!heroUnico && mostrados.map((v, i) => {
+        const y = LISTA_TOPO + i * passo;
+        const cx = X0 + 32, cy = y + (alturaLinha - SELO) / 2;
+        const pilhaX = X1 - 560;
+        return (
+          <g key={`${v.obra.id}__${v.nome}`}>
+            <rect x={X0} y={y} width={X1 - X0} height={alturaLinha} rx={18} fill="#fff" stroke="rgba(31,36,48,0.08)" />
+            <g transform={`translate(${cx},${cy})`} clipPath="url(#slideVencClipSelo)">
+              <rect width={SELO} height={SELO} fill="url(#slideVencSelo)" />
+              <rect y={SELO - 7} width={SELO} height={7} fill={T.red} />
+            </g>
+            <text x={cx + SELO / 2} y={cy + SELO / 2 - 2} textAnchor="middle" dominantBaseline="central"
+              fontSize={compacto ? 21 : 24} fontWeight={800} fill="#fff">{v.posicao}</text>
+            <text x={cx + SELO + 28} y={y + alturaLinha / 2 - 4} fontSize={fonteNome} fontWeight={700} fill={SLIDE_GRAFITE}>
+              {truncar(v.nome.toUpperCase(), pilhaX - (cx + SELO + 28) - 40, fonteNome)}
+            </text>
+            <text x={cx + SELO + 28} y={y + alturaLinha / 2 + (compacto ? 20 : 26)} fontSize={compacto ? 16 : 19} fill={SLIDE_MUT}>{v.obra.nome}</text>
+            {criterios(v).map((c, ci) => (
+              <g key={c.rotulo}>
+                <text x={pilhaX + ci * 144} y={y + alturaLinha / 2 - 10} fontSize={13} fill={SLIDE_MUT}>{c.rotulo}</text>
+                <text x={pilhaX + ci * 144} y={y + alturaLinha / 2 + (compacto ? 18 : 22)} fontSize={compacto ? 22 : 26} fontWeight={700} fill={SLIDE_GRAFITE}>{fmtNota(c.valor)}</text>
+              </g>
+            ))}
+            <rect x={X1 - 156} y={y + (alturaLinha - 52) / 2} width={124} height={52} rx={12} fill="rgba(210,59,59,0.10)" stroke="rgba(210,59,59,0.35)" />
+            <text x={X1 - 94} y={y + alturaLinha / 2 + 1} textAnchor="middle" dominantBaseline="central"
+              fontSize={26} fontWeight={800} fill={T.red}>{fmtNota(v.rankingScore)}</text>
+          </g>
+        );
+      })}
+      {!heroUnico && vencedores.length > mostrados.length && (
+        <text x={X0} y={LISTA_TOPO + mostrados.length * passo + 28} fontSize={19} fill={SLIDE_MUT}>
+          + {vencedores.length - mostrados.length} empatados na mesma posição
+        </text>
+      )}
+
+      {/* Vencedor do mês: card único em duas faixas (nome em cima com a
+          largura toda, notas embaixo). Uma faixa só, no formato da linha
+          semanal, deixava metade do card vazio — e o nome ficava espremido
+          contra as notas. */}
+      {heroUnico && vencedores.slice(0, 1).map(v => {
+        const y = 430, h = 360;
+        const padX = 64;
+        const cx = X0 + padX, cy = y + 52;
+        const nomeX = cx + SELO + 44;
+        const divisoriaY = y + 190;
+        return (
+          <g key={`${v.obra.id}__${v.nome}`}>
+            <rect x={X0} y={y} width={X1 - X0} height={h} rx={24} fill="#fff" stroke="rgba(31,36,48,0.08)" />
+            <g transform={`translate(${cx},${cy})`} clipPath="url(#slideVencClipSelo)">
+              <rect width={SELO} height={SELO} fill="url(#slideVencSelo)" />
+              <rect y={SELO - 10} width={SELO} height={10} fill={T.red} />
+            </g>
+            <text x={cx + SELO / 2} y={cy + SELO / 2 - 3} textAnchor="middle" dominantBaseline="central"
+              fontSize={38} fontWeight={800} fill="#fff">1</text>
+            <text x={nomeX} y={cy + 42} fontSize={58} fontWeight={700} fill={SLIDE_GRAFITE}>
+              {truncar(v.nome.toUpperCase(), X1 - padX - nomeX, 58)}
+            </text>
+            <text x={nomeX} y={cy + 86} fontSize={26} fill={SLIDE_MUT}>{v.obra.nome}</text>
+
+            <rect x={cx} y={divisoriaY} width={X1 - X0 - padX * 2} height={1} fill="rgba(31,36,48,0.10)" />
+
+            {criterios(v).map((c, ci) => (
+              <g key={c.rotulo}>
+                <text x={cx + ci * 220} y={divisoriaY + 56} fontSize={17} fill={SLIDE_MUT}>{c.rotulo}</text>
+                <text x={cx + ci * 220} y={divisoriaY + 110} fontSize={46} fontWeight={700} fill={SLIDE_GRAFITE}>{fmtNota(c.valor)}</text>
+              </g>
+            ))}
+            <text x={X1 - padX} y={divisoriaY + 46} textAnchor="end" fontSize={17} fill={SLIDE_MUT}>Ranking · máx. 10</text>
+            <rect x={X1 - padX - 230} y={divisoriaY + 60} width={230} height={78} rx={16} fill="rgba(210,59,59,0.10)" stroke="rgba(210,59,59,0.35)" />
+            <text x={X1 - padX - 115} y={divisoriaY + 100} textAnchor="middle" dominantBaseline="central"
+              fontSize={48} fontWeight={800} fill={T.red}>{fmtNota(v.rankingScore)}</text>
+          </g>
+        );
+      })}
+
+      {!vencedores.length && (
+        <text x={X0} y={520} fontSize={26} fill={SLIDE_MUT}>Nenhum encarregado com apontamento no período.</text>
+      )}
+
+      <text x={X0} y={1012} fontSize={18} fill={SLIDE_MUT}>Ranking geral · encarregados de toda a MSE</text>
+      <text x={X1} y={1012} textAnchor="end" fontSize={18} fill={SLIDE_MUT}>
+        Qualidade × 3 · Aderência × 5 · Assiduidade × 2
+      </text>
+    </svg>
+  );
+}
+
+function ModuloRankingGeral(){
+  const [tvRaw, setTvRaw] = useState(null);
+  const [tvErro, setTvErro] = useState(false);
+  const [cardsRaw, setCardsRaw] = useState(null);
+  const [cardsErro, setCardsErro] = useState(false);
+  const [qualidadeEnc, setQualidadeEnc] = useState({}); // chave `${obraId}__${NOME}` -> { resultado, votos:[{status,dia,cardId}] }
+  const [presencaEnc, setPresencaEnc] = useState({});   // chave `${obraId}__${NOME}__${YMD}`
+  const [explicacao, setExplicacao] = useState(null);   // { tipo, row } — memória de cálculo (popup)
+  const [encSelecionado, setEncSelecionado] = useState(null); // { nome, obra } — popup de cards ativos
+
+  // `cards_ativos.nome_obra`/`vw_dados_tv.OBRA` trazem a obra como STRING
+  // (o valor de `origemTV`) — todo mapa/chave interno usa o `id` NUMÉRICO da
+  // obra (bate com `OBRAS`/`presencaEnc`), então esse é o único lugar que
+  // faz a tradução string → obra.
+  const obraPorOrigemTV = {};
+  OBRAS_RANKING.forEach(o => { obraPorOrigemTV[o.origemTV.trim().toUpperCase()] = o; });
+
+  // Enfoque (semanal/mensal) e período selecionável (pedido explícito,
+  // 2026-09-10) — `deltaPeriodo` 0 = atual, -1 = anterior, etc., dentro do
+  // enfoque escolhido. Trocar de enfoque volta pro período atual (um "-3"
+  // de semana não faz sentido virar "-3 meses" ao trocar pra mensal).
+  // `periodo` tem o MESMO formato nos dois enfoques (`inicio`/`fim`/`ontem`/
+  // `dias`/`ymds`/`ymd`) — o resto da tela usa um dos dois sem diferenciar.
+  const [modoPeriodo, setModoPeriodo] = useState('semanal');
+  const [deltaPeriodo, setDeltaPeriodo] = useState(0);
+  useEffect(() => { setDeltaPeriodo(0); }, [modoPeriodo]);
+  const periodo = modoPeriodo === 'mensal' ? mesDeReferencia(deltaPeriodo) : semanaDeReferencia(deltaPeriodo);
+
+  // Trocar de enfoque/período não recarrega a tela inteira (`tvRaw` e
+  // `cardsRaw` cobrem todo o histórico do seletor), mas Qualidade e Presença
+  // SÃO refeitas por período — e enquanto não voltam, a tabela mostraria a
+  // Qualidade do período ANTERIOR e a Assiduidade zerada. Dado errado com
+  // cara de certo, que é o pior estado possível.
+  //
+  // Cada uma dessas duas guarda a assinatura do período que produziu; se não
+  // bate com a atual, a tabela entra em esqueleto até bater. (ADR-005:
+  // ausência de dado não pode parecer dado.)
+  const chavePeriodo = `${modoPeriodo}__${deltaPeriodo}`;
+  const [presencaChave, setPresencaChave] = useState(null);
+  const [qualidadeChave, setQualidadeChave] = useState(null);
+  const carregandoPeriodo = presencaChave !== chavePeriodo || qualidadeChave !== chavePeriodo;
+  // O fetch de `vw_dados_tv` abaixo traz histórico suficiente pra cobrir
+  // TODAS as opções do seletor de uma vez (sem refazer a busca a cada troca
+  // de período) — é uma view leve (poucas linhas/dia), diferente do
+  // `efetivo_diario_raw` da Presença logo abaixo (ver comentário lá).
+  const diasHistorico = Math.max((SEMANAS_SELECIONAVEIS + 2) * 7, (MESES_SELECIONAVEIS + 2) * 31);
+  // Quantos entram na premiação do período: 5 na semana, 1 no mês (pedido
+  // explícito, 2026-09-10) — vale tanto pro destaque da tabela quanto pro
+  // PNG exportado.
+  const limitePremiados = modoPeriodo === 'mensal' ? 1 : 5;
+
+  // Exportação do PNG dos vencedores (ver `SlideVencedores`). A logo entra
+  // como data URI porque `<image href="...url">` tainta o canvas mesmo
+  // same-origin — mesma pegadinha já documentada em `exportarGraficosPNG`.
+  const slideVencedoresRef = useRef(null);
+  const [exportandoPng, setExportandoPng] = useState(false);
+  const [logoVermelhaDataUri, setLogoVermelhaDataUri] = useState('');
+  useEffect(() => {
+    fetchComTimeout(new URL('assets/images/mselogo-vermelha.png', document.baseURI).href)
+      .then(r => r.blob())
+      .then(blob => new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      }))
+      .then(setLogoVermelhaDataUri)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setTvRaw(null); setTvErro(false);
+    const headers = MSEAuth.headers();
+    const desde = new Date(); desde.setDate(desde.getDate() - diasHistorico);
+    const cols = encodeURIComponent('OBRA,RESPONSÁVEL,DATA,EDT,ADERENCIA_LINEAR');
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/vw_dados_tv?select=${cols}&DATA=gte.${desde.toISOString().slice(0, 10)}&order=DATA.asc`, headers)
+      .then(rows => { if (rows === null) { setTvErro(true); setTvRaw([]); return; } setTvRaw(rows); })
+      .catch(() => { setTvErro(true); setTvRaw([]); });
+  }, []);
+
+  useEffect(() => {
+    setCardsRaw(null); setCardsErro(false);
+    const headers = MSEAuth.headers();
+    fetchPaginado(`${SUPABASE_URL}/rest/v1/cards_ativos?select=card_id,nome_obra,responsavel_encarregado&responsavel_encarregado=not.is.null`, headers)
+      .then(rows => { if (rows === null) { setCardsErro(true); setCardsRaw([]); return; } setCardsRaw(rows); })
+      .catch(() => { setCardsErro(true); setCardsRaw([]); });
+  }, []);
+
+  // Atividades suprimidas do ranking (pedido explícito, 2026-09-10: andaime;
+  // depois "Movimentação de Carga" e "Garantia"). O que sai é a ATIVIDADE,
+  // não a pessoa: quem tem card suprimido E card de produção continua
+  // concorrendo pelo que produziu (hoje é o caso do Gabriel Luis — 5 cards,
+  // só 1 é "Apoio e Movimentação de Cargas"). Quem só tem card suprimido
+  // fica sem nada e cai fora naturalmente — que é o caso dos 6 do andaime.
+  //
+  // O sinal é a EAP do card (disciplina OU tarefa), não a função registrada
+  // da pessoa: encarregados como João Santos de Santana têm função genérica
+  // ("Encarregado II") mas card "Montagem de Andaime" — e a EAP às vezes
+  // classifica esse mesmo card na disciplina METÁLICA. Só o texto da
+  // atividade pega todos os casos.
+  //
+  // Guarda dois conjuntos porque as 3 notas vêm de fontes diferentes:
+  // `cards` corta Qualidade (Apontamentos são por card_id) e a elegibilidade;
+  // `edts` corta Aderência/Assiduidade (vw_dados_tv não tem card_id, mas tem
+  // EDT — conferido que bate 1:1 com `EAP.edt`).
+  //
+  // Os termos são trechos de texto sem acento, e são propositalmente
+  // ESPECÍFICOS: conferido na EAP inteira que os curtos pegariam produção de
+  // verdade — "gerador" pegaria "GERADOR DE IMPULSO" (montagem elétrica),
+  // "manutencao" pegaria "PISO DE CONTENÇÃO PARA MANUTENÇÃO DE EQUIPAMENTO"
+  // (civil) e "Escada de manutenção da casa de máquinas". Ao acrescentar um
+  // tipo novo, conferir antes o que mais casa com o termo.
+  const ATIVIDADES_SUPRIMIDAS = [
+    'andaime',
+    'movimentacao de carga',
+    'garantia',
+    'rede eletrica provisoria', // "MANUTENÇÃO E REDE ELÉTRICA PROVISÓRIA - NÍVEL 1/2/3"
+    'abastecimento do gerador',
+  ];
+  const [suprimidos, setSuprimidos] = useState(() => ({ cards: new Set(), edts: new Set(), pronto: false }));
+  useEffect(() => {
+    if (!cardsRaw) return;
+    if (cardsRaw.length === 0) { setSuprimidos({ cards: new Set(), edts: new Set(), pronto: true }); return; }
+    let cancelado = false;
+    const headers = MSEAuth.headers();
+    const ids = cardsRaw.map(c => String(c.card_id));
+    (async () => {
+      const eapPorCard = {};
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200).join(',');
+        const rows = await fetchPaginado(`${SUPABASE_URL}/rest/v1/EAP?id=in.(${chunk})&select=id,edt,disciplina,tarefa`, headers);
+        (Array.isArray(rows) ? rows : []).forEach(r => { eapPorCard[String(r.id)] = r; });
+      }
+      const normaliza = (texto) => (texto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const ehSuprimida = (eap) => {
+        const alvo = `${normaliza(eap.disciplina)} ${normaliza(eap.tarefa)}`;
+        return ATIVIDADES_SUPRIMIDAS.some(termo => alvo.includes(termo));
+      };
+      const cards = new Set(), edts = new Set();
+      cardsRaw.forEach(c => {
+        const obra = obraPorOrigemTV[(c.nome_obra || '').trim().toUpperCase()]; if (!obra) return;
+        const eap = eapPorCard[String(c.card_id)]; if (!eap) return;
+        if (!ehSuprimida(eap)) return;
+        cards.add(String(c.card_id));
+        if (eap.edt) edts.add(`${obra.id}__${String(eap.edt).trim()}`);
+      });
+      if (!cancelado) setSuprimidos({ cards, edts, pronto: true });
+    })().catch(() => {});
+    return () => { cancelado = true; };
+  }, [cardsRaw]);
+
+  // Cards que de fato entram no ranking (sem os das atividades suprimidas).
+  const cardsElegiveis = useMemo(
+    () => (cardsRaw || []).filter(c => !suprimidos.cards.has(String(c.card_id))),
+    [cardsRaw, suprimidos],
+  );
+
+  // Qualidade SEMANAL — mesmo lote de Apontamentos de ModuloEncarregados,
+  // mas SEM votação por maioria (pedido explícito, 2026-09-10: "não vamos
+  // fazer maioria pelo status"). Cada dia com status lançado, de cada card
+  // do encarregado, dentro da semana (segunda a sábado), vira um PONTO
+  // (Bom=10, Satisfatório=6, Corrigir=0) — a nota final é a MÉDIA desses
+  // pontos. Dia com status "Pendente"/não mapeado, ou card sem nenhum
+  // apontamento na semana, simplesmente não entra na média (não é 0).
+  // Sem nenhum ponto na semana → nota nula (mostrada como "—").
+  // Roda sobre `cardsElegiveis` (sem as atividades suprimidas) e só depois
+  // que a supressão está resolvida — assim o lote de Apontamentos é buscado
+  // uma vez só, já com a lista final de cards.
+  useEffect(() => {
+    setQualidadeChave(null);
+    if (!cardsRaw || !suprimidos.pronto) return;
+    if (cardsElegiveis.length === 0) { setQualidadeEnc({}); setQualidadeChave(chavePeriodo); return; }
+    let cancelado = false;
+    const headers = MSEAuth.headers();
+    const ids = cardsElegiveis.map(c => String(c.card_id));
+    const emLotes = async (tabela, select, campoId) => {
+      const porId = {};
+      for (let i = 0; i < ids.length; i += 200) {
+        const chunk = ids.slice(i, i + 200).join(',');
+        const rows = await fetchPaginado(`${SUPABASE_URL}/rest/v1/${tabela}?${campoId}=in.(${chunk})&select=${select}`, headers);
+        (Array.isArray(rows) ? rows : []).forEach(row => { (porId[String(row[campoId])] = porId[String(row[campoId])] || []).push(row); });
+      }
+      return porId;
+    };
+    (async () => {
+      const pontosDoStatus = (status) => {
+        const n = status.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (n === 'bom') return 10;
+        if (n === 'satisfatorio') return 6;
+        if (n === 'corrigir') return 0;
+        return null; // pendente ou status não mapeado — não entra na média
+      };
+      const apontPorCard = await emLotes('Apontamentos', 'id,status_qualidade,data_do_input', 'id');
+      // O valor do DIA é a média de TODOS os apontamentos de qualidade
+      // daquele dia, de TODOS os cards do encarregado juntos — sem
+      // descartar duplicatas (pedido explícito, 2026-09-10: "2 Bom e 1
+      // Satisfatório = (10+10+6)/3 = 8,67"). A nota da semana é a média
+      // dos valores diários — mesma estrutura de dois níveis já usada na
+      // Aderência (dia primeiro, depois semana).
+      const porEncDia = {}; // chave -> { [dia]: { sum, n, itens:[{status,pontos,cardId}] } }
+      cardsElegiveis.forEach(c => {
+        const obra = obraPorOrigemTV[(c.nome_obra || '').trim().toUpperCase()]; if (!obra) return;
+        const cardId = String(c.card_id);
+        const chave = `${obra.id}__${c.responsavel_encarregado.trim().toUpperCase()}`;
+        (apontPorCard[cardId] || []).forEach(r => {
+          if (!r.data_do_input || !r.status_qualidade?.trim()) return;
+          const dia = String(r.data_do_input).slice(0, 10);
+          if (!periodo.ymds.has(dia)) return;
+          const pontos = pontosDoStatus(r.status_qualidade);
+          if (pontos == null) return;
+          if (!porEncDia[chave]) porEncDia[chave] = {};
+          const pd = porEncDia[chave][dia] || (porEncDia[chave][dia] = { sum: 0, n: 0, itens: [] });
+          pd.sum += pontos; pd.n++;
+          pd.itens.push({ status: r.status_qualidade.trim(), pontos, cardId });
+        });
+      });
+      const resumo = {};
+      Object.entries(porEncDia).forEach(([chave, porDia]) => {
+        const dias = Object.keys(porDia).sort().map(dia => ({ dia, media: porDia[dia].sum / porDia[dia].n, itens: porDia[dia].itens }));
+        const q10 = dias.length ? dias.reduce((a, d) => a + d.media, 0) / dias.length : null;
+        resumo[chave] = { q10, dias };
+      });
+      if (!cancelado) { setQualidadeEnc(resumo); setQualidadeChave(chavePeriodo); }
+    })().catch(() => { if (!cancelado) setQualidadeChave(chavePeriodo); });
+    return () => { cancelado = true; };
+  }, [cardsElegiveis, suprimidos, deltaPeriodo, modoPeriodo]);
+
+
+  // Presença (Assiduidade) — só o período selecionado (semana ou mês),
+  // refeita a cada troca no seletor/enfoque. Mesmo motivo do comentário
+  // acima: buscar TODO o histórico do seletor de uma vez em
+  // `efetivo_diario_raw` é grande demais pra obras com muita gente; buscar
+  // só o período em uso mantém a consulta rápida — trocar de período fica
+  // um pouco mais lento (uma busca nova) em vez de travar o carregamento
+  // inicial.
+  useEffect(() => {
+    setPresencaEnc({}); setPresencaChave(null);
+    let cancelado = false;
+    const headers = MSEAuth.headers();
+    const inicio = periodo.ymd(periodo.inicio);
+    const fim = periodo.ymd(periodo.ontem);
+    Promise.all(OBRAS_RANKING.map(o =>
+      fetchPaginado(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${o.id}&data_efetivo_diario=gte.${inicio}&data_efetivo_diario=lte.${fim}&select=nome,data_efetivo_diario,situacao`, headers)
+        .then(rows => ({ obraId: o.id, rows: Array.isArray(rows) ? rows : [] }))
+        .catch(() => ({ obraId: o.id, rows: [] }))
+    )).then(resultados => {
+      if (cancelado) return;
+      const mapa = {};
+      resultados.forEach(({ obraId, rows }) => {
+        rows.forEach(r => { if (r.nome) mapa[`${obraId}__${r.nome.trim().toUpperCase()}__${r.data_efetivo_diario}`] = r.situacao || ''; });
+      });
+      setPresencaEnc(mapa); setPresencaChave(chavePeriodo);
+    });
+    return () => { cancelado = true; };
+  }, [deltaPeriodo, modoPeriodo]);
+
+  // Uma linha por (obra, encarregado) — Aderência e Assiduidade agregadas no
+  // MESMO período (semana ou mês, conforme o enfoque escolhido): Aderência
+  // é a média das médias diárias de ADERENCIA_LINEAR nos dias apontados;
+  // Assiduidade segue a regra de sempre (dia útil exige apontamento, exceto
+  // ausente no efetivo; sábado só conta se presente; domingo nunca conta —
+  // só existe no recorte mensal, a semana nunca incluía domingo). Chave
+  // composta pra não colidir nomes iguais em obras diferentes.
+  const linhas = useMemo(() => {
+    if (tvRaw == null || cardsRaw == null) return null;
+    const porObraEnc = {};
+    tvRaw.forEach(row => {
+      const obra = obraPorOrigemTV[(row.OBRA || '').trim().toUpperCase()]; if (!obra) return;
+      const resp = row['RESPONSÁVEL']; if (!resp) return;
+      const dataYMD = parseBRDateParaYMD(row.DATA); if (!dataYMD || !periodo.ymds.has(dataYMD)) return;
+      // Linha de atividade suprimida não entra nem na Aderência nem nos
+      // dias apontados (Assiduidade) — `vw_dados_tv` não tem card_id, o
+      // vínculo é por EDT.
+      if (suprimidos.edts.has(`${obra.id}__${String(row.EDT || '').trim()}`)) return;
+      const chave = `${obra.id}__${resp.trim().toUpperCase()}`;
+      if (!porObraEnc[chave]) porObraEnc[chave] = { obra, nome: resp, diasApontados: new Set(), aderenciaPorDia: {} };
+      porObraEnc[chave].diasApontados.add(dataYMD);
+      const lin = parsePTNumero(row.ADERENCIA_LINEAR);
+      if (lin > 0) {
+        const pd = porObraEnc[chave].aderenciaPorDia[dataYMD] || (porObraEnc[chave].aderenciaPorDia[dataYMD] = { sum: 0, n: 0 });
+        pd.sum += lin; pd.n++;
+      }
+    });
+
+    const calcAssiduidade = (obraId, nomeUp, diasApontadosSet) => {
+      let numerador = 0, denominador = 0;
+      const diasMemoria = periodo.dias.map(dia => {
+        const diaYMD = periodo.ymd(dia);
+        const situRaw = presencaEnc[`${obraId}__${nomeUp}__${diaYMD}`] || '';
+        const situ = situRaw.trim().toLowerCase();
+        const diaSemanaNum = dia.getDay();
+        const ehDomingo = diaSemanaNum === 0;
+        const ehSabado = diaSemanaNum === 6;
+        const apontou = !!(diasApontadosSet && diasApontadosSet.has(diaYMD));
+        let contabilizado, contouAFavor, motivo;
+        if (ehDomingo) {
+          contabilizado = false; contouAFavor = false; motivo = 'Domingo — não conta';
+        } else if (ehSabado) {
+          if (situ && situ !== 'ausente') { denominador++; numerador++; contabilizado = true; contouAFavor = true; motivo = 'Sábado com presença registrada — bônus'; }
+          else { contabilizado = false; contouAFavor = false; motivo = situ === 'ausente' ? 'Sábado, ausente no efetivo — não conta' : 'Sábado sem presença registrada — não conta'; }
+        } else if (situ === 'ausente') {
+          contabilizado = false; contouAFavor = false; motivo = 'Ausente no efetivo — excusado';
+        } else {
+          denominador++; contabilizado = true;
+          if (apontou) { numerador++; contouAFavor = true; motivo = 'Apontamento registrado'; }
+          else { contouAFavor = false; motivo = 'Sem apontamento'; }
+        }
+        return { ymd: diaYMD, diaSemana: DIAS_SEMANA_LABEL[diaSemanaNum], contabilizado, contouAFavor, motivo };
+      });
+      return { pct: denominador > 0 ? (numerador / denominador) * 100 : null, dias: diasMemoria };
+    };
+
+    let arr = Object.values(porObraEnc).map(s => {
+      const aderenciaDias = Object.keys(s.aderenciaPorDia).sort().map(ymd => ({ ymd, valor: (s.aderenciaPorDia[ymd].sum / s.aderenciaPorDia[ymd].n) * 100 }));
+      const aderenciaLin = aderenciaDias.length ? aderenciaDias.reduce((acc, d) => acc + d.valor, 0) / aderenciaDias.length : null;
+      const nomeUp = s.nome.trim().toUpperCase();
+      const { pct: assiduidade, dias: assiduidadeDias } = calcAssiduidade(s.obra.id, nomeUp, s.diasApontados);
+      return { nome: s.nome, obra: s.obra, aderenciaLin, aderenciaDias, assiduidade, assiduidadeDias, semApontamentos: s.diasApontados.size === 0 };
+    });
+
+    // Alocados sem apontamento no período — só os que têm card ELEGÍVEL:
+    // quem só tem card de atividade suprimida não aparece nem como
+    // "Alocado".
+    const encNamesSet = new Set(arr.map(s => `${s.obra.id}__${s.nome.trim().toUpperCase()}`));
+    cardsElegiveis.forEach(c => {
+      const obra = obraPorOrigemTV[(c.nome_obra || '').trim().toUpperCase()]; if (!obra) return;
+      const nome = c.responsavel_encarregado.trim();
+      const chave = `${obra.id}__${nome.toUpperCase()}`;
+      if (encNamesSet.has(chave)) return;
+      encNamesSet.add(chave);
+      const { pct: assiduidade, dias: assiduidadeDias } = calcAssiduidade(obra.id, nome.toUpperCase(), null);
+      arr.push({ nome, obra, aderenciaLin: null, aderenciaDias: [], assiduidade, assiduidadeDias, semApontamentos: true });
+    });
+
+    return arr;
+  }, [tvRaw, cardsElegiveis, presencaEnc, suprimidos, deltaPeriodo, modoPeriodo]);
+
+  // Score do Ranking (0-10): Qualidade peso 3, Aderência peso 5, Assiduidade
+  // peso 2 — pedido explícito 2026-09-10. Falta de dado em qualquer
+  // parâmetro conta como 0 nesse parâmetro, pra não inflar quem ainda não
+  // tem avaliação.
+  const linhasComScore = useMemo(() => {
+    if (!linhas) return [];
+    return linhas.map(r => {
+      const info = qualidadeEnc[`${r.obra.id}__${r.nome.trim().toUpperCase()}`] || null;
+      const q10 = info ? info.q10 : null;
+      const ader10 = r.aderenciaLin != null ? Math.min(10, Math.max(0, r.aderenciaLin / 10)) : 0;
+      const assid10 = r.assiduidade != null ? Math.min(10, Math.max(0, r.assiduidade / 10)) : 0;
+      return { ...r, qualidadeDias: info ? info.dias : [], q10, ader10, assid10, rankingScore: (q10 ?? 0) * 0.3 + ader10 * 0.5 + assid10 * 0.2 };
+    });
+  }, [linhas, qualidadeEnc]);
+
+  // Classificação com EMPATE VISÍVEL (pedido explícito, 2026-09-10) — quem
+  // empata divide a mesma posição (1º, 1º, 3º...) e todos os empatados
+  // dentro da faixa entram na premiação; o desempate final é decisão de
+  // gente, fora do sistema. O guia da campanha lista "desempate" como
+  // regra ainda não definida, então o sistema não escolhe sozinho.
+  //
+  // Antes não havia desempate NENHUM: o `sort` estável do JS deixava na
+  // frente quem tivesse aparecido primeiro no payload do `vw_dados_tv`
+  // (ordenado por DATA) — ou seja, acaso, e instável de uma semana pra
+  // outra.
+  //
+  // Empate é medido pela nota EXIBIDA (2 casas), não pelo float cru: duas
+  // linhas mostrando o mesmo número têm que ocupar a mesma posição, senão
+  // a ordem entre elas volta a parecer arbitrária pra quem olha.
+  const linhasClassificadas = useMemo(() => {
+    const elegiveis = linhasComScore
+      .filter(r => !r.semApontamentos)
+      .sort((a, b) => b.rankingScore - a.rankingScore);
+    const posicaoPorChave = {};
+    let posicao = 0, scoreAnterior = null;
+    elegiveis.forEach((r, i) => {
+      const chaveScore = r.rankingScore.toFixed(2);
+      if (chaveScore !== scoreAnterior) { posicao = i + 1; scoreAnterior = chaveScore; }
+      posicaoPorChave[`${r.obra.id}__${r.nome}`] = posicao;
+    });
+    return linhasComScore.map(r => ({ ...r, posicao: posicaoPorChave[`${r.obra.id}__${r.nome}`] ?? null }));
+  }, [linhasComScore]);
+
+  // Premiados do período — todos que caem dentro da faixa (top 5 na semana,
+  // top 1 no mês). Com empate na fronteira, a faixa carrega mais gente que
+  // o limite: é justamente o caso que precisa de decisão manual.
+  const vencedores = useMemo(
+    () => linhasClassificadas
+      .filter(r => r.posicao != null && r.posicao <= limitePremiados)
+      .sort((a, b) => a.posicao - b.posicao || b.rankingScore - a.rankingScore),
+    [linhasClassificadas, limitePremiados],
+  );
+
+  const [ordenar, setOrdenar] = useState('ranking');
+  const [ordenarDir, setOrdenarDir] = useState('desc');
+  const alternarOrdenacao = (campo) => {
+    if (!campo) return;
+    if (ordenar === campo) setOrdenarDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setOrdenar(campo); setOrdenarDir(campo === 'nome' || campo === 'obra' ? 'asc' : 'desc'); }
+  };
+
+  const linhasOrdenadas = useMemo(() => {
+    const arr = [...linhasClassificadas];
+    const dir = ordenarDir === 'asc' ? 1 : -1;
+    const valor = (r) => {
+      switch (ordenar) {
+        case 'obra': return r.obra.nome;
+        case 'qualidade': return r.q10 ?? -1;
+        case 'assiduidade': return r.assiduidade ?? -1;
+        case 'aderencia': return r.aderenciaLin ?? -1;
+        default: return r.rankingScore;
+      }
+    };
+    arr.sort((a, b) =>
+      (a.semApontamentos ? 1 : 0) - (b.semApontamentos ? 1 : 0) ||
+      (ordenar === 'nome' || ordenar === 'obra'
+        ? String(valor(a)).localeCompare(String(valor(b)), 'pt', { sensitivity: 'base' }) * dir
+        : (valor(a) - valor(b)) * dir));
+    return arr;
+  }, [linhasClassificadas, ordenar, ordenarDir]);
+
+  const carregando = tvRaw === null || cardsRaw === null || !suprimidos.pronto;
+  const erro = tvErro || cardsErro;
+  if (carregando) return <CartaoEstado texto="Carregando ranking de encarregados…" maxHeight={620} />;
+  if (erro) return <CartaoEstado texto="Erro ao carregar vw_dados_tv / cards_ativos" maxHeight={620} tom={T.red} />;
+
+  const cols = [
+    { label:'Pos', campo:null, align:'left' },
+    { label:'Encarregado', campo:'nome', align:'left' },
+    { label:'Obra', campo:'obra', align:'left' },
+    { label:'Qualidade', campo:'qualidade', align:'right', icone: <IconCheck color={T.red} /> },
+    { label:'Aderência', campo:'aderencia', align:'right', icone: <IconTarget color={T.red} /> },
+    { label:'Assiduidade', campo:'assiduidade', align:'right', icone: <IconCalendar color={T.red} /> },
+    { label:'Ranking', campo:'ranking', align:'right' },
+  ];
+
+  // Textos do PNG. "Encarregado da Semana" é o lockup aprovado da campanha;
+  // no mensal o rótulo acompanha o período ("do Mês") — o guia só pediu pra
+  // tirar esse rótulo do INFOGRÁFICO de regras, onde ele sobrava.
+  const mesCapitalizado = `${MESES_LABEL[periodo.inicio.getMonth()][0].toUpperCase()}${MESES_LABEL[periodo.inicio.getMonth()].slice(1)} de ${periodo.inicio.getFullYear()}`;
+  const tituloSlide = modoPeriodo === 'mensal'
+    ? { principal: 'Encarregado', ligacao: 'do', final: 'Mês' }
+    : { principal: 'Encarregado', ligacao: 'da', final: 'Semana' };
+  const rotuloPeriodoSlide = modoPeriodo === 'mensal'
+    ? mesCapitalizado
+    : `Semana de ${fmtDataCurta(periodo.inicio)} a ${fmtDataCurta(periodo.fim)}`;
+
+  // Serializa o `<svg>` oculto e rasteriza em 2× — mesma técnica (e mesmas
+  // pegadinhas: `toDataURL` síncrono em vez de `toBlob`, pra não perder a
+  // ativação do gesto do usuário) já validada em `exportarGraficosPNG`.
+  const exportarVencedoresPNG = () => {
+    const node = slideVencedoresRef.current;
+    if (!node || exportandoPng || !vencedores.length) return;
+    setExportandoPng(true);
+    const LARGURA = 1920, ALTURA = 1080, ESCALA = 2;
+    try {
+      const svgString = new XMLSerializer().serializeToString(node);
+      const svgUrl = URL.createObjectURL(new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = LARGURA * ESCALA;
+        canvas.height = ALTURA * ESCALA;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(ESCALA, ESCALA);
+        ctx.fillStyle = SLIDE_PEROLA;
+        ctx.fillRect(0, 0, LARGURA, ALTURA);
+        ctx.drawImage(img, 0, 0, LARGURA, ALTURA);
+        URL.revokeObjectURL(svgUrl);
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        const sufixo = modoPeriodo === 'mensal'
+          ? `${periodo.inicio.getFullYear()}-${String(periodo.inicio.getMonth() + 1).padStart(2, '0')}`
+          : `${periodo.ymd(periodo.inicio)}_a_${periodo.ymd(periodo.fim)}`;
+        a.download = `encarregado-${modoPeriodo === 'mensal' ? 'do-mes' : 'da-semana'}-${sufixo}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setExportandoPng(false);
+      };
+      img.onerror = () => { URL.revokeObjectURL(svgUrl); setExportandoPng(false); };
+      img.src = svgUrl;
+    } catch (e) {
+      console.error('Falha ao exportar PNG dos vencedores', e);
+      setExportandoPng(false);
+    }
+  };
+
+  // Opções do seletor de período — 0 (atual) + as anteriores do enfoque
+  // escolhido, mais recente primeiro.
+  const opcoesPeriodo = modoPeriodo === 'mensal'
+    ? Array.from({ length: MESES_SELECIONAVEIS + 1 }, (_, i) => -i).map(delta => {
+        const m = mesDeReferencia(delta);
+        return { delta, rotulo: `${MESES_LABEL[m.inicio.getMonth()]} de ${m.inicio.getFullYear()}${delta === 0 ? ' (atual)' : ''}` };
+      })
+    : Array.from({ length: SEMANAS_SELECIONAVEIS + 1 }, (_, i) => -i).map(delta => {
+        const s = semanaDeReferencia(delta);
+        return { delta, rotulo: `${fmtDataCurta(s.inicio)} a ${fmtDataCurta(s.fim)}${delta === 0 ? ' (atual)' : ''}` };
+      });
+
+  return (
+    <div className="painel-gutter" style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:14, padding:'18px 32px' }}>
+      {/* Balão da campanha: o infográfico "Encarregado da Semana" transposto
+          pra dentro do painel — mesmo fundo pérola quente, mesma arquitetura
+          de fundo com linhas vermelhas, mesmo lockup de título (com o "da"
+          em peso regular) e os mesmos três critérios com ícones. O título
+          acompanha o toggle: "da Semana" no semanal, "do Mês" no mensal. */}
+      <div style={{
+        position:'relative', overflow:'hidden', flexShrink:0, borderRadius:16,
+        background:`linear-gradient(135deg, ${BANNER_CINZA_CLARO} 0%, ${BANNER_CINZA} 100%)`,
+        border:'1px solid rgba(31,36,48,0.10)',
+      }}>
+        <GrafismoCampanha />
+        {/* Véu: o guia pede área de texto livre de grafismo. O fundo continua
+            atravessando a peça inteira, só perde força à esquerda. */}
+        <div aria-hidden="true" style={{ position:'absolute', inset:0, pointerEvents:'none',
+          background:`linear-gradient(100deg, ${BANNER_CINZA_CLARO} 0%, rgba(238,234,230,0.94) 34%, rgba(238,234,230,0.42) 64%, rgba(238,234,230,0.12) 100%)` }} />
+
+        <div style={{ position:'relative', padding:'16px 26px 18px', display:'flex', flexDirection:'column', gap:13 }}>
+          <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:12 }}>
+            <span className="mono" style={{ fontSize:10.5, fontWeight:700, letterSpacing:'0.16em', color:T.red, textTransform:'uppercase' }}>Ranking geral</span>
+            <span className="mono" style={{ fontSize:10.5, letterSpacing:'0.06em', color:T.mut }}>todas as obras</span>
+            {carregandoPeriodo && (
+              <span className="mono" role="status" style={{ display:'inline-flex', alignItems:'center', gap:7, fontSize:10, fontWeight:700,
+                letterSpacing:'0.08em', color:T.mut, textTransform:'uppercase' }}>
+                <span className="skel" aria-hidden="true" style={{ width:8, height:8, borderRadius:'50%', background:T.red }} />
+                Apurando {modoPeriodo === 'mensal' ? 'o mês' : 'a semana'}…
+              </span>
+            )}
+            <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
+              <ToggleModoPeriodo modo={modoPeriodo} onMudar={setModoPeriodo} />
+              <SeletorPeriodo opcoes={opcoesPeriodo} valor={deltaPeriodo} onSelecionar={setDeltaPeriodo} />
+              {(() => {
+                // Exportar durante a apuração geraria um PNG com os vencedores
+                // do período anterior — o botão espera a apuração fechar.
+                const bloqueado = exportandoPng || carregandoPeriodo || !vencedores.length;
+                return (
+                  <button onClick={exportarVencedoresPNG} disabled={bloqueado}
+                    title={carregandoPeriodo ? 'Apurando o período — aguarde'
+                      : vencedores.length
+                        ? `Baixar PNG ${modoPeriodo === 'mensal' ? 'do vencedor do mês' : 'dos 5 vencedores da semana'}, no layout da campanha`
+                        : 'Nenhum vencedor apurado neste período'}
+                    className="mono"
+                    style={{ display:'flex', alignItems:'center', gap:7, background:'#fff', border:'1px solid rgba(210,59,59,0.35)', color:T.red,
+                      padding:'6px 12px', borderRadius:8, fontSize:10.5, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+                      cursor: bloqueado ? 'default' : 'pointer', opacity: bloqueado ? 0.45 : 1 }}>
+                    {exportandoPng ? 'Gerando…' : 'Exportar vencedores ↓'}
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+
+          <div>
+            {/* Lockup aprovado da campanha: "Encarregado" e "Semana"/"Mês" em
+                peso forte, a ligação em regular. Grafite quase preto. */}
+            <div style={{ fontSize:32, color:SLIDE_GRAFITE, lineHeight:1.08, letterSpacing:'-0.015em' }}>
+              <span style={{ fontWeight:700 }}>{tituloSlide.principal}</span>
+              <span style={{ fontWeight:400 }}> {tituloSlide.ligacao} </span>
+              <span style={{ fontWeight:700 }}>{tituloSlide.final}</span>
+            </div>
+            <div style={{ width:88, height:4, background:T.red, borderRadius:2, marginTop:10 }} />
+            <div style={{ fontSize:14, color:SLIDE_GRAFITE_SUAVE, marginTop:10 }}>Constância que gera resultado.</div>
+          </div>
+
+          {/* Faixa de critérios + premiação lado a lado — a mesma organização
+              da parte inferior do infográfico. Sem os pesos: pedido explícito
+              (2026-09-10). A ponderação continua visível onde ela de fato
+              importa, na memória de cálculo de cada nota. */}
+          <div style={{ display:'flex', alignItems:'center', flexWrap:'wrap', gap:'10px 22px' }}>
+            {[
+              { icone: <IconCheck color={T.red} size={14} />,    nome:'Qualidade',   desc:'do serviço executado' },
+              { icone: <IconTarget color={T.red} size={14} />,   nome:'Aderência',   desc:'ao planejamento' },
+              { icone: <IconCalendar color={T.red} size={14} />, nome:'Assiduidade', desc:'nos registros de produção' },
+            ].map(c => (
+              <div key={c.nome} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ display:'flex', alignItems:'center', justifyContent:'center', width:24, height:24, borderRadius:7,
+                  background:'rgba(210,59,59,0.09)', border:'1px solid rgba(210,59,59,0.18)', flexShrink:0 }}>{c.icone}</span>
+                <span style={{ fontSize:12.5, color:SLIDE_GRAFITE_SUAVE, lineHeight:1.3 }}>
+                  <b style={{ color:SLIDE_GRAFITE, fontWeight:600 }}>{c.nome}</b> {c.desc}
+                </span>
+              </div>
+            ))}
+            <div style={{ marginLeft:'auto', display:'flex', gap:9, flexWrap:'wrap' }}>
+              <PillCampanha numero="5" texto="encarregados premiados" sub="toda semana" ativo={modoPeriodo === 'semanal'} />
+              <PillCampanha numero="1" texto="encarregado premiado" sub="ao final do mês" ativo={modoPeriodo === 'mensal'} />
+            </div>
+          </div>
+
+          {/* Empate divide a posição, então a faixa de premiação pode
+              carregar mais gente que o limite — quem decide é o time, o
+              sistema só avisa (o guia da campanha não define desempate). */}
+          {!carregandoPeriodo && vencedores.length > limitePremiados && (
+            <div style={{ display:'inline-flex', alignSelf:'flex-start', alignItems:'center', gap:8, background:'rgba(210,59,59,0.07)', border:'1px solid rgba(210,59,59,0.22)', borderRadius:9, padding:'6px 12px' }}>
+              <span className="mono" style={{ fontSize:10, fontWeight:700, letterSpacing:'0.06em', color:T.red, textTransform:'uppercase' }}>Empate</span>
+              <span style={{ fontSize:12.5, color:T.body }}>
+                {vencedores.length} encarregados na faixa de {limitePremiados === 1 ? '1 premiado' : `${limitePremiados} premiados`} — o desempate é de vocês.
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="card" style={{ flex:1, minHeight:0, borderRadius:14, overflow:'hidden', display:'flex', flexDirection:'column', padding:0 }}>
+        <div className="table-scroll-x" style={{ overflow:'auto', flex:1 }}>
+          <table style={{ width:'100%', textAlign:'left', borderCollapse:'collapse' }}>
+            <thead style={{ position:'sticky', top:0, zIndex:2, background:'#fff' }}>
+              <tr className="mono" style={{ fontSize:10, textTransform:'uppercase', letterSpacing:'0.1em', color:T.mut, fontWeight:600 }}>
+                {cols.map(col => {
+                  const ativo = col.campo && ordenar === col.campo;
+                  return (
+                    <th key={col.label} onClick={() => alternarOrdenacao(col.campo)}
+                      title={col.campo ? 'Ordenar por esta coluna' : undefined}
+                      style={{ padding:'10px 14px', textAlign:col.align, cursor: col.campo ? 'pointer' : 'default', userSelect:'none', color: ativo ? T.green : undefined, borderBottom:'1px solid var(--line)' }}>
+                      {col.icone ? (
+                        <span style={{ display:'inline-flex', alignItems:'center', justifyContent: col.align === 'right' ? 'flex-end' : 'flex-start', gap:5 }}>
+                          {col.icone}{col.label}{ativo ? (ordenarDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                        </span>
+                      ) : (
+                        <React.Fragment>{col.label}{ativo ? (ordenarDir === 'asc' ? ' ▲' : ' ▼') : ''}</React.Fragment>
+                      )}
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Enquanto Qualidade/Presença do novo período não voltam, a
+                  tabela vira esqueleto — mostrar as notas do período anterior
+                  aqui seria dado errado com aparência de dado certo. */}
+              {carregandoPeriodo ? Array.from({ length: 9 }).map((_, i) => (
+                <tr key={`skel${i}`}>
+                  {cols.map((col, ci) => (
+                    <td key={col.label} style={{ padding:'12px 14px', borderBottom:'1px solid var(--line)' }}>
+                      <div className="skel" style={{ height:13,
+                        width: ci === 0 ? 26 : ci === 1 ? '72%' : ci === 2 ? '56%' : 34,
+                        marginLeft: col.align === 'right' ? 'auto' : 0 }} />
+                    </td>
+                  ))}
+                </tr>
+              )) : (
+                <React.Fragment>
+                  {linhasOrdenadas.map(row => (
+                    <LinhaRankingGeral key={`${row.obra.id}__${row.nome}`} row={row}
+                      limitePremiados={limitePremiados}
+                      onClickNome={r => setEncSelecionado({ nome: r.nome, obra: r.obra })}
+                      onAbrirExplicacao={(tipo, r) => setExplicacao({ tipo, row: r })} />
+                  ))}
+                  {linhasOrdenadas.length === 0 && (
+                    <tr><td colSpan={cols.length} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado encontrado</td></tr>
+                  )}
+                </React.Fragment>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {explicacao && (
+        <PopupExplicacaoCriterio tipo={explicacao.tipo} row={explicacao.row} onClose={() => setExplicacao(null)} />
+      )}
+
+      {/* Cards ativos do encarregado — o MESMO popup da tela de
+          Encarregados. A "Data de Status" dele vira o último dia do período
+          selecionado: clicar num nome enquanto se analisa julho tem que
+          mostrar julho, não o dado de hoje. */}
+      {encSelecionado && (
+        <PopupCardsEncarregado nome={encSelecionado.nome}
+          obraId={encSelecionado.obra.id} obraNome={encSelecionado.obra.nome}
+          dataStatusOverride={periodo.ymd(periodo.ontem)}
+          onClose={() => setEncSelecionado(null)} />
+      )}
+
+      {/* Origem do PNG dos vencedores. Fica SEMPRE renderizado (nunca
+          `display:none`, senão não haveria o que serializar), só fora da
+          tela pelo wrapper — mesmo arranjo do slide de Suprimentos. */}
+      {ReactDOM.createPortal(
+        <div style={{ position:'fixed', top:0, left:-99999, width:1920, height:1080, overflow:'hidden', pointerEvents:'none' }}>
+          <SlideVencedores svgRef={slideVencedoresRef} vencedores={vencedores}
+            titulo={tituloSlide} rotuloPeriodo={rotuloPeriodoSlide}
+            logoDataUri={logoVermelhaDataUri} mensal={modoPeriodo === 'mensal'} />
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 function parseHash(){
   const m = window.location.hash.match(/^#\/obra\/(\d+)\/([a-z0-9-]+)/);
@@ -9648,19 +11008,27 @@ function App(){
   const [setor, setSetor] = useState(
     (inicial && SETORES.find(s => s.slug === inicial.slug)) || SETORES[0]
   );
+  // Modo Ranking (pedido explícito, 2026-09-10) — página cheia com o ranking
+  // de TODOS os encarregados de TODAS as obras, substitui o monitoramento
+  // normal (TabsSetores + conteúdo do setor). Rota própria `#/ranking`, não
+  // mexe em `obraId`/`setor` (preservados por baixo — "Controle" volta pro
+  // mesmo lugar de antes).
+  const [modoRanking, setModoRanking] = useState(() => window.location.hash === '#/ranking');
   useEffect(() => {
-    window.location.hash = `#/obra/${obraId}/${setor.slug}`;
-  }, [obraId, setor]);
+    window.location.hash = modoRanking ? '#/ranking' : `#/obra/${obraId}/${setor.slug}`;
+  }, [obraId, setor, modoRanking]);
 
   // Título da aba do navegador sempre "MSE - <Setor>" (pedido explícito).
   // Só o setor muda o texto — exceto "Tour 360°", que também depende da
   // obra ter ortofoto cadastrada (ver `labelSetorObra`).
   useEffect(() => {
-    document.title = `MSE - ${labelSetorObra(setor, obraId)}`;
-  }, [setor, obraId]);
+    document.title = modoRanking ? 'MSE - Ranking de Encarregados' : `MSE - ${labelSetorObra(setor, obraId)}`;
+  }, [setor, obraId, modoRanking]);
 
   useEffect(() => {
     const onHash = () => {
+      if (window.location.hash === '#/ranking') { setModoRanking(true); return; }
+      setModoRanking(false);
       const h = parseHash();
       if (!h) return;
       if (OBRAS.some(o => o.id === h.id)) setObraId(h.id);
@@ -9814,7 +11182,14 @@ function App(){
 
   return (
     <div className="screen-enter app-shell">
-      <Header obraAtual={obraAtual} obras={OBRAS} onSelecionarObra={setObraId} foto={OBRA_FOTOS[obraAtual.id]} />
+      <Header obraAtual={obraAtual} obras={OBRAS} onSelecionarObra={setObraId} foto={OBRA_FOTOS[obraAtual.id]}
+        modoRanking={modoRanking} onAbrirRanking={() => setModoRanking(true)} onFecharRanking={() => setModoRanking(false)} />
+      {modoRanking ? (
+        <div key="ranking" className="screen-slide app-main">
+          <ModuloRankingGeral />
+        </div>
+      ) : (
+      <React.Fragment>
       <TabsSetores atual={setor} onIr={setSetor} obraId={obraAtual.id} />
       <div key={setor.slug} className="screen-slide app-main">
         {setorBloqueado(setor.slug, obraAtual.id)
@@ -9845,6 +11220,8 @@ function App(){
                           ? <ModuloSuprimentos obraId={obraAtual.id} obraNome={obraAtual.nome} />
                           : <SetorPlaceholder setor={setor} obraId={obraAtual.id} />}
       </div>
+      </React.Fragment>
+      )}
     </div>
   );
 }
@@ -9992,27 +11369,29 @@ function TelaLogin({ erro }) {
 // o preenche de novo. Na carga normal o bootstrap já resolveu antes do primeiro
 // render, então aqui não há o que fazer. Ver `public.acesso_total` e docs/15.
 function useAcessoTotal() {
-  const [pronto, setPronto] = React.useState(MSEAuth.acessoTotal() !== null);
+  // Contador, não booleano. A versão anterior guardava `pronto` e chamava
+  // `setPronto(true)` quando os RPCs voltavam — mas depois da primeira carga
+  // `pronto` JÁ era `true`, React descartava o update e NÃO re-renderizava.
+  // Resultado: o cache voltava a ter o valor certo e a árvore continuava
+  // desenhada com o valor antigo (abas escondidas) até algum outro evento
+  // forçar um render. Um contador sempre muda, então sempre re-renderiza.
+  const [versao, setVersao] = React.useState(0);
+  const pronto = MSEAuth.acessoTotal() !== null;
   React.useEffect(() => {
     let vivo = true;
     if (MSEAuth.sessao() && MSEAuth.acessoTotal() === null) {
       Promise.all([MSEAuth.carregarAcessoTotal(), MSEAuth.carregarAcessoObras()])
-        .then(() => { if (vivo) setPronto(true); });
-    } else {
-      setPronto(true);
+        .then(() => { if (vivo) setVersao(v => v + 1); });
     }
     return () => { vivo = false; };
     // SEM array de dependências, de propósito: precisa rodar a cada render, não
-    // só na montagem. `onAuthStateChange` (auth.js) limpa o cache a cada evento
-    // — inclusive o TOKEN_REFRESHED automático, que dispara sozinho depois de um
-    // tempo com a página aberta — e é essa releitura que preenche o cache de
-    // novo. Com `[]`, o cache ficava `null` pra sempre após o primeiro refresh
-    // de token, e `restringirFinanceiro()` trata `null` como restrito: Medições
-    // e OC/CO somem sem nenhum erro visível. `carregarAcessoTotal()` já
-    // devolve o cache na hora quando já resolvido, então rodar a cada render
-    // não repete requisição — só reage quando o cache de fato foi limpo.
+    // só na montagem. `onAuthStateChange` (auth.js) limpa o cache quando a
+    // identidade troca (login/logout com o app aberto), e é esta releitura que
+    // o preenche de novo. `carregarAcessoTotal()` devolve o cache na hora
+    // quando já resolvido, então rodar a cada render não repete requisição —
+    // e não há laço: com o cache preenchido, o `if` nem entra.
   });
-  return { pronto };
+  return { pronto, versao };
 }
 
 const raizReact = ReactDOM.createRoot(document.getElementById('root'));
