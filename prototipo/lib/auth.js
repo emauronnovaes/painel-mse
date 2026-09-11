@@ -319,13 +319,26 @@
     if (error) throw error;
   }
 
-  async function sair() {
-    await exigeCliente().auth.signOut();
-    sessaoAtual = null;
+  // Os dois caches de acesso são POR E-MAIL. Quem os invalida é a troca de
+  // identidade — e só ela (ver `onAuthStateChange`).
+  let emailDaSessao = null;
+
+  function emailDe(sess) {
+    return (sess && sess.user && sess.user.email) ? sess.user.email.toLowerCase() : null;
+  }
+
+  function limparCachesDeAcesso() {
     acessoTotalCache = null;
     acessoTotalPromessa = null;
     obrasFinanceiroCache = null;
     acessoObrasPromessa = null;
+  }
+
+  async function sair() {
+    await exigeCliente().auth.signOut();
+    sessaoAtual = null;
+    emailDaSessao = null;
+    limparCachesDeAcesso();
     notificar();
   }
 
@@ -396,13 +409,28 @@
       sessaoAtual = (data && data.session) || null;
     }
 
+    emailDaSessao = emailDe(sessaoAtual);
+
     cliente.auth.onAuthStateChange(function (_evento, novaSessao) {
       sessaoAtual = novaSessao || null;
-      // Sessao trocou: o acesso e por e-mail, entao nenhum cache vale mais.
-      acessoTotalCache = null;
-      acessoTotalPromessa = null;
-      obrasFinanceiroCache = null;
-      acessoObrasPromessa = null;
+      // Invalida o cache de acesso SÓ quando a IDENTIDADE muda — não a cada
+      // evento. O acesso é por e-mail; um token novo para o mesmo e-mail não
+      // muda permissão nenhuma.
+      //
+      // Zerar em todo evento (versão anterior) fazia as abas do financeiro
+      // sumirem sozinhas depois de ~50min com a página aberta: o
+      // `TOKEN_REFRESHED` automático limpava os caches, `restringirFinanceiro*`
+      // trata `null` como restrito (fail-closed, correto), e a releitura que
+      // devia devolver as abas não forçava re-render — elas só voltavam se a
+      // pessoa clicasse em algo. Ver `useAcessoTotal` em index.html.
+      //
+      // A propriedade de segurança está preservada: trocou de e-mail (ou
+      // deslogou), o cache do e-mail anterior não sobrevive.
+      const novoEmail = emailDe(sessaoAtual);
+      if (novoEmail !== emailDaSessao) {
+        emailDaSessao = novoEmail;
+        limparCachesDeAcesso();
+      }
       notificar();
     });
 

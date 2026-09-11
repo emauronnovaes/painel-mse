@@ -1660,6 +1660,12 @@ function BadgePT({ hhmm, dim }){
   const bg  = hhmm <= '07:00' ? 'rgba(31,157,87,0.13)' : hhmm <= '07:15' ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
   return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:12, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{hhmm}</span>;
 }
+function BadgeRanking({ valor, dim }){
+  if (valor == null) return <span style={{ fontSize:12, color:T.mut }}>—</span>;
+  const cor = valor >= 8 ? T.green : valor >= 5 ? T.amber : T.red;
+  const bg  = valor >= 8 ? 'rgba(31,157,87,0.13)' : valor >= 5 ? 'rgba(217,145,26,0.13)' : 'rgba(210,59,59,0.13)';
+  return <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:13, fontWeight:700, background:bg, color:cor, opacity: dim ? 0.45 : 1 }}>{valor.toFixed(1)}</span>;
+}
 function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, colaboradoresEnc, horarioPT, onClickNome }){
   const dim = row.semApontamentos;
   const destaque = idx === 0 && !row.ausente && !row.semApontamentos;
@@ -1697,6 +1703,14 @@ function LinhaEncarregado({ row, idx, temPT, qualidadeEnc, colaboradoresEnc, hor
             ? <span className="mono" style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:13, fontWeight:700, background: destaque ? 'rgba(217,145,26,0.18)' : scoreBg, color: destaque ? T.amber : scoreCor }}>{row.aderenciaLin.toFixed(1)}%</span>
             : <span style={{ display:'inline-block', padding:'3px 10px', borderRadius:8, fontSize:11.5, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase', background:'#eef0f3', color:T.mut2, opacity:0.6 }}>Alocado</span>}
       </td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>
+        {row.ausente
+          ? <span style={{ fontSize:12, color:T.mut2 }}>—</span>
+          : row.assiduidade != null
+            ? <span className="mono" style={{ fontSize:13, fontWeight:600, color:T.ink, opacity: dim ? 0.45 : 1 }}>{row.assiduidade.toFixed(0)}%</span>
+            : <span style={{ fontSize:12, color:T.mut2 }}>—</span>}
+      </td>
+      <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgeRanking valor={row.rankingScore} dim={dim} />}</td>
       {temPT && <td style={{ padding:'10px 14px', textAlign:'right' }}>{row.ausente ? <span style={{ fontSize:12, color:T.mut2 }}>—</span> : <BadgePT hhmm={pt} dim={dim} />}</td>}
     </tr>
   );
@@ -2244,6 +2258,53 @@ function ModuloEncarregados({ obraId, obraNome }){
     return { linhas: arr, diaAderenciaObra };
   }, [tvRaw, cardsRaw, presencaEnc]);
 
+  // Assiduidade do Ranking (0-100%) — recorte semanal FIXO (segunda a
+  // sábado, nunca rolling), pedido explícito 2026-09-10: dia útil (seg-sex)
+  // sempre exige apontamento em vw_dados_tv, exceto quando o encarregado
+  // está com "Ausente" registrado no efetivo nesse dia (excusado — não conta
+  // a favor nem contra). Sábado é dia bônus: só entra na conta, e sempre a
+  // favor, se houver presença explícita registrada no efetivo.
+  const assiduidadeEnc = useMemo(() => {
+    if (!tvRaw || !cardsRaw) return {};
+    const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
+    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
+    const diaSemanaOntem = ontem.getDay();
+    const deltaSegunda = diaSemanaOntem === 0 ? -6 : (1 - diaSemanaOntem);
+    const segunda = new Date(ontem); segunda.setDate(ontem.getDate() + deltaSegunda); segunda.setHours(0, 0, 0, 0);
+    const diasDaSemana = [];
+    for (let d = new Date(segunda); d <= ontem; d.setDate(d.getDate() + 1)) diasDaSemana.push(new Date(d));
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+    const diasApontadosPorNome = {};
+    tvRaw.forEach(row => {
+      const resp = row['RESPONSÁVEL']; if (!resp) return;
+      const dataYMD = parseBRDateParaYMD(row.DATA); if (!dataYMD) return;
+      const nome = resp.trim().toUpperCase();
+      (diasApontadosPorNome[nome] = diasApontadosPorNome[nome] || new Set()).add(dataYMD);
+    });
+
+    const nomes = new Set(cardsRaw.map(c => c.responsavel_encarregado.trim().toUpperCase()));
+    Object.keys(diasApontadosPorNome).forEach(n => nomes.add(n));
+
+    const resultado = {};
+    nomes.forEach(nome => {
+      let numerador = 0, denominador = 0;
+      diasDaSemana.forEach(d => {
+        const diaYMD = ymd(d);
+        const situ = (presencaEnc[`${nome}__${diaYMD}`] || '').trim().toLowerCase();
+        if (d.getDay() === 6) {
+          if (situ && situ !== 'ausente') { denominador++; numerador++; }
+        } else {
+          if (situ === 'ausente') return;
+          denominador++;
+          if (diasApontadosPorNome[nome]?.has(diaYMD)) numerador++;
+        }
+      });
+      resultado[nome] = denominador > 0 ? (numerador / denominador) * 100 : null;
+    });
+    return resultado;
+  }, [tvRaw, cardsRaw, presencaEnc]);
+
   const [ordenarEnc, setOrdenarEnc] = useState('aderencia');
   const [ordenarDirEnc, setOrdenarDirEnc] = useState('desc');
   const alternarOrdenacaoEnc = (campo) => {
@@ -2260,16 +2321,43 @@ function ModuloEncarregados({ obraId, obraNome }){
     if (n === 'satisfatorio') return 2;
     return 1;
   };
+  // Score do Ranking (0-10): Qualidade peso 3, Aderência peso 5, Assiduidade
+  // peso 2 — pedido explícito 2026-09-10. Falta de dado em qualquer
+  // parâmetro (Pendente Qualidade, sem aderência, sem assiduidade apurável)
+  // conta como 0 nesse parâmetro, pra não inflar quem ainda não tem avaliação.
+  const pontosQualidade = (nome) => {
+    const q = qualidadeEnc[(nome || '').trim().toUpperCase()];
+    if (!q) return null;
+    const n = q.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (n === 'bom') return 10;
+    if (n === 'satisfatorio') return 6;
+    if (n === 'corrigir') return 0;
+    return null;
+  };
+  const rankingScore = (row) => {
+    const up = (row.nome || '').trim().toUpperCase();
+    const q10 = pontosQualidade(row.nome) ?? 0;
+    const ader10 = row.aderenciaLin != null ? Math.min(10, Math.max(0, row.aderenciaLin / 10)) : 0;
+    const assidPct = assiduidadeEnc[up];
+    const assid10 = assidPct != null ? Math.min(10, Math.max(0, assidPct / 10)) : 0;
+    return q10 * 0.3 + ader10 * 0.5 + assid10 * 0.2;
+  };
   const temPT = !!obraCfg?.origemPTS && Object.keys(ptsPorNomeDia).length > 0;
   const rankingRows = useMemo(() => {
     if (!linhas) return [];
-    const arr = [...linhas];
-    const dir = ordenarDirEnc === 'asc' ? 1 : -1;
     const up = n => (n || '').trim().toUpperCase();
+    const arr = linhas.map(r => ({
+      ...r,
+      assiduidade: assiduidadeEnc[up(r.nome)] ?? null,
+      rankingScore: rankingScore(r),
+    }));
+    const dir = ordenarDirEnc === 'asc' ? 1 : -1;
     const valor = (r) => {
       switch (ordenarEnc) {
         case 'qualidade': return rankQualidade(r.nome);
         case 'colaboradores': return colaboradoresEnc[up(r.nome)] ?? -1;
+        case 'assiduidade': return r.assiduidade ?? -1;
+        case 'ranking': return r.rankingScore;
         case 'pt': {
           const hpt = horarioPT(r.nome, r.diaAderencia);
           if (!hpt) return -1;
@@ -2286,7 +2374,7 @@ function ModuloEncarregados({ obraId, obraNome }){
         ? a.nome.localeCompare(b.nome, 'pt', { sensitivity: 'base' }) * dir
         : (valor(a) - valor(b)) * dir));
     return arr;
-  }, [linhas, ordenarEnc, ordenarDirEnc, colaboradoresEnc, qualidadeEnc, ptsPorNomeDia]);
+  }, [linhas, ordenarEnc, ordenarDirEnc, colaboradoresEnc, qualidadeEnc, ptsPorNomeDia, assiduidadeEnc]);
 
   const carregando = tvRaw === null || cardsRaw === null;
   const erro = tvErro || cardsErro;
@@ -2300,6 +2388,8 @@ function ModuloEncarregados({ obraId, obraNome }){
     { label:'Qualidade', campo:'qualidade', align:'right' },
     { label:'Colaboradores', campo:'colaboradores', align:'right' },
     { label:'Aderência', campo:'aderencia', align:'right' },
+    { label:'Assiduidade', campo:'assiduidade', align:'right' },
+    { label:'Ranking', campo:'ranking', align:'right' },
     ...(temPT ? [{ label:'Últ. Liberação PT', campo:'pt', align:'right' }] : []),
   ];
 
@@ -2310,6 +2400,16 @@ function ModuloEncarregados({ obraId, obraNome }){
           <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z" /><path d="M17 5h3a2 2 0 0 1-2 4M7 5H4a2 2 0 0 0 2 4" />
         </svg>
         <span className="mono" style={{ fontSize:12, fontWeight:700, letterSpacing:'0.12em', color:T.body, textTransform:'uppercase' }}>Performance de Encarregados</span>
+        <button onClick={() => { setOrdenarEnc('ranking'); setOrdenarDirEnc('desc'); }}
+          title="Classificar por Score do Ranking (Qualidade × 3 + Aderência × 5 + Assiduidade × 2, de 0 a 10)"
+          style={{
+            padding:'5px 12px', borderRadius:8, border:'1px solid rgba(217,145,26,0.35)',
+            background: ordenarEnc === 'ranking' ? T.amber : 'transparent',
+            color: ordenarEnc === 'ranking' ? '#fff' : T.amber,
+            fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase', cursor:'pointer',
+          }}>
+          Ranking
+        </button>
         <span className="mono" style={{ marginLeft:'auto', fontSize:11, color:T.mut }}>Referência: {fmtDataCurta(parseDataCorte(diaAderenciaObra)) || '—'}</span>
       </div>
 
@@ -2342,7 +2442,7 @@ function ModuloEncarregados({ obraId, obraNome }){
                   horarioPT={horarioPT} onClickNome={setNomeSelecionado} />
               ))}
               {rankingRows.length === 0 && (
-                <tr><td colSpan={4 + (temPT ? 1 : 0)} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
+                <tr><td colSpan={colsEncarregados.length} style={{ padding:24, textAlign:'center', fontSize:12, color:T.mut }}>Nenhum encarregado elegível encontrado para esta obra</td></tr>
               )}
             </tbody>
           </table>
