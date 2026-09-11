@@ -2890,7 +2890,11 @@ function ModuloEncarregados({ obraId, obraNome }){
   // Selo "Ausente" — mesma view do Histograma (efetivo_diario_raw, projeto
   // Efetivo). Janela de 21 dias (não só 7) pra cobrir a "Data de Status"
   // ajustável (pedido explícito, 2026-08-27) — o usuário pode escolher
-  // qualquer dia dentro desse horizonte pra ver o Ausente daquele dia.
+  // qualquer dia dentro desse horizonte pra ver o Ausente daquele dia,
+  // INCLUSIVE hoje (mesmo pedido 2026-08-27 liberou o `max` do seletor pra
+  // hoje — a janela de busca precisa terminar em hoje, não ontem, senão o
+  // selo nunca aparece pra quem foi marcado ausente no próprio dia; bug
+  // encontrado 2026-09-11, JANIO DA LUZ SILVA ausente em 11/09 sem selo).
   // `fetchPaginado` (Range header), não `fetch` cru — 21 dias × todos os
   // colaboradores da obra pode passar de 1000 linhas (mesmo bug de corte
   // silencioso do PostgREST já catalogado no projeto), `limit=5000` sozinho
@@ -2899,10 +2903,9 @@ function ModuloEncarregados({ obraId, obraNome }){
     setPresencaEnc({});
     const headers = MSEAuth.headers();
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
-    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-    const vinteEUmDiasAtras = new Date(ontem); vinteEUmDiasAtras.setDate(ontem.getDate() - 20);
+    const vinteEUmDiasAtras = new Date(hoje); vinteEUmDiasAtras.setDate(hoje.getDate() - 20);
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    fetchPaginado(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(vinteEUmDiasAtras)}&data_efetivo_diario=lte.${ymd(ontem)}&select=nome,data_efetivo_diario,situacao`, headers)
+    fetchPaginado(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(vinteEUmDiasAtras)}&data_efetivo_diario=lte.${ymd(hoje)}&select=nome,data_efetivo_diario,situacao`, headers)
       .then(rows => {
         const mapa = {};
         (Array.isArray(rows) ? rows : []).forEach(r => { if (r.nome) mapa[`${r.nome.trim().toUpperCase()}__${r.data_efetivo_diario}`] = r.situacao || ''; });
