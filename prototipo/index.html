@@ -2708,9 +2708,9 @@ function ModuloEncarregados({ obraId, obraNome }){
         return Object.entries(cont).sort((a, b) => b[1].n - a[1].n || rank(a[0]) - rank(b[0]))[0][1].label;
       };
 
-      // Busca as 3 fontes ANTES de decidir o dia — só depois de ver os dados
-      // de verdade dá pra saber qual é o dia mais recente que alguma delas
-      // realmente tem, em vez de adivinhar (era o que `tvRaw` sozinho fazia).
+      // As 3 fontes abaixo só entram DEPOIS de decidir o dia (via
+      // `diasComTv`, logo abaixo) — elas não pesam na escolha do dia, só são
+      // lidas no dia exato que a Aderência já determinou.
       const [apontPorCard, prodPorCard, efPorCard] = await Promise.all([
         emLotes('Apontamentos', 'id,status_qualidade,data_do_input', 'id'),
         emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id'),
@@ -2718,18 +2718,22 @@ function ModuloEncarregados({ obraId, obraNome }){
       ]);
 
       const diasComTv = new Set(tvRaw.map(r => parseBRDateParaYMD(r.DATA)).filter(Boolean));
-      const diasComApont = new Set();
-      Object.values(apontPorCard).forEach(rows => rows.forEach(r => { if (r.data_do_input) diasComApont.add(String(r.data_do_input).slice(0, 10)); }));
-      const diasComProd = new Set();
-      Object.values(prodPorCard).forEach(rows => rows.forEach(r => { if (r.data) diasComProd.add(String(r.data).slice(0, 10)); }));
-      const diasComEf = new Set();
-      Object.values(efPorCard).forEach(rows => rows.forEach(r => { if (r.data_consulta) diasComEf.add(String(r.data_consulta).slice(0, 10)); }));
 
-      const alvo = dataStatusOverride || getDiaAderencia();
-      const diaEfetivo = getDiaComDadoReal(
-        ymd => diasComTv.has(ymd) || diasComApont.has(ymd) || diasComProd.has(ymd) || diasComEf.has(ymd),
-        alvo,
-      ) || alvo; // 180 dias sem NADA em nenhuma fonte: usa o alvo mesmo, não trava a tela
+      // O dia de referência recua com base SÓ na Aderência (`vw_dados_tv`,
+      // `diasComTv`) — pedido explícito 2026-09-14: Qualidade/Performance/
+      // Colaboradores/Efetivo não entram nessa decisão, só "seguem" o dia
+      // que a Aderência determinar (sem dado deles nesse dia exato, ficam
+      // Pendente/— como já faziam). Antes, `getDiaAderencia()` pulava
+      // sábado/domingo às cegas (sem checar dado real) — se a obra aponta
+      // no sábado, o `alvo` já nascia na sexta e `getDiaComDadoReal` (que só
+      // recua, nunca avança) nunca mais enxergava o sábado, mesmo ele tendo
+      // aderência mais recente que a sexta (bug real 2026-09-14: campo
+      // "Data de Status" preso em 11/09 com aderência de verdade já em
+      // 12/09). `getDiaAderenciaComFallback` corrige isso pulando fim de
+      // semana só quando a Aderência não tiver dado nele.
+      const temAderencia = ymd => diasComTv.has(ymd);
+      const alvo = dataStatusOverride || getDiaAderenciaComFallback(temAderencia);
+      const diaEfetivo = getDiaComDadoReal(temAderencia, alvo) || alvo; // 180 dias sem aderência nenhuma: usa o alvo mesmo, não trava a tela
       if (!cancelado) setDiaStatusExibido(diaEfetivo);
 
       const statusPorCard = {};
@@ -2925,12 +2929,24 @@ function ModuloEncarregados({ obraId, obraNome }){
     return h ? h.slice(0, 5) : null;
   };
 
-  // Dia de referência POR ENCARREGADO (fim de semana só conta se ELE tiver
-  // apontamento nele) + elegibilidade: só entra quem tem card ativo nesta
-  // obra OU apontou no seu próprio dia de referência — mesma regra corrigida
-  // no dashboard atual (ver [[cap-1000-linhas-supabase]]/RankingScreen).
+  // Dia de referência da Aderência: era calculado POR ENCARREGADO, isolado
+  // de Qualidade/Performance/Colaboradores (`diaStatusExibido` acima) — cada
+  // um podia recuar pra um dia diferente por conta própria (fonte atrasada
+  // pra um, não pro outro), e a tela acabava misturando dias na mesma linha
+  // (bug real 2026-09-14: Aderência de 12/09 ao lado de Qualidade de 11/09,
+  // sob um campo "Data de Status" que promete ser "o dia de referência de
+  // TODOS os indicadores da tela" — ver título do campo mais abaixo). Agora
+  // usa o MESMO `diaStatusExibido`; sem apontamento desse encarregado
+  // exatamente nesse dia, ele fica "sem apontamentos" (não herda um dia
+  // antigo só seu). `diaStatusExibido` só existe depois do 1º fetch da
+  // unificação — antes disso, mesmo fallback que ele usa (`alvo`) evita
+  // a tabela ficar vazia no carregamento inicial.
+  // Elegibilidade: só entra quem tem card ativo nesta obra OU apontou no dia
+  // de referência — mesma regra corrigida no dashboard atual (ver
+  // [[cap-1000-linhas-supabase]]/RankingScreen).
   const { linhas } = useMemo(() => {
     if (tvRaw == null || cardsRaw == null) return { linhas: null };
+    const diaRef = diaStatusExibido || dataStatusOverride || getDiaAderencia();
     const cardsEncsUpper = new Set(cardsRaw.map(c => c.responsavel_encarregado.trim().toUpperCase()));
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
@@ -2956,7 +2972,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     });
 
     let arr = Object.values(porEnc).map(s => {
-      const diaAderencia = dataStatusOverride || getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
+      const diaAderencia = diaRef;
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
       return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
@@ -2967,7 +2983,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: dataStatusOverride || getDiaAderencia(), aderenciaLin: null, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: diaRef, aderenciaLin: null, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -2977,7 +2993,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       b.score - a.score);
 
     return { linhas: arr };
-  }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride]);
+  }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride, diaStatusExibido]);
 
   const [ordenarEnc, setOrdenarEnc] = useState('aderencia');
   const [ordenarDirEnc, setOrdenarDirEnc] = useState('desc');
