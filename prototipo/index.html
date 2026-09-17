@@ -8721,18 +8721,22 @@ function ModuloMedicoes({ obraId, obraNome }){
     if (!obraCfg?.origemCP) return;
     // Migrado da Supabase (`contratos_medicao`/`boletins_medicao`) para a
     // API intermediária — ver docs/16, Etapa 2. Devolve ARRAY igual o
-    // `select=*` de antes, então o parsing abaixo não mudou.
-    fetchComTimeout(`${API_MYSQL_URL}/medicoes/contrato?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, {})
+    // `select=*` de antes, então o parsing abaixo não mudou. Medições é
+    // financeiro (docs/15) — a API verifica acesso pelo mesmo token de
+    // sessão que o front já usa pro Supabase, por isso `MSEAuth.headers()`
+    // vai junto (Authorization: Bearer <token>); sem token, ou sem acesso a
+    // esta obra, a API recusa (401/403) e vira o card de erro abaixo.
+    const headers = MSEAuth.headers();
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/contrato?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => setContratoRaw(Array.isArray(rows) && rows[0] ? rows[0] : {}))
       .catch(() => { setContratoErro(true); setContratoRaw({}); });
-    fetchComTimeout(`${API_MYSQL_URL}/medicoes/boletins?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, {})
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/boletins?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => { if (!Array.isArray(rows)) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
       .catch(() => { setBoletinsErro(true); setBoletinsRaw([]); });
     // Curva física (Curva S) — só pro farol Medido×Físico. Ainda no
     // Supabase (Curva S migra só na Etapa 3) — fora do escopo desta troca.
-    const headers = MSEAuth.headers();
     fetchPaginadoCompat(`${SUPABASE_URL}/rest/v1/curvas_s?obra=eq.${encodeURIComponent(obraCfg.curva)}&select=data,acum_realizado&order=data.asc`, headers)
       .then(r => r.ok ? r.json() : null)
       .then(rows => setCurvaFisica(Array.isArray(rows) ? rows : []))
