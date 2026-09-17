@@ -11,13 +11,15 @@
 // Este script busca PÁGINA A PÁGINA e grava cada página antes de pedir a
 // próxima — pegada de memória pequena e constante, não importa o total.
 //
-// Uso:
+// Uso via linha de comando (útil pra testar 1 obra por vez):
 //   node scripts/sync-rmi.js          # todas as obras (tabela `obras`)
 //   node scripts/sync-rmi.js 91       # só uma obra — testar assim primeiro
 //
-// Agendamento (substitui o agendamento do n8n, 08:00): cron ou systemd
-// timer no servidor da API chamando este script — ver docs/16.
-import 'dotenv/config';
+// Agendamento de verdade (produção): `sincronizarRmi()` é chamada pelo
+// agendador embutido no próprio servidor (`src/scheduler.js`) — não
+// precisa de cron/systemd externo, só do deploy. Ver docs/16.
+import 'dotenv/config'; // idempotente — inofensivo mesmo se o server.js já carregou
+import { fileURLToPath } from 'node:url';
 // Pool (não uma única `createConnection`) de propósito — achado ao testar
 // as 7 obras de verdade: uma conexão só, viva pelo script inteiro
 // (minutos, entremeado de chamadas HTTP à API do PortalMSE), tomou
@@ -67,34 +69,42 @@ async function sincronizarObra(idObra, nomeObra) {
   return recebidos;
 }
 
-async function main() {
+// Núcleo reusável — chamado tanto pelo CLI (abaixo) quanto pelo agendador
+// embutido (`src/scheduler.js`), que reusa o MESMO pool do servidor (nunca
+// fecha ele — quem fecha é só o uso via CLI, no bloco de baixo).
+export async function sincronizarRmi(filtroObra = null) {
   if (!RMI_API_URL || !RMI_API_TOKEN) {
     throw new Error('Faltam RMI_API_URL/RMI_API_TOKEN no .env.');
   }
 
-  try {
-    const filtroObra = process.argv[2] ? Number(process.argv[2]) : null;
-    const [obras] = await pool.query(
-      filtroObra ? 'SELECT id, nome FROM obras WHERE id = ?' : 'SELECT id, nome FROM obras',
-      filtroObra ? [filtroObra] : [],
-    );
-    if (!obras.length) throw new Error(filtroObra ? `Obra ${filtroObra} não encontrada.` : 'Nenhuma obra cadastrada.');
+  const [obras] = await pool.query(
+    filtroObra ? 'SELECT id, nome FROM obras WHERE id = ?' : 'SELECT id, nome FROM obras',
+    filtroObra ? [filtroObra] : [],
+  );
+  if (!obras.length) throw new Error(filtroObra ? `Obra ${filtroObra} não encontrada.` : 'Nenhuma obra cadastrada.');
 
-    console.log(`Sincronizando RMI para ${obras.length} obra(s)...`);
-    let totalGeral = 0;
-    for (const obra of obras) {
-      try {
-        totalGeral += await sincronizarObra(obra.id, obra.nome);
-      } catch (err) {
-        // Uma obra com problema não derruba as outras — mesma filosofia
-        // do processamento 1-a-1 que já existia no n8n.
-        console.error(`  [obra ${obra.id}] FALHOU: ${err.message}`);
-      }
+  console.log(`Sincronizando RMI para ${obras.length} obra(s)...`);
+  let totalGeral = 0;
+  for (const obra of obras) {
+    try {
+      totalGeral += await sincronizarObra(obra.id, obra.nome);
+    } catch (err) {
+      // Uma obra com problema não derruba as outras — mesma filosofia
+      // do processamento 1-a-1 que já existia no n8n.
+      console.error(`  [obra ${obra.id}] FALHOU: ${err.message}`);
     }
-    console.log(`Concluído: ${totalGeral} itens no total.`);
+  }
+  console.log(`Concluído: ${totalGeral} itens no total.`);
+  return totalGeral;
+}
+
+// Só roda sozinho quando chamado direto (`node scripts/sync-rmi.js`) —
+// importado pelo agendador, não executa nada nem fecha o pool aqui.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const filtroObra = process.argv[2] ? Number(process.argv[2]) : null;
+  try {
+    await sincronizarRmi(filtroObra);
   } finally {
     await pool.end();
   }
 }
-
-await main();

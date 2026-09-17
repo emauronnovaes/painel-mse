@@ -9,6 +9,7 @@ import { restricoesRouter } from './routes/restricoes.js';
 import { medicoesRouter } from './routes/medicoes.js';
 import { ocRouter } from './routes/oc.js';
 import { suprimentosRouter } from './routes/suprimentos.js';
+import { iniciarAgendador } from './scheduler.js';
 
 const app = express();
 // CORS aberto: o `prototipo` é servido de outra origem (Firebase/portal em
@@ -51,6 +52,11 @@ try {
   console.error('[migrate] falha ao aplicar migrations, servidor nao vai subir', err);
   process.exit(1);
 }
+
+// Agendamento embutido (RMI/Mapa de Compras) — pedido explícito: "só fazer
+// o deploy e já está funcionando", sem depender de cron/systemd externo
+// configurado à parte. Ver src/scheduler.js.
+iniciarAgendador();
 
 const port = process.env.PORT || 3001;
 app.listen(port, () => {

@@ -8,10 +8,15 @@
 // depois — mesma ordem lógica que o front consome (cada item referencia
 // uma requisição por `id_mapa_compras`).
 //
-// Uso:
+// Uso via linha de comando (útil pra testar 1 obra por vez):
 //   node scripts/sync-mapa-compras.js          # todas as obras
 //   node scripts/sync-mapa-compras.js 91       # só uma obra
-import 'dotenv/config';
+//
+// Agendamento de verdade (produção): `sincronizarMapaCompras()` é chamada
+// pelo agendador embutido no próprio servidor (`src/scheduler.js`) — não
+// precisa de cron/systemd externo, só do deploy. Ver docs/16.
+import 'dotenv/config'; // idempotente — inofensivo mesmo se o server.js já carregou
+import { fileURLToPath } from 'node:url';
 import { pool } from '../src/db/pool.js';
 import { paginarRecurso } from './lib/paginar-portalmse.js';
 
@@ -126,32 +131,40 @@ async function sincronizarObra(idObra, nomeObra) {
   return nReq + nItens;
 }
 
-async function main() {
+// Núcleo reusável — chamado tanto pelo CLI (abaixo) quanto pelo agendador
+// embutido (`src/scheduler.js`), que reusa o MESMO pool do servidor (nunca
+// fecha ele — quem fecha é só o uso via CLI, no bloco de baixo).
+export async function sincronizarMapaCompras(filtroObra = null) {
   if (!MAPA_COMPRAS_API_URL || !MAPA_COMPRAS_API_TOKEN) {
     throw new Error('Faltam MAPA_COMPRAS_API_URL/MAPA_COMPRAS_API_TOKEN no .env.');
   }
 
-  try {
-    const filtroObra = process.argv[2] ? Number(process.argv[2]) : null;
-    const [obras] = await pool.query(
-      filtroObra ? 'SELECT id, nome FROM obras WHERE id = ?' : 'SELECT id, nome FROM obras',
-      filtroObra ? [filtroObra] : [],
-    );
-    if (!obras.length) throw new Error(filtroObra ? `Obra ${filtroObra} não encontrada.` : 'Nenhuma obra cadastrada.');
+  const [obras] = await pool.query(
+    filtroObra ? 'SELECT id, nome FROM obras WHERE id = ?' : 'SELECT id, nome FROM obras',
+    filtroObra ? [filtroObra] : [],
+  );
+  if (!obras.length) throw new Error(filtroObra ? `Obra ${filtroObra} não encontrada.` : 'Nenhuma obra cadastrada.');
 
-    console.log(`Sincronizando Mapa de Compras para ${obras.length} obra(s)...`);
-    let totalGeral = 0;
-    for (const obra of obras) {
-      try {
-        totalGeral += await sincronizarObra(obra.id, obra.nome);
-      } catch (err) {
-        console.error(`  [obra ${obra.id}] FALHOU: ${err.message}`);
-      }
+  console.log(`Sincronizando Mapa de Compras para ${obras.length} obra(s)...`);
+  let totalGeral = 0;
+  for (const obra of obras) {
+    try {
+      totalGeral += await sincronizarObra(obra.id, obra.nome);
+    } catch (err) {
+      console.error(`  [obra ${obra.id}] FALHOU: ${err.message}`);
     }
-    console.log(`Concluído: ${totalGeral} linhas no total.`);
+  }
+  console.log(`Concluído: ${totalGeral} linhas no total.`);
+  return totalGeral;
+}
+
+// Só roda sozinho quando chamado direto (`node scripts/sync-mapa-compras.js`)
+// — importado pelo agendador, não executa nada nem fecha o pool aqui.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const filtroObra = process.argv[2] ? Number(process.argv[2]) : null;
+  try {
+    await sincronizarMapaCompras(filtroObra);
   } finally {
     await pool.end();
   }
 }
-
-await main();
