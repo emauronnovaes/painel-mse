@@ -6387,25 +6387,17 @@ function ModuloSuprimentos({ obraId, obraNome }){
       .then(rows => setStatusManualPorItem(Object.fromEntries(rows.map(r => [r.id_item, r.status]))))
       .catch(() => {});
   }, [obraId, obraValidada, statusManualDesativado]);
-  // Requisições associadas aos itens RMI — busca de requisicoes_mapa_compras
-  // e itens_mapa_compras pra montar o nível "Requisições" do pop-up de
-  // material. Trazida de volta (2026-09-02, pedido explícito: "vamos voltar
-  // a lógica") — tinha sido retirada quando o n8n não estava dando conta do
-  // volume de `/v1/itens`; agora esse endpoint tem um fluxo n8n PRÓPRIO,
-  // separado do de requisições, com paginação de 20 em 20 (ver
-  // `n8n/itens-mapa-compras-suprimentos.workflow.json`).
-  // `select` nomeado (não `select=*`) — só os campos que este módulo lê,
-  // sem o `raw` jsonb (achado de egress, 2026-09-02: CNPEM sozinha tinha
-  // 5,6MB de `raw` aqui — o corte continua valendo mesmo com o fluxo
-  // separado, o motivo era o TAMANHO da resposta, não o volume de chamadas).
+  // Requisições associadas aos itens RMI — migrado da Supabase
+  // (`requisicoes_mapa_compras`/`itens_mapa_compras`) para a API
+  // intermediária, ver docs/16 Etapa 2. Ingestão deixou de ser n8n (mesmo
+  // problema de latência/volume do RMI) e virou `api/scripts/sync-mapa-compras.js`.
   const [requisicoesPorItemRmi, setRequisicoesPorItemRmi] = useState({});
   useEffect(() => {
     if (!obraValidada) return;
-    const headers = MSEAuth.headers();
     // Busca todas as requisições da obra + seus itens. Join via id_mapa_compras.
     Promise.all([
-      fetchPaginado(`${SUPABASE_URL}/rest/v1/requisicoes_mapa_compras?id_obra=eq.${obraId}&select=id,id_rmi,nome_rmi,requisicao,requisicao_tipo,tipo,grupo,categoria,descricao,status_requisicao,data_cadastro,data_necessidade,requisitante,data_cronograma_fechado,solicitacao_enviada,necessario_contrato,necessario_art,total_itens`, headers),
-      fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_mapa_compras?id_obra=eq.${obraId}&select=id,id_mapa_compras,codigo_seq,descricao,unidade,quantidade,tem_pedido,fornecedor_ref,subtotal_referencia_bd_s1`, headers),
+      fetchComTimeout(`${API_MYSQL_URL}/suprimentos/mapa-compras/requisicoes?id_obra=${obraId}`, {}).then(r => r.ok ? r.json() : null),
+      fetchComTimeout(`${API_MYSQL_URL}/suprimentos/mapa-compras/itens?id_obra=${obraId}`, {}).then(r => r.ok ? r.json() : null),
     ])
       .then(([requisicoes, itens]) => {
         if (!requisicoes || !itens) { setRequisicoesPorItemRmi({}); return; }

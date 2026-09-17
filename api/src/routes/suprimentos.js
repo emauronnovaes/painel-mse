@@ -44,3 +44,46 @@ suprimentosRouter.get('/rmi', async (req, res) => {
     res.status(500).json({ erro: 'Falha ao ler itens de RMI.' });
   }
 });
+
+// Mapa de Compras — colunas próprias (não `raw`), mesmos campos que o
+// `prototipo` já pedia via `select` no Supabase (achado de egress lá:
+// CNPEM sozinha tinha 5,6MB de `raw` nessa consulta — o corte continua
+// valendo). Sem RLS financeira (conferido antes de expor, mesma checagem
+// da lição de Medições/OC).
+suprimentosRouter.get('/mapa-compras/requisicoes', async (req, res) => {
+  const idObra = Number(req.query.id_obra);
+  if (!Number.isInteger(idObra)) return res.status(400).json({ erro: 'id_obra invalido.' });
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, id_rmi, nome_rmi, requisicao, requisicao_tipo, tipo, grupo, categoria,
+              descricao, status_requisicao, data_cadastro, data_necessidade, requisitante,
+              data_cronograma_fechado, solicitacao_enviada, necessario_contrato,
+              necessario_art, total_itens
+       FROM sup_mapa_compras_requisicoes WHERE id_obra = ?`,
+      [idObra],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[suprimentos/mapa-compras/requisicoes] falha ao ler', err);
+    res.status(500).json({ erro: 'Falha ao ler requisicoes.' });
+  }
+});
+
+suprimentosRouter.get('/mapa-compras/itens', async (req, res) => {
+  const idObra = Number(req.query.id_obra);
+  if (!Number.isInteger(idObra)) return res.status(400).json({ erro: 'id_obra invalido.' });
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT id, id_mapa_compras, codigo_seq, descricao, unidade, quantidade,
+              tem_pedido, fornecedor_ref, subtotal_referencia_bd_s1
+       FROM sup_mapa_compras_itens WHERE id_obra = ?`,
+      [idObra],
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error('[suprimentos/mapa-compras/itens] falha ao ler', err);
+    res.status(500).json({ erro: 'Falha ao ler itens de mapa de compras.' });
+  }
+});
