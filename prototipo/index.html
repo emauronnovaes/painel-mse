@@ -5179,8 +5179,12 @@ function ModuloOcCo({ obraId, obraNome }){
     setDado(null); setResumo(null); setErro(false); setBusca('');
     setOrdenarPor('valor'); setOrdenarDir('desc'); setDetalhe(null); setAprovadoAberto(false);
     setFiltroStatus(null); setFiltroExecucao(null);
+    // Migrado da Supabase (`orcamentos_complementares_obra`) para a API
+    // intermediária — ver docs/16, Etapa 2. OC/CO é financeiro (mesma
+    // restrição de Medições), por isso `MSEAuth.headers()` continua indo
+    // junto — a API verifica acesso pelo mesmo token de sessão.
     const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/orcamentos_complementares_obra?id_obra=eq.${obraId}&select=ocs,resumo,total,atualizado_em`, { headers })
+    fetchComTimeout(`${API_MYSQL_URL}/oc?id_obra=${obraId}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => {
         if (rows === null) { setErro(true); setDado([]); return; }
@@ -8719,16 +8723,24 @@ function ModuloMedicoes({ obraId, obraNome }){
   useEffect(() => {
     setContratoRaw(null); setContratoErro(false); setBoletinsRaw(null); setBoletinsErro(false); setCurvaFisica(null);
     if (!obraCfg?.origemCP) return;
+    // Migrado da Supabase (`contratos_medicao`/`boletins_medicao`) para a
+    // API intermediária — ver docs/16, Etapa 2. Devolve ARRAY igual o
+    // `select=*` de antes, então o parsing abaixo não mudou. Medições é
+    // financeiro (docs/15) — a API verifica acesso pelo mesmo token de
+    // sessão que o front já usa pro Supabase, por isso `MSEAuth.headers()`
+    // vai junto (Authorization: Bearer <token>); sem token, ou sem acesso a
+    // esta obra, a API recusa (401/403) e vira o card de erro abaixo.
     const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/contratos_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*`, { headers })
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/contrato?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => setContratoRaw(Array.isArray(rows) && rows[0] ? rows[0] : {}))
       .catch(() => { setContratoErro(true); setContratoRaw({}); });
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/boletins_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*&order=linha_planilha.asc`, headers)
-      .then(rows => { if (rows === null) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/boletins?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, { headers })
+      .then(r => r.ok ? r.json() : null)
+      .then(rows => { if (!Array.isArray(rows)) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
       .catch(() => { setBoletinsErro(true); setBoletinsRaw([]); });
-    // Curva física (Curva S) — só pro farol Medido×Físico. Mesma tabela e
-    // convenção de nome (`obraCfg.curva`) já usada no setor Curva S.
+    // Curva física (Curva S) — só pro farol Medido×Físico. Ainda no
+    // Supabase (Curva S migra só na Etapa 3) — fora do escopo desta troca.
     fetchPaginadoCompat(`${SUPABASE_URL}/rest/v1/curvas_s?obra=eq.${encodeURIComponent(obraCfg.curva)}&select=data,acum_realizado&order=data.asc`, headers)
       .then(r => r.ok ? r.json() : null)
       .then(rows => setCurvaFisica(Array.isArray(rows) ? rows : []))

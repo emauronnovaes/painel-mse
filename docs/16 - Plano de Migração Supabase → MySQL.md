@@ -232,30 +232,95 @@ isolada a autorizar; a lista serve para não migrar por engano.
       campos do payload original (`edt`, `id_eap`, `criticidade`,
       `nome_responsavel` etc.) intactos dentro do JSON. Ingestão do piloto
       funcionando ponta a ponta com produção, não só teste sintético.
-- [ ] **Pendência de infra (fora do meu alcance — usuário não tem acesso
-      SSH):** decidir onde a API roda. Decidido (16/09/2026): **mesmo
-      servidor do MySQL** (`dbsubdominios.portalmse.com.br`), deploy em si
-      depende de outra pessoa/equipe de infra. **Escopo do bloqueio mudou**:
-      não bloqueia mais a ingestão (nó MySQL nativo resolveu isso), só
-      bloqueia a **leitura** — o `prototipo` (navegador) não pode falar com
-      o MySQL direto (repetiria o erro da anon key exposta, ADR-007), então
-      o `GET` que ele vai consumir só funciona com a API no ar.
-- [ ] Expor o domínio na API intermediária (leitura — falta o `GET` que o
-      `prototipo` vai consumir, só a escrita foi feita até aqui). Código dá
-      pra fazer agora; só não é **testável ponta a ponta pelo navegador**
-      até a API estar deployada.
-- [ ] Trocar o consumo no `prototipo` para a API intermediária. Depende do
-      `GET` acima e do deploy.
-- [ ] Validar ponta a ponta (ingestão → MySQL → API → tela) antes de escalar.
-      Ingestão já validada com dado real; falta API deployada + tela pra
-      fechar o ciclo completo.
+- [x] **Deploy da API resolvido (17/09/2026)**: no ar em
+      `painelmse.portalmse.com.br` (mesmo domínio que já servia o
+      `prototipo` estaticamente — não é o `dbsubdominios` original, o
+      admin escolheu manter os dois no mesmo host), exposta em `/api/*`
+      via proxy reverso nginx (`proxy_pass` removendo o prefixo — o
+      `server.js` responde na raiz normalmente) e mantida no ar por
+      processo persistente (systemd/pm2, gerido pelo admin). `api/.env`
+      criado direto no servidor, nunca via git.
+- [x] Expor o domínio na API intermediária: `GET /restricoes?id_obra=`
+      (`api/src/routes/restricoes.js`), 404 quando a obra não tem
+      snapshot ainda (estado válido, não erro). Rotas montadas tanto na
+      raiz quanto sob `/api` (`server.js`), robusto a como o proxy tratar
+      o prefixo.
+- [x] Trocar o consumo no `prototipo` para a API intermediária.
+      `ModuloRestricoes` não chama mais `SUPABASE_URL/rest/v1/restricoes_obra`.
+      URL pública vem de `PUBLIC_API_URL` (`api/.env`, pedido do admin) via
+      `scripts/gerar-config-publico.js` → `prototipo/lib/config-publico.js`
+      (gerado, não versionado — o navegador não lê `.env` direto, não há
+      build step neste projeto); fallback por hostname se o arquivo não
+      existir.
+- [x] **Validado ponta a ponta em produção (17/09/2026)**: dentro do Portal
+      MSE (`portalmse.com.br`, iframe SSO), obra 91, aba Restrições — 9
+      restrições reais renderizadas, `GET
+      painelmse.portalmse.com.br/api/restricoes?id_obra=91` → `200`.
+      Ciclo completo ingestão (n8n) → MySQL → API → tela, com dado real,
+      fechado.
+
+**Etapa 1 CONCLUÍDA (17/09/2026).** Pronta pra servir de modelo repetível
+pras próximas etapas — ver "Receita validada" abaixo.
+
+### Receita validada (repetir a partir da Etapa 2)
+
+Pra cada domínio novo: (0) **conferir RLS no Supabase primeiro**
+(`pg_policies` — ver lição abaixo, "Etapa 2 não é 'sem auth complexa' por
+padrão"); (1) migration MySQL seguindo a convenção da Etapa 0; (2) `GET` de
+leitura na API, montado em `server.js` (raiz + `/api`, já automático se
+reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — nó MySQL
+nativo do n8n se não houver acesso SSH pra deploy de webhook (ou, se a
+ingestão for Apps Script, `Jdbc.getConnection` direto — ver Medições),
+seguindo a lição de escaping registrada na Etapa 1; (4) trocar o `fetch`
+correspondente no `prototipo` pela URL da API, incluindo `MSEAuth.headers()`
+se o domínio tiver RLS por e-mail/obra; (5) validar local (`serve-local.js`
++ `node src/server.js`) antes de validar em produção.
+
+**Lição (17/09/2026, achada ao migrar Medições, antes de qualquer deploy em
+produção):** nem todo domínio listado como "Etapa 2 — sem auth complexa" é
+de fato sem auth. Medições tinha RLS restritiva por obra
+(`mse_financeiro_lista`, ver docs/15 "financeiro por obra") que passou
+batido na primeira versão — copiei o padrão aberto de Restrições sem
+conferir. Corrigido: a API agora repassa o token de sessão do usuário pro
+Supabase (`RPC mse_acesso_total`/`mse_cps_financeiro`) em vez de replicar
+`acesso_total` no MySQL — ver `api/src/auth/financeiroSupabase.js`. **Antes
+de expor qualquer leitura nova como pública, rodar**:
+```sql
+select tablename, policyname, roles, permissive, cmd, qual
+from pg_policies where schemaname='public' and tablename in (...);
+```
+**OC/CO (`orcamentos_complementares_obra`) tem a MESMA restrição** (docs/15:
+"vê Medições e OC/CO SÓ da sua obra") — quando esse domínio entrar na fila,
+repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
 
 ### Etapa 2 — Domínios de leitura simples, sem auth complexa
 
 - [ ] Suprimentos — RMI.
 - [ ] Suprimentos — Mapa de Compras.
 - [ ] Suprimentos — status manual.
-- [ ] Medições (`contratos_medicao`/`boletins_medicao`).
+- [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
+      `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script
+      + `Jdbc` direto no MySQL (não via API — mesmo racional de Restrições,
+      sem depender do deploy). Leitura pela API, com verificação de acesso
+      financeiro (ver lição acima). `curvas_s` (farol Medido×Físico)
+      continua no Supabase, fora de escopo até a Etapa 3. **Falta**: deploy
+      em produção (mesmo bloqueio de infra de Restrições) e aplicar o
+      `.gs` ajustado na planilha "Saldo a Faturar" (entregue fora do
+      repo).
+- [x] Orçamentos Complementares — OC/CO (`orcamentos_complementares_obra`
+      → `oc_orcamentos`) — **concluída 17/09/2026**. Mesmo formato de
+      `rest_restricoes` (1 linha/obra, upsert por `id_obra`, JSON). Acesso
+      financeiro por `id_obra` desde o primeiro commit desta vez (não
+      depois, como em Medições) — `exigirAcessoFinanceiroObra`,
+      generalizado do middleware de Medições. Ingestão via n8n
+      (`n8n/oc-no-mysql.snippet.json`, mesmo padrão de query-como-
+      expressão-única de Restrições — o snippet antigo de Restrições
+      ainda usava o padrão quebrado com `queryReplacement`, corrigido
+      junto). `id_obra=103` (CNPEM-Auditório) existe no Supabase mas nunca
+      esteve em `OBRAS`/`panel-config.js` — não migrado, mesma regra de
+      "não transportar o que não está em uso". **Falta**: deploy em
+      produção e aplicar o snippet n8n novo (ainda a fazer por quem
+      administra o n8n).
 - [ ] Produtividade semanal — **atenção**: re-apontar também o
       `relatorios-pdf/gerar_relatorio.py`, não só o painel.
 
