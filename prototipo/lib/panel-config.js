@@ -13,7 +13,7 @@
     { id: 91, nome: 'Novo Nordisk - UB/SP', curva: 'NOVO NORDISK - UB SP', origemTV: 'NN - UB/SP - ELETROMECÂNICA', origemPTS: 'Novo Nordisk UB', origemCP: 'CP236', curvas: [
       { chave: 'NOVO NORDISK - UB SP - Take Off', label: 'Take-Off' }, { chave: 'NOVO NORDISK - UB SP', label: 'Original' },
     ] },
-    { id: 114, nome: 'IPEN' },
+    { id: 114, nome: 'IPEN', curva: 'IPEN' },
   ]);
 
   const SETORES = Object.freeze([
@@ -42,7 +42,12 @@
   });
   const OBRA_TOUR_360 = Object.freeze({
     106: 'https://visi.constructin.com.br/#/v?t=a3981477b7201496a8f16548e926170c6548a943548a092bf95774497ef7d47f&p=10971',
+    // Mesmo link (projeto Constructin p=11517) vale pras 3 obras Novo
+    // Nordisk — pedido explícito (2026-09-15): "o link do constructin será
+    // válido para todas as Novo Nordisk".
     107: 'https://visi.constructin.com.br/#/v?t=edc798829d281af4cc43b80fec23cea2df9eeba26a78cc8a434257bedd774461&p=11517',
+    108: 'https://visi.constructin.com.br/#/v?t=edc798829d281af4cc43b80fec23cea2df9eeba26a78cc8a434257bedd774461&p=11517',
+    91: 'https://visi.constructin.com.br/#/v?t=edc798829d281af4cc43b80fec23cea2df9eeba26a78cc8a434257bedd774461&p=11517',
   });
   const OBRA_ORTOFOTO = Object.freeze({
     94: Object.freeze({ dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' }),

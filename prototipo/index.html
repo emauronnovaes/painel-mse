@@ -548,6 +548,13 @@ const EFETIVO_SUPABASE_URL = "https://wnldmumgjwujveeimyef.supabase.co";
 const EFETIVO_API = `${SUPABASE_URL}/functions/v1/efetivo`;
 const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndubGRtdW1nand1anZlZWlteWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MjQ5ODUsImV4cCI6MjA4NzEwMDk4NX0.tVAuOlNORYEsWanz_-vrSAf8jOL2sIax2zoWPvXA_Kg";
 
+// ── API intermediária (migração Supabase → MySQL, docs/16) ──────────────────
+// Sem anon key aqui: a API não expõe credencial nenhuma ao navegador, quem
+// fala com o MySQL é sempre o servidor. Enquanto a API não está deployada
+// (bloqueio de infra, ver docs/16 Etapa 1), aponta para localhost — trocar
+// para a URL de produção quando o deploy existir.
+const API_MYSQL_URL = "http://localhost:3001";
+
 // Mesma lista/ids do app de relatórios (gerar_relatorio.py) e do dashboard atual
 // (ID_OBRA_POR_NOME) — `curva` é o valor literal de curvas_s.obra para cada uma.
 // `origemTV` é o valor de vw_dados_tv.OBRA / cards_ativos.nome_obra (mesma
@@ -2708,9 +2715,9 @@ function ModuloEncarregados({ obraId, obraNome }){
         return Object.entries(cont).sort((a, b) => b[1].n - a[1].n || rank(a[0]) - rank(b[0]))[0][1].label;
       };
 
-      // Busca as 3 fontes ANTES de decidir o dia — só depois de ver os dados
-      // de verdade dá pra saber qual é o dia mais recente que alguma delas
-      // realmente tem, em vez de adivinhar (era o que `tvRaw` sozinho fazia).
+      // As 3 fontes abaixo só entram DEPOIS de decidir o dia (via
+      // `diasComTv`, logo abaixo) — elas não pesam na escolha do dia, só são
+      // lidas no dia exato que a Aderência já determinou.
       const [apontPorCard, prodPorCard, efPorCard] = await Promise.all([
         emLotes('Apontamentos', 'id,status_qualidade,data_do_input', 'id'),
         emLotes('v_indices_financeiros_diario', 'tarefa_id,data,indice_receita_custo_incorrido', 'tarefa_id'),
@@ -2718,18 +2725,22 @@ function ModuloEncarregados({ obraId, obraNome }){
       ]);
 
       const diasComTv = new Set(tvRaw.map(r => parseBRDateParaYMD(r.DATA)).filter(Boolean));
-      const diasComApont = new Set();
-      Object.values(apontPorCard).forEach(rows => rows.forEach(r => { if (r.data_do_input) diasComApont.add(String(r.data_do_input).slice(0, 10)); }));
-      const diasComProd = new Set();
-      Object.values(prodPorCard).forEach(rows => rows.forEach(r => { if (r.data) diasComProd.add(String(r.data).slice(0, 10)); }));
-      const diasComEf = new Set();
-      Object.values(efPorCard).forEach(rows => rows.forEach(r => { if (r.data_consulta) diasComEf.add(String(r.data_consulta).slice(0, 10)); }));
 
-      const alvo = dataStatusOverride || getDiaAderencia();
-      const diaEfetivo = getDiaComDadoReal(
-        ymd => diasComTv.has(ymd) || diasComApont.has(ymd) || diasComProd.has(ymd) || diasComEf.has(ymd),
-        alvo,
-      ) || alvo; // 180 dias sem NADA em nenhuma fonte: usa o alvo mesmo, não trava a tela
+      // O dia de referência recua com base SÓ na Aderência (`vw_dados_tv`,
+      // `diasComTv`) — pedido explícito 2026-09-14: Qualidade/Performance/
+      // Colaboradores/Efetivo não entram nessa decisão, só "seguem" o dia
+      // que a Aderência determinar (sem dado deles nesse dia exato, ficam
+      // Pendente/— como já faziam). Antes, `getDiaAderencia()` pulava
+      // sábado/domingo às cegas (sem checar dado real) — se a obra aponta
+      // no sábado, o `alvo` já nascia na sexta e `getDiaComDadoReal` (que só
+      // recua, nunca avança) nunca mais enxergava o sábado, mesmo ele tendo
+      // aderência mais recente que a sexta (bug real 2026-09-14: campo
+      // "Data de Status" preso em 11/09 com aderência de verdade já em
+      // 12/09). `getDiaAderenciaComFallback` corrige isso pulando fim de
+      // semana só quando a Aderência não tiver dado nele.
+      const temAderencia = ymd => diasComTv.has(ymd);
+      const alvo = dataStatusOverride || getDiaAderenciaComFallback(temAderencia);
+      const diaEfetivo = getDiaComDadoReal(temAderencia, alvo) || alvo; // 180 dias sem aderência nenhuma: usa o alvo mesmo, não trava a tela
       if (!cancelado) setDiaStatusExibido(diaEfetivo);
 
       const statusPorCard = {};
@@ -2890,7 +2901,11 @@ function ModuloEncarregados({ obraId, obraNome }){
   // Selo "Ausente" — mesma view do Histograma (efetivo_diario_raw, projeto
   // Efetivo). Janela de 21 dias (não só 7) pra cobrir a "Data de Status"
   // ajustável (pedido explícito, 2026-08-27) — o usuário pode escolher
-  // qualquer dia dentro desse horizonte pra ver o Ausente daquele dia.
+  // qualquer dia dentro desse horizonte pra ver o Ausente daquele dia,
+  // INCLUSIVE hoje (mesmo pedido 2026-08-27 liberou o `max` do seletor pra
+  // hoje — a janela de busca precisa terminar em hoje, não ontem, senão o
+  // selo nunca aparece pra quem foi marcado ausente no próprio dia; bug
+  // encontrado 2026-09-11, JANIO DA LUZ SILVA ausente em 11/09 sem selo).
   // `fetchPaginado` (Range header), não `fetch` cru — 21 dias × todos os
   // colaboradores da obra pode passar de 1000 linhas (mesmo bug de corte
   // silencioso do PostgREST já catalogado no projeto), `limit=5000` sozinho
@@ -2899,10 +2914,9 @@ function ModuloEncarregados({ obraId, obraNome }){
     setPresencaEnc({});
     const headers = MSEAuth.headers();
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
-    const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1);
-    const vinteEUmDiasAtras = new Date(ontem); vinteEUmDiasAtras.setDate(ontem.getDate() - 20);
+    const vinteEUmDiasAtras = new Date(hoje); vinteEUmDiasAtras.setDate(hoje.getDate() - 20);
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    fetchPaginado(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(vinteEUmDiasAtras)}&data_efetivo_diario=lte.${ymd(ontem)}&select=nome,data_efetivo_diario,situacao`, headers)
+    fetchPaginado(`${EFETIVO_API}/efetivo_diario_raw?obra_id=eq.${obraId}&data_efetivo_diario=gte.${ymd(vinteEUmDiasAtras)}&data_efetivo_diario=lte.${ymd(hoje)}&select=nome,data_efetivo_diario,situacao`, headers)
       .then(rows => {
         const mapa = {};
         (Array.isArray(rows) ? rows : []).forEach(r => { if (r.nome) mapa[`${r.nome.trim().toUpperCase()}__${r.data_efetivo_diario}`] = r.situacao || ''; });
@@ -2922,12 +2936,24 @@ function ModuloEncarregados({ obraId, obraNome }){
     return h ? h.slice(0, 5) : null;
   };
 
-  // Dia de referência POR ENCARREGADO (fim de semana só conta se ELE tiver
-  // apontamento nele) + elegibilidade: só entra quem tem card ativo nesta
-  // obra OU apontou no seu próprio dia de referência — mesma regra corrigida
-  // no dashboard atual (ver [[cap-1000-linhas-supabase]]/RankingScreen).
+  // Dia de referência da Aderência: era calculado POR ENCARREGADO, isolado
+  // de Qualidade/Performance/Colaboradores (`diaStatusExibido` acima) — cada
+  // um podia recuar pra um dia diferente por conta própria (fonte atrasada
+  // pra um, não pro outro), e a tela acabava misturando dias na mesma linha
+  // (bug real 2026-09-14: Aderência de 12/09 ao lado de Qualidade de 11/09,
+  // sob um campo "Data de Status" que promete ser "o dia de referência de
+  // TODOS os indicadores da tela" — ver título do campo mais abaixo). Agora
+  // usa o MESMO `diaStatusExibido`; sem apontamento desse encarregado
+  // exatamente nesse dia, ele fica "sem apontamentos" (não herda um dia
+  // antigo só seu). `diaStatusExibido` só existe depois do 1º fetch da
+  // unificação — antes disso, mesmo fallback que ele usa (`alvo`) evita
+  // a tabela ficar vazia no carregamento inicial.
+  // Elegibilidade: só entra quem tem card ativo nesta obra OU apontou no dia
+  // de referência — mesma regra corrigida no dashboard atual (ver
+  // [[cap-1000-linhas-supabase]]/RankingScreen).
   const { linhas } = useMemo(() => {
     if (tvRaw == null || cardsRaw == null) return { linhas: null };
+    const diaRef = diaStatusExibido || dataStatusOverride || getDiaAderencia();
     const cardsEncsUpper = new Set(cardsRaw.map(c => c.responsavel_encarregado.trim().toUpperCase()));
     const hoje = new Date(); hoje.setHours(23, 59, 59, 999);
     const ontem = new Date(hoje); ontem.setDate(hoje.getDate() - 1); ontem.setHours(23, 59, 59, 999);
@@ -2953,7 +2979,7 @@ function ModuloEncarregados({ obraId, obraNome }){
     });
 
     let arr = Object.values(porEnc).map(s => {
-      const diaAderencia = dataStatusOverride || getDiaAderenciaComFallback(ymd => !!s.aderenciaPorDia[ymd]);
+      const diaAderencia = diaRef;
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
       return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
@@ -2964,7 +2990,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const nome = c.responsavel_encarregado.trim();
       if (encNamesSet.has(nome.toUpperCase())) return;
       encNamesSet.add(nome.toUpperCase());
-      arr.push({ nome, diaAderencia: dataStatusOverride || getDiaAderencia(), aderenciaLin: null, score: -1, semApontamentos: true });
+      arr.push({ nome, diaAderencia: diaRef, aderenciaLin: null, score: -1, semApontamentos: true });
     });
 
     arr.forEach(s => { s.ausente = statusPresenca(s.nome, s.diaAderencia) === 'Ausente'; });
@@ -2974,7 +3000,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       b.score - a.score);
 
     return { linhas: arr };
-  }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride]);
+  }, [tvRaw, cardsRaw, presencaEnc, dataStatusOverride, diaStatusExibido]);
 
   const [ordenarEnc, setOrdenarEnc] = useState('aderencia');
   const [ordenarDirEnc, setOrdenarDirEnc] = useState('desc');
@@ -4816,12 +4842,19 @@ function ModuloRestricoes({ obraId, obraNome }){
   useEffect(() => {
     setDado(null); setErro(false); setBusca(''); setOrdenarPor('prioridade'); setOrdenarDir('asc');
     setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false); setFiltroStatus(null);
-    const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/restricoes_obra?id_obra=eq.${obraId}&select=restricoes,atualizado_em`, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then(rows => {
-        if (rows === null) { setErro(true); setDado([]); return; }
-        setDado(Array.isArray(rows[0]?.restricoes) ? rows[0].restricoes : []);
+    // Migrado da Supabase (`restricoes_obra`) para a API intermediária
+    // (`rest_restricoes` no MySQL) — ver docs/16. 404 = obra sem snapshot
+    // ainda (estado válido, vira lista vazia); qualquer outro erro é falha
+    // de verdade.
+    fetchComTimeout(`${API_MYSQL_URL}/restricoes?id_obra=${obraId}`, {})
+      .then(r => {
+        if (r.status === 404) return { restricoes: [] };
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(corpo => {
+        if (corpo === null) { setErro(true); setDado([]); return; }
+        setDado(Array.isArray(corpo.restricoes) ? corpo.restricoes : []);
       })
       .catch(() => { setErro(true); setDado([]); });
   }, [obraId]);

@@ -2,6 +2,9 @@ node_modules/
 package-lock.json
 .firebase/
 
+# Segredos da API intermediaria (Etapa 0 da migracao MySQL) — nunca versionar
+api/.env
+
 # Saida do Playwright (regerada a cada run, nao e fonte)
 test-results/
 playwright-report/
