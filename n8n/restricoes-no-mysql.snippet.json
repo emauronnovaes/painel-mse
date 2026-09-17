@@ -4,14 +4,14 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "INSERT INTO rest_restricoes (id_obra, total, restricoes)\nVALUES (?, ?, CAST(? AS JSON))\nON DUPLICATE KEY UPDATE total = VALUES(total), restricoes = VALUES(restricoes)",
-        "options": {
-          "queryReplacement": "={{ [$json.id_obra, $json.total, JSON.stringify($json.restricoes)] }}"
-        }
+        "query": "={{ (() => {\n  const escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\n  const numero = (v) => (v === null || v === undefined) ? 'NULL' : Number(v);\n  return \"INSERT INTO rest_restricoes (id_obra, total, restricoes) VALUES (\" +\n    numero($json.id_obra) + \", \" + numero($json.total) + \", CAST(\" + escapar(JSON.stringify($json.restricoes || [])) + \" AS JSON)\" +\n    \") ON DUPLICATE KEY UPDATE total = VALUES(total), restricoes = VALUES(restricoes)\";\n})() }}"
       },
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.4,
-      "position": [780, 300],
+      "position": [
+        780,
+        300
+      ],
       "id": "d4a1c6e8-3f2b-4a9d-8e7c-1b5f9d2a6c4e",
       "name": "Gravar Restrições — MySQL"
     }

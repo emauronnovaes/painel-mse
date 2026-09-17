@@ -5179,8 +5179,12 @@ function ModuloOcCo({ obraId, obraNome }){
     setDado(null); setResumo(null); setErro(false); setBusca('');
     setOrdenarPor('valor'); setOrdenarDir('desc'); setDetalhe(null); setAprovadoAberto(false);
     setFiltroStatus(null); setFiltroExecucao(null);
+    // Migrado da Supabase (`orcamentos_complementares_obra`) para a API
+    // intermediária — ver docs/16, Etapa 2. OC/CO é financeiro (mesma
+    // restrição de Medições), por isso `MSEAuth.headers()` continua indo
+    // junto — a API verifica acesso pelo mesmo token de sessão.
     const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/orcamentos_complementares_obra?id_obra=eq.${obraId}&select=ocs,resumo,total,atualizado_em`, { headers })
+    fetchComTimeout(`${API_MYSQL_URL}/oc?id_obra=${obraId}`, { headers })
       .then(r => r.ok ? r.json() : null)
       .then(rows => {
         if (rows === null) { setErro(true); setDado([]); return; }

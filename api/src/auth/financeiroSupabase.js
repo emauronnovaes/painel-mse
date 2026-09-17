@@ -42,31 +42,65 @@ function listaEscalar(dados, nomeCampo) {
   return dados.map(d => (typeof d === 'object' && d !== null ? d[nomeCampo] ?? Object.values(d)[0] : d));
 }
 
+async function temAcessoFinanceiro(token, { cpCodigo, idObra }) {
+  const total = await chamarRpc('mse_acesso_total', token);
+  if (total === true) return true;
+
+  if (cpCodigo) {
+    const cps = listaEscalar(await chamarRpc('mse_cps_financeiro', token), 'mse_cps_financeiro');
+    if (cps.includes(cpCodigo)) return true;
+  }
+  if (idObra != null) {
+    const obras = listaEscalar(await chamarRpc('mse_obras_financeiro', token), 'mse_obras_financeiro');
+    if (obras.includes(idObra)) return true;
+  }
+  return false;
+}
+
+function extrairToken(req) {
+  const cabecalho = req.headers['authorization'] || '';
+  return cabecalho.startsWith('Bearer ') ? cabecalho.slice(7).trim() : '';
+}
+
 /** Middleware: exige `req.query.cp_codigo` autorizado pro e-mail da sessão
  *  (`Authorization: Bearer <token>` — o mesmo token que o front já usa pra
  *  falar com o Supabase). 401 sem token; 403 com token válido mas sem
- *  acesso a este cp_codigo. */
+ *  acesso a este cp_codigo. Usado por Medições (`contratos_medicao`/
+ *  `boletins_medicao` são chaveados por `cp_codigo`). */
 export async function exigirAcessoFinanceiroCp(req, res, next) {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     console.error('[financeiro] SUPABASE_URL/SUPABASE_ANON_KEY nao configurados');
     return res.status(500).json({ erro: 'Funcao mal configurada.' });
   }
-
-  const cabecalho = req.headers['authorization'] || '';
-  const token = cabecalho.startsWith('Bearer ') ? cabecalho.slice(7).trim() : '';
+  const token = extrairToken(req);
   if (!token) return res.status(401).json({ erro: 'Sessao necessaria para ver dados financeiros.' });
 
-  const cpCodigo = String(req.query.cp_codigo || '').trim();
+  try {
+    const cpCodigo = String(req.query.cp_codigo || '').trim();
+    if (await temAcessoFinanceiro(token, { cpCodigo })) return next();
+    return res.status(403).json({ erro: 'Sem acesso financeiro para esta obra.' });
+  } catch (err) {
+    console.error('[financeiro] falha ao verificar acesso via Supabase', err);
+    return res.status(403).json({ erro: 'Nao foi possivel verificar acesso financeiro.' });
+  }
+}
+
+/** Mesma verificação, mas por `id_obra` (numérico) em vez de `cp_codigo` —
+ *  usado por OC/CO (`orcamentos_complementares_obra`, chaveada por
+ *  `id_obra` direto, sem convenção de código de contrato). */
+export async function exigirAcessoFinanceiroObra(req, res, next) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('[financeiro] SUPABASE_URL/SUPABASE_ANON_KEY nao configurados');
+    return res.status(500).json({ erro: 'Funcao mal configurada.' });
+  }
+  const token = extrairToken(req);
+  if (!token) return res.status(401).json({ erro: 'Sessao necessaria para ver dados financeiros.' });
+
+  const idObra = Number(req.query.id_obra);
+  if (!Number.isInteger(idObra)) return res.status(400).json({ erro: 'id_obra invalido.' });
 
   try {
-    const total = await chamarRpc('mse_acesso_total', token);
-    if (total === true) return next();
-
-    if (cpCodigo) {
-      const cps = listaEscalar(await chamarRpc('mse_cps_financeiro', token), 'mse_cps_financeiro');
-      if (cps.includes(cpCodigo)) return next();
-    }
-
+    if (await temAcessoFinanceiro(token, { idObra })) return next();
     return res.status(403).json({ erro: 'Sem acesso financeiro para esta obra.' });
   } catch (err) {
     console.error('[financeiro] falha ao verificar acesso via Supabase', err);

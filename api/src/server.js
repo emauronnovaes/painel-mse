@@ -6,6 +6,7 @@ import { authRouter } from './routes/auth.js';
 import { ingestRouter } from './routes/ingest.js';
 import { restricoesRouter } from './routes/restricoes.js';
 import { medicoesRouter } from './routes/medicoes.js';
+import { ocRouter } from './routes/oc.js';
 
 const app = express();
 // CORS aberto: o `prototipo` é servido de outra origem (Firebase/portal em
@@ -33,6 +34,7 @@ for (const prefixo of ['', '/api']) {
   app.use(`${prefixo}/ingest`, ingestRouter);
   app.use(`${prefixo}/restricoes`, restricoesRouter);
   app.use(`${prefixo}/medicoes`, medicoesRouter);
+  app.use(`${prefixo}/oc`, ocRouter);
   app.get(`${prefixo}/health`, health);
 }
 

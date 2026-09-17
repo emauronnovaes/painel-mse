@@ -47,6 +47,31 @@ ingestRouter.post('/restricoes', async (req, res) => {
   }
 });
 
+// Mesmo padrão de /restricoes: upsert por id_obra, snapshot inteiro
+// resubstituído a cada sync do n8n.
+ingestRouter.post('/oc', async (req, res) => {
+  const { id_obra, total, ocs, resumo } = req.body ?? {};
+
+  if (!Number.isInteger(id_obra)) return res.status(400).json({ erro: 'id_obra invalido.' });
+  if (ocs === undefined || ocs === null) return res.status(400).json({ erro: 'ocs e obrigatorio.' });
+
+  try {
+    await pool.query(
+      `INSERT INTO oc_orcamentos (id_obra, total, ocs, resumo)
+       VALUES (?, ?, CAST(? AS JSON), CAST(? AS JSON))
+       ON DUPLICATE KEY UPDATE total = VALUES(total), ocs = VALUES(ocs), resumo = VALUES(resumo)`,
+      [id_obra, total ?? null, JSON.stringify(ocs), resumo === undefined ? null : JSON.stringify(resumo)],
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'ER_NO_REFERENCED_ROW_2') {
+      return res.status(400).json({ erro: `id_obra ${id_obra} nao existe em obras.` });
+    }
+    console.error('[ingest/oc] falha ao gravar', err);
+    res.status(500).json({ erro: 'Falha ao gravar orcamentos complementares.' });
+  }
+});
+
 // Colunas que o Apps Script de Medições ("Saldo a Faturar") envia — extra
 // como `atualizado_em` no payload é ignorado de propósito: quem controla
 // esse timestamp é o MySQL (`ON UPDATE CURRENT_TIMESTAMP`), não o cliente.
