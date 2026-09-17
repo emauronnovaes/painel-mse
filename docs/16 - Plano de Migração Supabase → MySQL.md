@@ -344,6 +344,25 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
       rodar com o token real. **Falta**: `MAPA_COMPRAS_API_URL/TOKEN`
       reais (token próprio desse serviço, diferente do de `rmi_api`) e o
       mesmo cron/systemd timer.
+
+      **Achado ao testar com token real (17/09/2026): `mapa_compras_api`
+      é instável de forma IMPREVISÍVEL** — a mesma página, testada
+      isolada, respondeu em 5s, 10s e 11s em tentativas diferentes, mas
+      dentro do script travou 2x seguidas SEM responder nada em nenhuma
+      das 5 tentativas (60s cada, ~5-6min de espera total por obra antes
+      de desistir). Não é rajada (reproduzi as mesmas 3 chamadas em
+      sequência via `curl` puro, fora do script, e funcionou — não é
+      nosso código causando). É instabilidade real do serviço de origem,
+      sem padrão determinístico identificável.
+
+      **Decisão do usuário (17/09/2026): aceitar falha parcial.** Se uma
+      obra falhar num dia (todas as 5 tentativas esgotadas), ela fica com
+      o dado da sincronização anterior até o cron do dia seguinte rodar
+      de novo — não se tenta forçar sucesso com mais tentativas/timeout
+      maior, nem rodar o cron mais de uma vez ao dia. Simples, sem mudar
+      o script. Mesmo comportamento vale pra RMI se algum dia repetir.
+      Fica registrado como limitação conhecida e aceita, não bug em
+      aberto.
 - [ ] Suprimentos — status manual.
 - [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
       `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script

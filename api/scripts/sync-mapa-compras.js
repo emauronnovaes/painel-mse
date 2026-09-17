@@ -58,7 +58,7 @@ const COLUNAS_ITENS = [
 
 function linhaItem(item, idObra) {
   return [
-    num(item.id_item), idObra, num(item.id_mapa_compras), txt(item.codigo_seq),
+    num(item.id), idObra, num(item.id_mapa_compras), txt(item.codigo_seq),
     txt(item.descricao), txt(item.unidade), num(item.quantidade),
     num(item.preco_referencia_bd_s1), num(item.subtotal_referencia_bd_s1),
     num(item.custo_meta_orcamento), num(item.subtotal_custo_meta_orcamento),
@@ -81,6 +81,7 @@ function montarSqlUpsert(tabela, colunas, linhas) {
 
 async function sincronizarRecurso({ idObra, caminho, colunas, montarLinha, tabela, nomeChaveId }) {
   const montarUrl = (page, perPage) => `${MAPA_COMPRAS_API_URL}/v1/${caminho}?obra_id=${idObra}&page=${page}&per_page=${perPage}`;
+  let gravados = 0;
 
   const { recebidos, totalDeclarado } = await paginarRecurso({
     montarUrl,
@@ -88,19 +89,28 @@ async function sincronizarRecurso({ idObra, caminho, colunas, montarLinha, tabel
     perPage: PER_PAGE,
     onPagina: async (dados) => {
       const validos = dados.filter((item) => item && item[nomeChaveId] != null);
+      // Achado ao migrar (17/09/2026): um nome de campo errado (`id_item`
+      // em vez de `id`) descartava TODOS os itens aqui, silenciosamente —
+      // o log antigo mostrava "+200" (contagem de RECEBIDOS da API, não de
+      // GRAVADOS no banco), mascarando 0 linhas persistidas como sucesso.
+      // Agora `gravados` é contado à parte, e qualquer descarte alerta.
+      if (validos.length !== dados.length) {
+        console.error(`  [obra ${idObra}] AVISO (${caminho}): ${dados.length - validos.length} de ${dados.length} itens sem "${nomeChaveId}" — descartados, NÃO gravados.`);
+      }
       if (validos.length) {
         const linhas = validos.map((item) => montarLinha(item, idObra));
         const { sql, valores } = montarSqlUpsert(tabela, colunas, linhas);
         await pool.query(sql, valores);
+        gravados += validos.length;
       }
-      console.log(`  [obra ${idObra}] ${caminho}: +${dados.length}`);
+      console.log(`  [obra ${idObra}] ${caminho}: +${validos.length} gravados (${dados.length} recebidos)`);
     },
   });
 
   if (totalDeclarado != null && recebidos !== totalDeclarado) {
     console.error(`  [obra ${idObra}] AVISO (${caminho}): recebido ${recebidos}, API declarou total=${totalDeclarado}.`);
   }
-  return recebidos;
+  return gravados;
 }
 
 async function sincronizarObra(idObra, nomeObra) {
@@ -110,7 +120,7 @@ async function sincronizarObra(idObra, nomeObra) {
   });
   const nItens = await sincronizarRecurso({
     idObra, caminho: 'itens', colunas: COLUNAS_ITENS,
-    montarLinha: linhaItem, tabela: 'sup_mapa_compras_itens', nomeChaveId: 'id_item',
+    montarLinha: linhaItem, tabela: 'sup_mapa_compras_itens', nomeChaveId: 'id',
   });
   console.log(`  [obra ${idObra}] "${nomeObra}" concluída: ${nReq} requisições, ${nItens} itens.`);
   return nReq + nItens;
