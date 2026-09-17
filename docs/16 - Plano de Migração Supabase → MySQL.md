@@ -266,15 +266,62 @@ pras próximas etapas — ver "Receita validada" abaixo.
 
 Pra cada domínio novo: (0) **conferir RLS no Supabase primeiro**
 (`pg_policies` — ver lição abaixo, "Etapa 2 não é 'sem auth complexa' por
-padrão"); (1) migration MySQL seguindo a convenção da Etapa 0; (2) `GET` de
-leitura na API, montado em `server.js` (raiz + `/api`, já automático se
-reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — nó MySQL
-nativo do n8n se não houver acesso SSH pra deploy de webhook (ou, se a
-ingestão for Apps Script, `Jdbc.getConnection` direto — ver Medições),
-seguindo a lição de escaping registrada na Etapa 1; (4) trocar o `fetch`
-correspondente no `prototipo` pela URL da API, incluindo `MSEAuth.headers()`
-se o domínio tiver RLS por e-mail/obra; (5) validar local (`serve-local.js`
-+ `node src/server.js`) antes de validar em produção.
+padrão"); (1) migration MySQL seguindo a convenção da Etapa 0 (índice
+sempre INLINE — `KEY`/`UNIQUE KEY` dentro do `CREATE TABLE`, nunca
+`CREATE INDEX` solto: migrations rodam sozinhas a cada boot da API desde
+17/09, e um `CREATE INDEX` fora da tabela quebra na 2ª execução); (2) `GET`
+de leitura na API, montado em `server.js` (raiz + `/api`, já automático se
+reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — escolher
+conforme volume e origem:
+  - **Origem é planilha/Sheets (Apps Script)**: `Jdbc.getConnection` direto
+    no MySQL — ver Medições.
+  - **Origem é n8n e o volume é pequeno**: nó MySQL nativo, query inteira
+    como expressão única (nunca "Query Parameters" — não confiável entre
+    versões), com guard `INSERT ... SELECT ... WHERE EXISTS (SELECT 1 FROM
+    obras WHERE id = X)` pra `id_obra` que não existe não quebrar o resto
+    do lote — ver Restrições/OC.
+  - **Origem é uma API HTTP e o volume é grande o bastante pro n8n travar**
+    (motor de workflow mantém respostas inteiras em memória — sintoma:
+    "roda e não retorna", sem erro): script Node dedicado em
+    `api/scripts/`, paginando de verdade (página busca→grava→descarta,
+    nunca `?all=true`/tudo de uma vez), com a lógica principal exportada
+    como função (não só CLI) pra ser chamada pelo **agendador embutido**
+    (ver abaixo) — ver `sync-rmi.js`/`sync-mapa-compras.js`. Corta o n8n
+    fora do domínio.
+(4) trocar o `fetch` correspondente no `prototipo` pela URL da API,
+incluindo `MSEAuth.headers()` se o domínio tiver RLS por e-mail/obra;
+(5) validar local (`serve-local.js` + `node src/server.js`) antes de
+validar em produção.
+
+### Agendamento embutido (17/09/2026)
+
+Pedido explícito do usuário: **"preciso que seja automático, só fazer o
+deploy e já está funcionando"** — sem depender de alguém configurar
+cron/systemd timer manualmente no servidor depois de cada deploy.
+
+`api/src/scheduler.js` usa `node-cron` (dependência nova) pra chamar
+`sincronizarRmi()`/`sincronizarMapaCompras()` **direto dentro do próprio
+processo da API**, no boot (`iniciarAgendador()` em `server.js`, junto
+das migrations automáticas). Mesmos horários que o n8n já usava — Mapa
+de Compras 07:30, RMI 08:00, `timezone: 'America/Sao_Paulo'` explícito
+(não confia no fuso do SO do servidor). Testado: o `node-cron` dispara
+de verdade no minuto agendado (teste isolado com horário próximo, não é
+só suposição).
+
+Cada script (`sync-rmi.js`, `sync-mapa-compras.js`) exporta a função
+principal e reusa o pool de conexão do servidor quando chamado pelo
+agendador (nunca fecha o pool nesse caminho — quem fecha é só o uso via
+CLI direto, `node scripts/sync-rmi.js [id_obra]`, que continua
+funcionando igual pra testar uma obra isolada).
+
+Falha de sincronização só loga (`console.error`), nunca derruba o
+processo da API — mesma filosofia de "aceitar falha parcial" já
+documentada abaixo (achado do Mapa de Compras).
+
+**Se um domínio futuro também precisar desse padrão**: adicionar mais um
+`cron.schedule(...)` em `scheduler.js`, escolhendo um horário que não
+colida com os já existentes (a mesma API de origem/pool não deveria
+receber 2 sincronizações grandes ao mesmo tempo).
 
 **Lição (17/09/2026, achada ao migrar Medições, antes de qualquer deploy em
 produção):** nem todo domínio listado como "Etapa 2 — sem auth complexa" é
@@ -295,8 +342,60 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
 
 ### Etapa 2 — Domínios de leitura simples, sem auth complexa
 
-- [ ] Suprimentos — RMI.
-- [ ] Suprimentos — Mapa de Compras.
+- [x] Suprimentos — RMI (`itens_rmi` → `sup_rmi`) — **concluída 17/09/2026**,
+      exceto o token de produção. Schema enxuto igual ao original
+      (`id`/`id_obra`/`raw` JSON, sem coluna por campo). Sem RLS financeira
+      (RMI não é financeiro). **Ingestão mudou de mecanismo**: o n8n não
+      dava conta do volume (obra 94/Porto Itapoá, ~8 mil itens, travava
+      sem erro — estouro de memória do motor de workflow, já documentado
+      em `n8n/rmi-suprimentos.README.md`). Substituído por
+      `api/scripts/sync-rmi.js`: busca página a página na API do PortalMSE
+      (`rmi_api`) e grava cada página antes de pedir a próxima — memória
+      pequena e constante. Lista de obras vem da tabela `obras`, não
+      hardcoded. **Ingestão rodada de ponta a ponta em ambiente local
+      (17/09/2026): 26.605 itens, 7/7 obras, 0 falhas** — confirmou que
+      não é rate limit, é a própria API sendo lenta (~20-30s por chamada,
+      qualquer obra) — explica o "roda e não retorna" do n8n (provável
+      timeout HTTP padrão do node de workflow). **Falta só**:
+      `RMI_API_TOKEN` real no `.env` de PRODUÇÃO (já testado localmente).
+      Agendamento não depende mais de cron/systemd externo — ver
+      "Agendamento embutido" abaixo.
+- [x] Suprimentos — Mapa de Compras (`itens_mapa_compras` +
+      `requisicoes_mapa_compras` → `sup_mapa_compras_itens` +
+      `sup_mapa_compras_requisicoes`) — **concluída 17/09/2026 (código)**,
+      falta só o token. Mesmo padrão de RMI: chave de upsert é o id
+      próprio da API de origem (`id_item` pro item), ingestão via
+      `api/scripts/sync-mapa-compras.js` (sincroniza requisições antes de
+      itens), reaproveitando a lógica de paginação/retry de RMI — extraída
+      pra `scripts/lib/paginar-portalmse.js` nesta migração, pra não
+      duplicar. Sem RLS financeira (conferido antes de expor). **Achado
+      confirmado de novo**: `itens_mapa_compras` seguia sem dado pras
+      obras 94/108 no Supabase (o workflow n8n paginado que resolveria
+      isso nunca foi commitado no repo) — o novo script reprocessa do
+      zero direto da API de origem, então isso se resolve sozinho quando
+      rodar com o token real. **Falta**: `MAPA_COMPRAS_API_URL/TOKEN`
+      reais (token próprio desse serviço, diferente do de `rmi_api`).
+      Agendamento não depende mais de cron/systemd externo — ver
+      "Agendamento embutido" abaixo.
+
+      **Achado ao testar com token real (17/09/2026): `mapa_compras_api`
+      é instável de forma IMPREVISÍVEL** — a mesma página, testada
+      isolada, respondeu em 5s, 10s e 11s em tentativas diferentes, mas
+      dentro do script travou 2x seguidas SEM responder nada em nenhuma
+      das 5 tentativas (60s cada, ~5-6min de espera total por obra antes
+      de desistir). Não é rajada (reproduzi as mesmas 3 chamadas em
+      sequência via `curl` puro, fora do script, e funcionou — não é
+      nosso código causando). É instabilidade real do serviço de origem,
+      sem padrão determinístico identificável.
+
+      **Decisão do usuário (17/09/2026): aceitar falha parcial.** Se uma
+      obra falhar num dia (todas as 5 tentativas esgotadas), ela fica com
+      o dado da sincronização anterior até o cron do dia seguinte rodar
+      de novo — não se tenta forçar sucesso com mais tentativas/timeout
+      maior, nem rodar o cron mais de uma vez ao dia. Simples, sem mudar
+      o script. Mesmo comportamento vale pra RMI se algum dia repetir.
+      Fica registrado como limitação conhecida e aceita, não bug em
+      aberto.
 - [ ] Suprimentos — status manual.
 - [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
       `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script

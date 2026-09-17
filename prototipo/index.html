@@ -6387,25 +6387,17 @@ function ModuloSuprimentos({ obraId, obraNome }){
       .then(rows => setStatusManualPorItem(Object.fromEntries(rows.map(r => [r.id_item, r.status]))))
       .catch(() => {});
   }, [obraId, obraValidada, statusManualDesativado]);
-  // Requisições associadas aos itens RMI — busca de requisicoes_mapa_compras
-  // e itens_mapa_compras pra montar o nível "Requisições" do pop-up de
-  // material. Trazida de volta (2026-09-02, pedido explícito: "vamos voltar
-  // a lógica") — tinha sido retirada quando o n8n não estava dando conta do
-  // volume de `/v1/itens`; agora esse endpoint tem um fluxo n8n PRÓPRIO,
-  // separado do de requisições, com paginação de 20 em 20 (ver
-  // `n8n/itens-mapa-compras-suprimentos.workflow.json`).
-  // `select` nomeado (não `select=*`) — só os campos que este módulo lê,
-  // sem o `raw` jsonb (achado de egress, 2026-09-02: CNPEM sozinha tinha
-  // 5,6MB de `raw` aqui — o corte continua valendo mesmo com o fluxo
-  // separado, o motivo era o TAMANHO da resposta, não o volume de chamadas).
+  // Requisições associadas aos itens RMI — migrado da Supabase
+  // (`requisicoes_mapa_compras`/`itens_mapa_compras`) para a API
+  // intermediária, ver docs/16 Etapa 2. Ingestão deixou de ser n8n (mesmo
+  // problema de latência/volume do RMI) e virou `api/scripts/sync-mapa-compras.js`.
   const [requisicoesPorItemRmi, setRequisicoesPorItemRmi] = useState({});
   useEffect(() => {
     if (!obraValidada) return;
-    const headers = MSEAuth.headers();
     // Busca todas as requisições da obra + seus itens. Join via id_mapa_compras.
     Promise.all([
-      fetchPaginado(`${SUPABASE_URL}/rest/v1/requisicoes_mapa_compras?id_obra=eq.${obraId}&select=id,id_rmi,nome_rmi,requisicao,requisicao_tipo,tipo,grupo,categoria,descricao,status_requisicao,data_cadastro,data_necessidade,requisitante,data_cronograma_fechado,solicitacao_enviada,necessario_contrato,necessario_art,total_itens`, headers),
-      fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_mapa_compras?id_obra=eq.${obraId}&select=id,id_mapa_compras,codigo_seq,descricao,unidade,quantidade,tem_pedido,fornecedor_ref,subtotal_referencia_bd_s1`, headers),
+      fetchComTimeout(`${API_MYSQL_URL}/suprimentos/mapa-compras/requisicoes?id_obra=${obraId}`, {}).then(r => r.ok ? r.json() : null),
+      fetchComTimeout(`${API_MYSQL_URL}/suprimentos/mapa-compras/itens?id_obra=${obraId}`, {}).then(r => r.ok ? r.json() : null),
     ])
       .then(([requisicoes, itens]) => {
         if (!requisicoes || !itens) { setRequisicoesPorItemRmi({}); return; }
@@ -6727,7 +6719,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
   useEffect(() => {
     if (!obraValidada) return;
     setTodosItens(null); setErro(false);
-    const headers = MSEAuth.headers();
+    // Migrado da Supabase (`itens_rmi`) para a API intermediária — ver
+    // docs/16, Etapa 2. Ingestão deixou de ser n8n (motor de workflow não
+    // dava conta do volume da obra 94/Porto Itapoá, ~8 mil itens) e virou
+    // um script Node dedicado (`api/scripts/sync-rmi.js`), com paginação
+    // de verdade contra a API do PortalMSE.
+    //
     // Busca a obra INTEIRA (todos os níveis) de uma vez — resolver
     // disciplina + área + material precisa caminhar a árvore até a
     // folha, e essa folha pode estar em qualquer profundidade (ver
@@ -6735,21 +6732,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
     // (~500 a ~8.000 linhas) pra isso valer mais que ficar buscando
     // nível por nível sob demanda.
     //
-    // `select` pede só os campos de `raw` REALMENTE usados por
-    // `ModuloSuprimentos` (`FIELDS_RAW_ITENS_RMI`), em vez da coluna
-    // inteira — pedido explícito (2026-09-02: "acredito que estamos
-    // estourando o egress" → confirmado, 6,6GB no plano free, 5GB inclusos).
-    // `raw` é o payload bruto da API do PortalMSE (20+ campos, alguns
-    // grandes) e essa tela só lê 13 deles. Testado ao vivo (Porto Itapoá,
-    // maior obra): 11MB → 2,8MB por carga, ~75% menor — sem mudar nenhum
-    // outro trecho do código, porque o `.then` abaixo remonta o mesmo
-    // formato `{ id, raw: {...} }` que todo o resto do módulo já espera
-    // (dezenas de `.raw.<campo>` espalhados). `raw->campo` (1 seta, não
-    // `->>`) preserva o TIPO original do JSON (número/boolean/string) —
-    // com `->>` tudo viraria string e quebraria comparações como
-    // `raw.nivel === 0` e `!!raw.finalizado`.
-    const selectItensRmi = `id,${FIELDS_RAW_ITENS_RMI.map(c => `${c}:raw->${c}`).join(',')}`;
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&select=${encodeURIComponent(selectItensRmi)}`, headers)
+    // A API já devolve só os 13 campos de `raw` REALMENTE usados por
+    // `ModuloSuprimentos` (`FIELDS_RAW_ITENS_RMI`, achatados no servidor,
+    // não em SQL — preserva tipo número/boolean sem ambiguidade), no
+    // mesmo formato `{ id, campo, ... }` que este `.then` já espera.
+    fetchComTimeout(`${API_MYSQL_URL}/suprimentos/rmi?id_obra=${obraId}`, {})
+      .then(r => r.ok ? r.json() : null)
       .then(rows => {
         if (rows === null) { setErro(true); setTodosItens([]); return; }
         setTodosItens(rows.map(r => {
