@@ -6727,7 +6727,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
   useEffect(() => {
     if (!obraValidada) return;
     setTodosItens(null); setErro(false);
-    const headers = MSEAuth.headers();
+    // Migrado da Supabase (`itens_rmi`) para a API intermediária — ver
+    // docs/16, Etapa 2. Ingestão deixou de ser n8n (motor de workflow não
+    // dava conta do volume da obra 94/Porto Itapoá, ~8 mil itens) e virou
+    // um script Node dedicado (`api/scripts/sync-rmi.js`), com paginação
+    // de verdade contra a API do PortalMSE.
+    //
     // Busca a obra INTEIRA (todos os níveis) de uma vez — resolver
     // disciplina + área + material precisa caminhar a árvore até a
     // folha, e essa folha pode estar em qualquer profundidade (ver
@@ -6735,21 +6740,12 @@ function ModuloSuprimentos({ obraId, obraNome }){
     // (~500 a ~8.000 linhas) pra isso valer mais que ficar buscando
     // nível por nível sob demanda.
     //
-    // `select` pede só os campos de `raw` REALMENTE usados por
-    // `ModuloSuprimentos` (`FIELDS_RAW_ITENS_RMI`), em vez da coluna
-    // inteira — pedido explícito (2026-09-02: "acredito que estamos
-    // estourando o egress" → confirmado, 6,6GB no plano free, 5GB inclusos).
-    // `raw` é o payload bruto da API do PortalMSE (20+ campos, alguns
-    // grandes) e essa tela só lê 13 deles. Testado ao vivo (Porto Itapoá,
-    // maior obra): 11MB → 2,8MB por carga, ~75% menor — sem mudar nenhum
-    // outro trecho do código, porque o `.then` abaixo remonta o mesmo
-    // formato `{ id, raw: {...} }` que todo o resto do módulo já espera
-    // (dezenas de `.raw.<campo>` espalhados). `raw->campo` (1 seta, não
-    // `->>`) preserva o TIPO original do JSON (número/boolean/string) —
-    // com `->>` tudo viraria string e quebraria comparações como
-    // `raw.nivel === 0` e `!!raw.finalizado`.
-    const selectItensRmi = `id,${FIELDS_RAW_ITENS_RMI.map(c => `${c}:raw->${c}`).join(',')}`;
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/itens_rmi?id_obra=eq.${obraId}&select=${encodeURIComponent(selectItensRmi)}`, headers)
+    // A API já devolve só os 13 campos de `raw` REALMENTE usados por
+    // `ModuloSuprimentos` (`FIELDS_RAW_ITENS_RMI`, achatados no servidor,
+    // não em SQL — preserva tipo número/boolean sem ambiguidade), no
+    // mesmo formato `{ id, campo, ... }` que este `.then` já espera.
+    fetchComTimeout(`${API_MYSQL_URL}/suprimentos/rmi?id_obra=${obraId}`, {})
+      .then(r => r.ok ? r.json() : null)
       .then(rows => {
         if (rows === null) { setErro(true); setTodosItens([]); return; }
         setTodosItens(rows.map(r => {
