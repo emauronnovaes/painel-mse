@@ -266,15 +266,30 @@ pras próximas etapas — ver "Receita validada" abaixo.
 
 Pra cada domínio novo: (0) **conferir RLS no Supabase primeiro**
 (`pg_policies` — ver lição abaixo, "Etapa 2 não é 'sem auth complexa' por
-padrão"); (1) migration MySQL seguindo a convenção da Etapa 0; (2) `GET` de
-leitura na API, montado em `server.js` (raiz + `/api`, já automático se
-reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — nó MySQL
-nativo do n8n se não houver acesso SSH pra deploy de webhook (ou, se a
-ingestão for Apps Script, `Jdbc.getConnection` direto — ver Medições),
-seguindo a lição de escaping registrada na Etapa 1; (4) trocar o `fetch`
-correspondente no `prototipo` pela URL da API, incluindo `MSEAuth.headers()`
-se o domínio tiver RLS por e-mail/obra; (5) validar local (`serve-local.js`
-+ `node src/server.js`) antes de validar em produção.
+padrão"); (1) migration MySQL seguindo a convenção da Etapa 0 (índice
+sempre INLINE — `KEY`/`UNIQUE KEY` dentro do `CREATE TABLE`, nunca
+`CREATE INDEX` solto: migrations rodam sozinhas a cada boot da API desde
+17/09, e um `CREATE INDEX` fora da tabela quebra na 2ª execução); (2) `GET`
+de leitura na API, montado em `server.js` (raiz + `/api`, já automático se
+reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — escolher
+conforme volume e origem:
+  - **Origem é planilha/Sheets (Apps Script)**: `Jdbc.getConnection` direto
+    no MySQL — ver Medições.
+  - **Origem é n8n e o volume é pequeno**: nó MySQL nativo, query inteira
+    como expressão única (nunca "Query Parameters" — não confiável entre
+    versões), com guard `INSERT ... SELECT ... WHERE EXISTS (SELECT 1 FROM
+    obras WHERE id = X)` pra `id_obra` que não existe não quebrar o resto
+    do lote — ver Restrições/OC.
+  - **Origem é uma API HTTP e o volume é grande o bastante pro n8n travar**
+    (motor de workflow mantém respostas inteiras em memória — sintoma:
+    "roda e não retorna", sem erro): script Node dedicado em
+    `api/scripts/`, paginando de verdade (página busca→grava→descarta,
+    nunca `?all=true`/tudo de uma vez), agendado por cron/systemd timer no
+    servidor da API — ver `sync-rmi.js`. Corta o n8n fora do domínio.
+(4) trocar o `fetch` correspondente no `prototipo` pela URL da API,
+incluindo `MSEAuth.headers()` se o domínio tiver RLS por e-mail/obra;
+(5) validar local (`serve-local.js` + `node src/server.js`) antes de
+validar em produção.
 
 **Lição (17/09/2026, achada ao migrar Medições, antes de qualquer deploy em
 produção):** nem todo domínio listado como "Etapa 2 — sem auth complexa" é
@@ -295,8 +310,29 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
 
 ### Etapa 2 — Domínios de leitura simples, sem auth complexa
 
-- [ ] Suprimentos — RMI.
-- [ ] Suprimentos — Mapa de Compras.
+- [x] Suprimentos — RMI (`itens_rmi` → `sup_rmi`) — **concluída 17/09/2026**,
+      exceto o token de produção. Schema enxuto igual ao original
+      (`id`/`id_obra`/`raw` JSON, sem coluna por campo). Sem RLS financeira
+      (RMI não é financeiro). **Ingestão mudou de mecanismo**: o n8n não
+      dava conta do volume (obra 94/Porto Itapoá, ~8 mil itens, travava
+      sem erro — estouro de memória do motor de workflow, já documentado
+      em `n8n/rmi-suprimentos.README.md`). Substituído por
+      `api/scripts/sync-rmi.js`: busca página a página na API do PortalMSE
+      (`rmi_api`) e grava cada página antes de pedir a próxima — memória
+      pequena e constante. Lista de obras vem da tabela `obras`, não
+      hardcoded. **Falta**: `RMI_API_TOKEN` real no `.env` de produção
+      (token da API `rmi_api`, diferente do de `mapa_compras_api`) e um
+      cron/systemd timer no servidor da API chamando o script (substitui o
+      agendamento das 08:00 que era do n8n) — ver "Receita validada"
+      abaixo, atualizada com essa mudança de padrão de ingestão.
+- [ ] Suprimentos — Mapa de Compras (`itens_mapa_compras` +
+      `requisicoes_mapa_compras`). **Mesmo problema de volume que RMI
+      tinha, e pior**: `itens_mapa_compras` está sem dado pras obras 94 e
+      108 no Supabase — o workflow n8n paginado que resolveria isso
+      (`itens-mapa-compras-suprimentos.workflow.json`, citado em comentário
+      no `prototipo/index.html`) nunca foi commitado, só existe (se ainda
+      existir) direto no n8n. Aplicar o mesmo padrão de `sync-rmi.js`
+      (script Node paginado) aqui também.
 - [ ] Suprimentos — status manual.
 - [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
       `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script
