@@ -1,4 +1,5 @@
 {
+  "name": "Snippet — Gravar Restrições no MySQL",
   "nodes": [
     {
       "parameters": {
@@ -15,5 +16,9 @@
       "name": "Gravar Restrições — MySQL"
     }
   ],
-  "connections": {}
+  "connections": {},
+  "pinData": {},
+  "meta": {
+    "instanceId": "painel-mse-migracao"
+  }
 }

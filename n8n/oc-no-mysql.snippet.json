@@ -1,4 +1,5 @@
 {
+  "name": "Snippet — Gravar OC/CO no MySQL",
   "nodes": [
     {
       "parameters": {
@@ -15,5 +16,9 @@
       "name": "Gravar OC/CO — MySQL"
     }
   ],
-  "connections": {}
+  "connections": {},
+  "pinData": {},
+  "meta": {
+    "instanceId": "painel-mse-migracao"
+  }
 }
