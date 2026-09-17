@@ -284,12 +284,44 @@ conforme volume e origem:
     (motor de workflow mantém respostas inteiras em memória — sintoma:
     "roda e não retorna", sem erro): script Node dedicado em
     `api/scripts/`, paginando de verdade (página busca→grava→descarta,
-    nunca `?all=true`/tudo de uma vez), agendado por cron/systemd timer no
-    servidor da API — ver `sync-rmi.js`. Corta o n8n fora do domínio.
+    nunca `?all=true`/tudo de uma vez), com a lógica principal exportada
+    como função (não só CLI) pra ser chamada pelo **agendador embutido**
+    (ver abaixo) — ver `sync-rmi.js`/`sync-mapa-compras.js`. Corta o n8n
+    fora do domínio.
 (4) trocar o `fetch` correspondente no `prototipo` pela URL da API,
 incluindo `MSEAuth.headers()` se o domínio tiver RLS por e-mail/obra;
 (5) validar local (`serve-local.js` + `node src/server.js`) antes de
 validar em produção.
+
+### Agendamento embutido (17/09/2026)
+
+Pedido explícito do usuário: **"preciso que seja automático, só fazer o
+deploy e já está funcionando"** — sem depender de alguém configurar
+cron/systemd timer manualmente no servidor depois de cada deploy.
+
+`api/src/scheduler.js` usa `node-cron` (dependência nova) pra chamar
+`sincronizarRmi()`/`sincronizarMapaCompras()` **direto dentro do próprio
+processo da API**, no boot (`iniciarAgendador()` em `server.js`, junto
+das migrations automáticas). Mesmos horários que o n8n já usava — Mapa
+de Compras 07:30, RMI 08:00, `timezone: 'America/Sao_Paulo'` explícito
+(não confia no fuso do SO do servidor). Testado: o `node-cron` dispara
+de verdade no minuto agendado (teste isolado com horário próximo, não é
+só suposição).
+
+Cada script (`sync-rmi.js`, `sync-mapa-compras.js`) exporta a função
+principal e reusa o pool de conexão do servidor quando chamado pelo
+agendador (nunca fecha o pool nesse caminho — quem fecha é só o uso via
+CLI direto, `node scripts/sync-rmi.js [id_obra]`, que continua
+funcionando igual pra testar uma obra isolada).
+
+Falha de sincronização só loga (`console.error`), nunca derruba o
+processo da API — mesma filosofia de "aceitar falha parcial" já
+documentada abaixo (achado do Mapa de Compras).
+
+**Se um domínio futuro também precisar desse padrão**: adicionar mais um
+`cron.schedule(...)` em `scheduler.js`, escolhendo um horário que não
+colida com os já existentes (a mesma API de origem/pool não deveria
+receber 2 sincronizações grandes ao mesmo tempo).
 
 **Lição (17/09/2026, achada ao migrar Medições, antes de qualquer deploy em
 produção):** nem todo domínio listado como "Etapa 2 — sem auth complexa" é
@@ -325,9 +357,9 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
       não é rate limit, é a própria API sendo lenta (~20-30s por chamada,
       qualquer obra) — explica o "roda e não retorna" do n8n (provável
       timeout HTTP padrão do node de workflow). **Falta só**:
-      `RMI_API_TOKEN` real no `.env` de PRODUÇÃO (já testado localmente) e
-      um cron/systemd timer no servidor da API chamando o script
-      (substitui o agendamento das 08:00 do n8n).
+      `RMI_API_TOKEN` real no `.env` de PRODUÇÃO (já testado localmente).
+      Agendamento não depende mais de cron/systemd externo — ver
+      "Agendamento embutido" abaixo.
 - [x] Suprimentos — Mapa de Compras (`itens_mapa_compras` +
       `requisicoes_mapa_compras` → `sup_mapa_compras_itens` +
       `sup_mapa_compras_requisicoes`) — **concluída 17/09/2026 (código)**,
@@ -342,8 +374,9 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
       isso nunca foi commitado no repo) — o novo script reprocessa do
       zero direto da API de origem, então isso se resolve sozinho quando
       rodar com o token real. **Falta**: `MAPA_COMPRAS_API_URL/TOKEN`
-      reais (token próprio desse serviço, diferente do de `rmi_api`) e o
-      mesmo cron/systemd timer.
+      reais (token próprio desse serviço, diferente do de `rmi_api`).
+      Agendamento não depende mais de cron/systemd externo — ver
+      "Agendamento embutido" abaixo.
 
       **Achado ao testar com token real (17/09/2026): `mapa_compras_api`
       é instável de forma IMPREVISÍVEL** — a mesma página, testada
