@@ -4,7 +4,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "={{ (() => {\n  const escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\n  const numero = (v) => (v === null || v === undefined) ? 'NULL' : Number(v);\n  const ocsJson = escapar(JSON.stringify($json.ocs || []));\n  const resumoJson = $json.resumo == null ? 'NULL' : \"CAST(\" + escapar(JSON.stringify($json.resumo)) + \" AS JSON)\";\n  return \"INSERT INTO oc_orcamentos (id_obra, total, ocs, resumo) VALUES (\" +\n    numero($json.id_obra) + \", \" + numero($json.total) + \", CAST(\" + ocsJson + \" AS JSON), \" + resumoJson +\n    \") ON DUPLICATE KEY UPDATE total = VALUES(total), ocs = VALUES(ocs), resumo = VALUES(resumo)\";\n})() }}"
+        "query": "={{ (() => {\n  const escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\n  const numero = (v) => (v === null || v === undefined) ? 'NULL' : Number(v);\n  const idObra = numero($json.id_obra);\n  const ocsJson = escapar(JSON.stringify($json.ocs || []));\n  const resumoJson = $json.resumo == null ? 'NULL' : \"CAST(\" + escapar(JSON.stringify($json.resumo)) + \" AS JSON)\";\n  return \"INSERT INTO oc_orcamentos (id_obra, total, ocs, resumo) \" +\n    \"SELECT \" + idObra + \", \" + numero($json.total) + \", CAST(\" + ocsJson + \" AS JSON), \" + resumoJson + \" \" +\n    \"FROM DUAL WHERE EXISTS (SELECT 1 FROM obras WHERE id = \" + idObra + \") \" +\n    \"ON DUPLICATE KEY UPDATE total = VALUES(total), ocs = VALUES(ocs), resumo = VALUES(resumo)\";\n})() }}"
       },
       "type": "n8n-nodes-base.mySql",
       "typeVersion": 2.4,
