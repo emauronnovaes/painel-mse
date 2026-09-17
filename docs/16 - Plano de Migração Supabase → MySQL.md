@@ -307,6 +307,20 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
       em produção (mesmo bloqueio de infra de Restrições) e aplicar o
       `.gs` ajustado na planilha "Saldo a Faturar" (entregue fora do
       repo).
+- [x] Orçamentos Complementares — OC/CO (`orcamentos_complementares_obra`
+      → `oc_orcamentos`) — **concluída 17/09/2026**. Mesmo formato de
+      `rest_restricoes` (1 linha/obra, upsert por `id_obra`, JSON). Acesso
+      financeiro por `id_obra` desde o primeiro commit desta vez (não
+      depois, como em Medições) — `exigirAcessoFinanceiroObra`,
+      generalizado do middleware de Medições. Ingestão via n8n
+      (`n8n/oc-no-mysql.snippet.json`, mesmo padrão de query-como-
+      expressão-única de Restrições — o snippet antigo de Restrições
+      ainda usava o padrão quebrado com `queryReplacement`, corrigido
+      junto). `id_obra=103` (CNPEM-Auditório) existe no Supabase mas nunca
+      esteve em `OBRAS`/`panel-config.js` — não migrado, mesma regra de
+      "não transportar o que não está em uso". **Falta**: deploy em
+      produção e aplicar o snippet n8n novo (ainda a fazer por quem
+      administra o n8n).
 - [ ] Produtividade semanal — **atenção**: re-apontar também o
       `relatorios-pdf/gerar_relatorio.py`, não só o painel.
 
