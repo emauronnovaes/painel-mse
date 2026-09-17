@@ -320,19 +320,30 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
       `api/scripts/sync-rmi.js`: busca página a página na API do PortalMSE
       (`rmi_api`) e grava cada página antes de pedir a próxima — memória
       pequena e constante. Lista de obras vem da tabela `obras`, não
-      hardcoded. **Falta**: `RMI_API_TOKEN` real no `.env` de produção
-      (token da API `rmi_api`, diferente do de `mapa_compras_api`) e um
-      cron/systemd timer no servidor da API chamando o script (substitui o
-      agendamento das 08:00 que era do n8n) — ver "Receita validada"
-      abaixo, atualizada com essa mudança de padrão de ingestão.
-- [ ] Suprimentos — Mapa de Compras (`itens_mapa_compras` +
-      `requisicoes_mapa_compras`). **Mesmo problema de volume que RMI
-      tinha, e pior**: `itens_mapa_compras` está sem dado pras obras 94 e
-      108 no Supabase — o workflow n8n paginado que resolveria isso
-      (`itens-mapa-compras-suprimentos.workflow.json`, citado em comentário
-      no `prototipo/index.html`) nunca foi commitado, só existe (se ainda
-      existir) direto no n8n. Aplicar o mesmo padrão de `sync-rmi.js`
-      (script Node paginado) aqui também.
+      hardcoded. **Ingestão rodada de ponta a ponta em ambiente local
+      (17/09/2026): 26.605 itens, 7/7 obras, 0 falhas** — confirmou que
+      não é rate limit, é a própria API sendo lenta (~20-30s por chamada,
+      qualquer obra) — explica o "roda e não retorna" do n8n (provável
+      timeout HTTP padrão do node de workflow). **Falta só**:
+      `RMI_API_TOKEN` real no `.env` de PRODUÇÃO (já testado localmente) e
+      um cron/systemd timer no servidor da API chamando o script
+      (substitui o agendamento das 08:00 do n8n).
+- [x] Suprimentos — Mapa de Compras (`itens_mapa_compras` +
+      `requisicoes_mapa_compras` → `sup_mapa_compras_itens` +
+      `sup_mapa_compras_requisicoes`) — **concluída 17/09/2026 (código)**,
+      falta só o token. Mesmo padrão de RMI: chave de upsert é o id
+      próprio da API de origem (`id_item` pro item), ingestão via
+      `api/scripts/sync-mapa-compras.js` (sincroniza requisições antes de
+      itens), reaproveitando a lógica de paginação/retry de RMI — extraída
+      pra `scripts/lib/paginar-portalmse.js` nesta migração, pra não
+      duplicar. Sem RLS financeira (conferido antes de expor). **Achado
+      confirmado de novo**: `itens_mapa_compras` seguia sem dado pras
+      obras 94/108 no Supabase (o workflow n8n paginado que resolveria
+      isso nunca foi commitado no repo) — o novo script reprocessa do
+      zero direto da API de origem, então isso se resolve sozinho quando
+      rodar com o token real. **Falta**: `MAPA_COMPRAS_API_URL/TOKEN`
+      reais (token próprio desse serviço, diferente do de `rmi_api`) e o
+      mesmo cron/systemd timer.
 - [ ] Suprimentos — status manual.
 - [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
       `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script
