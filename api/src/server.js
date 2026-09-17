@@ -12,18 +12,27 @@ const app = express();
 // o `anon` key do Supabase já tinha — não é uma regressão de segurança.
 app.use(cors());
 app.use(express.json());
-app.use('/auth', authRouter);
-app.use('/ingest', ingestRouter);
-app.use('/restricoes', restricoesRouter);
 
-app.get('/health', async (req, res) => {
+async function health(req, res) {
   try {
     await pool.query('SELECT 1');
     res.json({ status: 'ok', db: 'painelmse' });
   } catch (err) {
     res.status(503).json({ status: 'erro', detalhe: err.message });
   }
-});
+}
+
+// Montado tanto na raiz quanto sob /api: em produção o domínio
+// (painelmse.portalmse.com.br) expõe a API em /api, mas ainda não está
+// definido se o proxy reverso remove esse prefixo antes de repassar pro
+// Node. Registrar nos dois lugares evita depender dessa configuração —
+// funciona igual não importa qual dos dois jeitos o proxy escolher.
+for (const prefixo of ['', '/api']) {
+  app.use(`${prefixo}/auth`, authRouter);
+  app.use(`${prefixo}/ingest`, ingestRouter);
+  app.use(`${prefixo}/restricoes`, restricoesRouter);
+  app.get(`${prefixo}/health`, health);
+}
 
 const port = process.env.PORT || 3001;
 app.listen(port, () => {

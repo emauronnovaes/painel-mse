@@ -28,6 +28,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="lib/auth.js"></script>
 <script src="lib/domain-utils.js"></script>
+<script src="lib/config-publico.js"></script>
 <script src="lib/panel-config.js"></script>
 <style>
   :root{
@@ -550,10 +551,16 @@ const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 
 // ── API intermediária (migração Supabase → MySQL, docs/16) ──────────────────
 // Sem anon key aqui: a API não expõe credencial nenhuma ao navegador, quem
-// fala com o MySQL é sempre o servidor. Enquanto a API não está deployada
-// (bloqueio de infra, ver docs/16 Etapa 1), aponta para localhost — trocar
-// para a URL de produção quando o deploy existir.
-const API_MYSQL_URL = "http://localhost:3001";
+// fala com o MySQL é sempre o servidor. Valor vem de `lib/config-publico.js`
+// (gerado por scripts/gerar-config-publico.js a partir de PUBLIC_API_URL em
+// api/.env — pedido do admin de infra, 17/09/2026). O navegador não lê .env
+// diretamente (não há build step aqui), então esse arquivo gerado é a ponte;
+// o fallback por hostname só entra em jogo se alguém esquecer de rodar o
+// gerador antes de testar/deployar.
+const API_MYSQL_URL = window.MSE_CONFIG_PUBLICO?.API_MYSQL_URL
+  || ((location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      ? 'http://localhost:3001'
+      : 'https://painelmse.portalmse.com.br/api');
 
 // Mesma lista/ids do app de relatórios (gerar_relatorio.py) e do dashboard atual
 // (ID_OBRA_POR_NOME) — `curva` é o valor literal de curvas_s.obra para cada uma.
