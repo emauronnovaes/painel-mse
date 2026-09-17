@@ -8719,16 +8719,20 @@ function ModuloMedicoes({ obraId, obraNome }){
   useEffect(() => {
     setContratoRaw(null); setContratoErro(false); setBoletinsRaw(null); setBoletinsErro(false); setCurvaFisica(null);
     if (!obraCfg?.origemCP) return;
-    const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/contratos_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*`, { headers })
+    // Migrado da Supabase (`contratos_medicao`/`boletins_medicao`) para a
+    // API intermediária — ver docs/16, Etapa 2. Devolve ARRAY igual o
+    // `select=*` de antes, então o parsing abaixo não mudou.
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/contrato?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, {})
       .then(r => r.ok ? r.json() : null)
       .then(rows => setContratoRaw(Array.isArray(rows) && rows[0] ? rows[0] : {}))
       .catch(() => { setContratoErro(true); setContratoRaw({}); });
-    fetchPaginado(`${SUPABASE_URL}/rest/v1/boletins_medicao?cp_codigo=eq.${obraCfg.origemCP}&select=*&order=linha_planilha.asc`, headers)
-      .then(rows => { if (rows === null) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
+    fetchComTimeout(`${API_MYSQL_URL}/medicoes/boletins?cp_codigo=${encodeURIComponent(obraCfg.origemCP)}`, {})
+      .then(r => r.ok ? r.json() : null)
+      .then(rows => { if (!Array.isArray(rows)) { setBoletinsErro(true); setBoletinsRaw([]); } else setBoletinsRaw(rows); })
       .catch(() => { setBoletinsErro(true); setBoletinsRaw([]); });
-    // Curva física (Curva S) — só pro farol Medido×Físico. Mesma tabela e
-    // convenção de nome (`obraCfg.curva`) já usada no setor Curva S.
+    // Curva física (Curva S) — só pro farol Medido×Físico. Ainda no
+    // Supabase (Curva S migra só na Etapa 3) — fora do escopo desta troca.
+    const headers = MSEAuth.headers();
     fetchPaginadoCompat(`${SUPABASE_URL}/rest/v1/curvas_s?obra=eq.${encodeURIComponent(obraCfg.curva)}&select=data,acum_realizado&order=data.asc`, headers)
       .then(r => r.ok ? r.json() : null)
       .then(rows => setCurvaFisica(Array.isArray(rows) ? rows : []))
