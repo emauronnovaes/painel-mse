@@ -264,20 +264,49 @@ pras próximas etapas — ver "Receita validada" abaixo.
 
 ### Receita validada (repetir a partir da Etapa 2)
 
-Pra cada domínio novo: (1) migration MySQL seguindo a convenção da Etapa 0;
-(2) `GET` de leitura na API, montado em `server.js` (raiz + `/api`, já
-automático se reusar o padrão do `for (prefixo of ['', '/api'])`); (3)
-ingestão — nó MySQL nativo do n8n se não houver acesso SSH pra deploy de
-webhook, seguindo a lição de escaping registrada na Etapa 1; (4) trocar o
-`fetch` correspondente no `prototipo` pela URL da API; (5) validar local
-(`serve-local.js` + `node src/server.js`) antes de validar em produção.
+Pra cada domínio novo: (0) **conferir RLS no Supabase primeiro**
+(`pg_policies` — ver lição abaixo, "Etapa 2 não é 'sem auth complexa' por
+padrão"); (1) migration MySQL seguindo a convenção da Etapa 0; (2) `GET` de
+leitura na API, montado em `server.js` (raiz + `/api`, já automático se
+reusar o padrão do `for (prefixo of ['', '/api'])`); (3) ingestão — nó MySQL
+nativo do n8n se não houver acesso SSH pra deploy de webhook (ou, se a
+ingestão for Apps Script, `Jdbc.getConnection` direto — ver Medições),
+seguindo a lição de escaping registrada na Etapa 1; (4) trocar o `fetch`
+correspondente no `prototipo` pela URL da API, incluindo `MSEAuth.headers()`
+se o domínio tiver RLS por e-mail/obra; (5) validar local (`serve-local.js`
++ `node src/server.js`) antes de validar em produção.
+
+**Lição (17/09/2026, achada ao migrar Medições, antes de qualquer deploy em
+produção):** nem todo domínio listado como "Etapa 2 — sem auth complexa" é
+de fato sem auth. Medições tinha RLS restritiva por obra
+(`mse_financeiro_lista`, ver docs/15 "financeiro por obra") que passou
+batido na primeira versão — copiei o padrão aberto de Restrições sem
+conferir. Corrigido: a API agora repassa o token de sessão do usuário pro
+Supabase (`RPC mse_acesso_total`/`mse_cps_financeiro`) em vez de replicar
+`acesso_total` no MySQL — ver `api/src/auth/financeiroSupabase.js`. **Antes
+de expor qualquer leitura nova como pública, rodar**:
+```sql
+select tablename, policyname, roles, permissive, cmd, qual
+from pg_policies where schemaname='public' and tablename in (...);
+```
+**OC/CO (`orcamentos_complementares_obra`) tem a MESMA restrição** (docs/15:
+"vê Medições e OC/CO SÓ da sua obra") — quando esse domínio entrar na fila,
+repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
 
 ### Etapa 2 — Domínios de leitura simples, sem auth complexa
 
 - [ ] Suprimentos — RMI.
 - [ ] Suprimentos — Mapa de Compras.
 - [ ] Suprimentos — status manual.
-- [ ] Medições (`contratos_medicao`/`boletins_medicao`).
+- [x] Medições (`contratos_medicao`/`boletins_medicao` → `med_contratos`/
+      `med_boletins`) — **concluída 17/09/2026**. Ingestão via Apps Script
+      + `Jdbc` direto no MySQL (não via API — mesmo racional de Restrições,
+      sem depender do deploy). Leitura pela API, com verificação de acesso
+      financeiro (ver lição acima). `curvas_s` (farol Medido×Físico)
+      continua no Supabase, fora de escopo até a Etapa 3. **Falta**: deploy
+      em produção (mesmo bloqueio de infra de Restrições) e aplicar o
+      `.gs` ajustado na planilha "Saldo a Faturar" (entregue fora do
+      repo).
 - [ ] Produtividade semanal — **atenção**: re-apontar também o
       `relatorios-pdf/gerar_relatorio.py`, não só o painel.
 
