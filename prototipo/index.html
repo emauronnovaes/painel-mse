@@ -548,6 +548,13 @@ const EFETIVO_SUPABASE_URL = "https://wnldmumgjwujveeimyef.supabase.co";
 const EFETIVO_API = `${SUPABASE_URL}/functions/v1/efetivo`;
 const EFETIVO_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndubGRtdW1nand1anZlZWlteWVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1MjQ5ODUsImV4cCI6MjA4NzEwMDk4NX0.tVAuOlNORYEsWanz_-vrSAf8jOL2sIax2zoWPvXA_Kg";
 
+// ── API intermediária (migração Supabase → MySQL, docs/16) ──────────────────
+// Sem anon key aqui: a API não expõe credencial nenhuma ao navegador, quem
+// fala com o MySQL é sempre o servidor. Enquanto a API não está deployada
+// (bloqueio de infra, ver docs/16 Etapa 1), aponta para localhost — trocar
+// para a URL de produção quando o deploy existir.
+const API_MYSQL_URL = "http://localhost:3001";
+
 // Mesma lista/ids do app de relatórios (gerar_relatorio.py) e do dashboard atual
 // (ID_OBRA_POR_NOME) — `curva` é o valor literal de curvas_s.obra para cada uma.
 // `origemTV` é o valor de vw_dados_tv.OBRA / cards_ativos.nome_obra (mesma
@@ -4835,12 +4842,19 @@ function ModuloRestricoes({ obraId, obraNome }){
   useEffect(() => {
     setDado(null); setErro(false); setBusca(''); setOrdenarPor('prioridade'); setOrdenarDir('asc');
     setRestricaoSelecionada(null); setTarefaEap(null); setTarefaErro(false); setFiltroStatus(null);
-    const headers = MSEAuth.headers();
-    fetchComTimeout(`${SUPABASE_URL}/rest/v1/restricoes_obra?id_obra=eq.${obraId}&select=restricoes,atualizado_em`, { headers })
-      .then(r => r.ok ? r.json() : null)
-      .then(rows => {
-        if (rows === null) { setErro(true); setDado([]); return; }
-        setDado(Array.isArray(rows[0]?.restricoes) ? rows[0].restricoes : []);
+    // Migrado da Supabase (`restricoes_obra`) para a API intermediária
+    // (`rest_restricoes` no MySQL) — ver docs/16. 404 = obra sem snapshot
+    // ainda (estado válido, vira lista vazia); qualquer outro erro é falha
+    // de verdade.
+    fetchComTimeout(`${API_MYSQL_URL}/restricoes?id_obra=${obraId}`, {})
+      .then(r => {
+        if (r.status === 404) return { restricoes: [] };
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(corpo => {
+        if (corpo === null) { setErro(true); setDado([]); return; }
+        setDado(Array.isArray(corpo.restricoes) ? corpo.restricoes : []);
       })
       .catch(() => { setErro(true); setDado([]); });
   }, [obraId]);

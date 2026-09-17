@@ -101,15 +101,28 @@ variantes no `vinicius.tadashi` (global → obra 91 → sem linha) e restaurando
 23 linhas em `acesso_total`: 7 globais, 16 por obra cobrindo 12 pessoas.
 Os e-mails foram conferidos pelo usuário em 09/09/2026.
 
-## SSO do Portal MSE (09/09/2026)
+## SSO do Portal MSE (09/09/2026, corrigido 16/09/2026)
 
-Painel é servido DENTRO do portal, como superapp em iframe. O lado do painel
-está pronto: `window.__MSE_PORTAL = {access_token, refresh_token}` vira sessão
-real via `setSession()`. A Edge Function `portal-sso` está no ar e configurada,
-validando o mesmo token HMAC que o portal já emite para o `planejamento_dash`.
+Painel é servido DENTRO do portal, como superapp em iframe. **Correção
+(16/09/2026): o transporte real não é `window.__MSE_PORTAL` — é `?sso=<token>`
+na query string do iframe**, o mesmo mecanismo já usado para o
+`planejamento_dash`. O PHP do Portal não tem (nem precisa de) uma função
+própria para isso; só embute o token na URL. Quem faz o resto é o próprio
+painel, **client-side**, em `prototipo/lib/auth.js`:
 
-**Falta só o lado PHP** — chamar a função e injetar o retorno no HTML. Contrato
-em [[15 - Integração Portal MSE (superapp)]], seção 1d.
+1. `tokenPortalDaUrl()` lê `?sso=` da URL.
+2. `limparTokenDaUrl()` tira o parâmetro assim que lido (token de uso único).
+3. `trocarTokenPortal(token)` chama `POST` na Edge Function `portal-sso`
+   (`PORTAL_SSO_URL`), que valida o HMAC e devolve `{access_token,
+   refresh_token}` de uma sessão real do Supabase.
+4. `cliente.auth.setSession(...)` persiste a sessão, com auto-refresh.
+
+**Este fluxo está ativo e em uso — não é mais pendência.** A nota anterior
+("falta o lado PHP") estava desatualizada: o PHP só precisa gerar e embutir o
+token (já faz, é o mesmo código do `planejamento_dash`), e é isso que já
+acontece. Ver o inventário completo do fluxo em
+[[16 - Plano de Migração Supabase → MySQL]], que já usa esta versão corrigida
+como referência para portar a Edge Function `portal-sso` para a API nova.
 
 Por que sessão e não identidade: sem JWT o painel lê como `anon`, isento das
 policies do financeiro. Medido: `anon` vê 461 nfs; quem tem recorte deveria ver
@@ -117,7 +130,10 @@ policies do financeiro. Medido: `anon` vê 461 nfs; quem tem recorte deveria ver
 controle de acesso inteiro.
 
 Alternativa mais simples e mais segura (ID token do Google) foi levantada e
-ADIADA pelo usuário — registrada na mesma seção.
+ADIADA pelo usuário — registrada na mesma seção. (Nota: existe também
+`entrarComGoogle()` via `signInWithOAuth` em `auth.js` para acesso fora do
+Portal — esse caminho nunca foi ativado, ver [[16 - Plano de Migração
+Supabase → MySQL]].)
 
 ## Pendências para retomada
 

@@ -13,7 +13,7 @@
     { id: 91, nome: 'Novo Nordisk - UB/SP', curva: 'NOVO NORDISK - UB SP', origemTV: 'NN - UB/SP - ELETROMECÂNICA', origemPTS: 'Novo Nordisk UB', origemCP: 'CP236', curvas: [
       { chave: 'NOVO NORDISK - UB SP - Take Off', label: 'Take-Off' }, { chave: 'NOVO NORDISK - UB SP', label: 'Original' },
     ] },
-    { id: 114, nome: 'IPEN' },
+    { id: 114, nome: 'IPEN', curva: 'IPEN' },
   ]);
 
   const SETORES = Object.freeze([
