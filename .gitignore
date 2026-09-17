@@ -5,6 +5,10 @@ package-lock.json
 # Segredos da API intermediaria (Etapa 0 da migracao MySQL) — nunca versionar
 api/.env
 
+# Gerado por scripts/gerar-config-publico.js a partir de api/.env — muda por
+# ambiente, não é fonte
+prototipo/lib/config-publico.js
+
 # Saida do Playwright (regerada a cada run, nao e fonte)
 test-results/
 playwright-report/
