@@ -1,0 +1,115 @@
+[
+  {
+    "id": "eapAvancosV2",
+    "name": "Avanços — por id_eap + data → Supabase + MySQL",
+    "nodes": [
+      {
+        "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
+        "id": "b2000000-0000-4000-8000-000000000001",
+        "name": "A cada 1 hora",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [-1060, 0]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Mesma lista de id_eap do fluxo 'EAP — tarefas' (levantada por SQL no\n// Supabase, 2026-09-18). Manter as duas sincronizadas se um grupo novo\n// aparecer.\nconst ID_EAP = [\n  { id_eap: 51,  id_obra: 91,  nome_obra: 'Novo Nordisk - UB/SP' },\n  { id_eap: 32,  id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 121, id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 66,  id_obra: 103, nome_obra: 'CNPEM - Auditório' },\n  { id_eap: 73,  id_obra: 106, nome_obra: 'CNPEM - Faseado' },\n  { id_eap: 86,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 87,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 88,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 89,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 90,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 94,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 110, id_obra: 108, nome_obra: 'Novo Nordisk - AP - Reforço' },\n  { id_eap: 114, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 115, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 127, id_obra: 114, nome_obra: 'IPEN' },\n];\n\n// Janela de 2 dias (hoje + ontem), decisão explícita de 2026-09-18: só\n// 'hoje' deixaria a execução horária sem recuperação se uma falhasse ou\n// se o apontamento do dia entrasse com atraso na origem. Como o upsert é\n// por (id, data_do_input), reprocessar o mesmo dia é idempotente.\nconst DIAS_JANELA = 2;\nconst datas = [];\nfor (let i = 0; i < DIAS_JANELA; i++) {\n  const d = new Date();\n  d.setDate(d.getDate() - i);\n  datas.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD\n}\n\nconst combinacoes = [];\nfor (const g of ID_EAP) {\n  for (const data of datas) combinacoes.push({ json: { ...g, data } });\n}\nreturn combinacoes;"
+        },
+        "id": "b2000000-0000-4000-8000-000000000002",
+        "name": "Lista de id_eap x data",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-840, 0],
+        "notes": "15 grupos x 2 dias = 30 chamadas por execução. O endpoint de avanços recebe id_eap (não id de tarefa), então o volume é pequeno — não é preciso iterar as ~7 mil tarefas."
+      },
+      {
+        "parameters": { "options": {} },
+        "id": "b2000000-0000-4000-8000-000000000003",
+        "name": "Loop id_eap+data (1 por vez)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [-620, 0],
+        "notes": "Saída 0 = done (fim do loop), saída 1 = item atual — convenção do splitInBatches v3, conferida no fluxo de RMI que roda em produção."
+      },
+      {
+        "parameters": {
+          "url": "=https://portalmse.com.br/microservices/avancos_api/v1/avancos/{{$json.id_eap}}/{{$json.data}}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "options": {
+            "response": { "response": { "responseFormat": "text" } },
+            "timeout": 120000
+          }
+        },
+        "id": "b2000000-0000-4000-8000-000000000004",
+        "name": "Buscar avanços do dia (avancos_api)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-400, 0],
+        "notes": "TODO: escolher a credencial Bearer do avancos_api neste node (a mesma do fluxo de tarefas).\n\nResponse Format = Text: o parse fica no Code node seguinte, que joga o corpo cru no erro se o formato não for o esperado."
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// ATENÇÃO: o envelope deste endpoint ainda NÃO foi confirmado contra uma\n// resposta real (o de /tarefas foi). O parse abaixo é tolerante: aceita\n// {data:{...,<lista>}}, {data:[...]} ou [...] direto, e procura a\n// primeira propriedade que seja array (avancos/apontamentos/tarefas/\n// itens/registros). Se não achar, o erro traz o corpo cru pra ajustar\n// sem adivinhação.\n//\n// Tipos seguem a tabela `Apontamentos` do Supabase (conferida por SQL):\n// CUIDADO -- `qtd` e `avanco_atual` são TEXT aqui, ao contrário da tabela\n// `EAP`, onde são double. `avanco_atual_p100`, `avanco_diario` e\n// `meta_diaria` são double. `UUID` não é enviado: a coluna tem\n// DEFAULT gen_random_uuid(), quem gera é o Postgres.\n\nconst ctx = $('Loop id_eap+data (1 por vez)').first().json;\nconst entrada = $input.first().json;\n\nconst bruto = typeof entrada === 'string' ? entrada\n            : (typeof entrada.data === 'string' ? entrada.data\n            : (typeof entrada.body === 'string' ? entrada.body : entrada));\nlet corpo;\ntry {\n  corpo = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;\n} catch (e) {\n  throw new Error(`id_eap ${ctx.id_eap} / ${ctx.data}: resposta nao e JSON. Corpo cru (1000 chars): ` + String(bruto).slice(0, 1000));\n}\n\nconst raiz = (corpo && corpo.data !== undefined) ? corpo.data : corpo;\nlet itens = null;\nlet meta = {};\nif (Array.isArray(raiz)) {\n  itens = raiz;\n} else if (raiz && typeof raiz === 'object') {\n  meta = raiz;\n  const chave = ['avancos', 'apontamentos', 'tarefas', 'itens', 'registros', 'data']\n    .find(k => Array.isArray(raiz[k]));\n  if (chave) itens = raiz[chave];\n}\nif (!Array.isArray(itens)) {\n  throw new Error(`id_eap ${ctx.id_eap} / ${ctx.data}: nao achei a lista de avancos no envelope. Recebido: ` + JSON.stringify(corpo).slice(0, 800));\n}\n\n// Dia sem apontamento é estado válido (fim de semana, obra parada).\n// IMPORTANTE: devolve 1 item com lista vazia em vez de `return []` --\n// se este node não emitisse item nenhum, os nodes seguintes não rodariam\n// e o loop nunca receberia o sinal de \"próximo\", travando a iteração dos\n// grupos restantes. Com lista vazia, o POST no Supabase vira um array\n// vazio (inócuo) e o MySQL recebe um SELECT no-op.\nif (itens.length === 0) {\n  return [{ json: { id_eap: ctx.id_eap, data: ctx.data, total: 0, linhas: [], sqlMySql: 'SELECT 1' } }];\n}\n\nconst num = (v) => {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(String(v).replace(',', '.'));\n  return Number.isFinite(n) ? n : null;\n};\nconst txt = (v) => (v === null || v === undefined || v === '' ? null : String(v));\n\nconst linhas = itens.map(a => ({\n  id: num(a.id),\n  id_eap: num(a.id_eap) ?? ctx.id_eap,\n  nome_eap: txt(a.nome_eap) ?? txt(meta.nome_eap),\n  nome_obra: txt(a.nome_obra) ?? txt(meta.nome_obra) ?? ctx.nome_obra,\n  data_do_input: txt(a.data_do_input) ?? ctx.data,\n  edt: txt(a.edt),\n  tarefa: txt(a.tarefa),\n  qtd: txt(a.qtd),\n  unidade: txt(a.unidade),\n  avanco_atual: txt(a.avanco_atual),\n  avanco_atual_p100: num(a.avanco_atual_p100),\n  avanco_diario: num(a.avanco_diario),\n  usuario_avanco_diario: txt(a.usuario_avanco_diario),\n  meta_diaria: num(a.meta_diaria),\n  status_qualidade: txt(a.status_qualidade),\n}));\n\nconst invalidas = linhas.filter(l => l.id === null || !l.data_do_input).length;\nif (invalidas) {\n  throw new Error(`id_eap ${ctx.id_eap} / ${ctx.data}: ${invalidas} linha(s) sem id ou data_do_input -- sao a chave do upsert. 1o item recebido: ` + JSON.stringify(itens[0]).slice(0, 600));\n}\n\nconst COLUNAS = Object.keys(linhas[0]);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\nconst colsSql = COLUNAS.map(c => '`' + c + '`').join(',');\nconst tuplas = linhas.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst updSql = COLUNAS.filter(c => c !== 'id' && c !== 'data_do_input').map(c => '`' + c + '` = VALUES(`' + c + '`)').join(', ');\nconst sqlMySql = `INSERT INTO eap_apontamentos (${colsSql}) VALUES ${tuplas} ON DUPLICATE KEY UPDATE ${updSql}`;\n\nreturn [{ json: { id_eap: ctx.id_eap, data: ctx.data, total: linhas.length, linhas, sqlMySql } }];"
+        },
+        "id": "b2000000-0000-4000-8000-000000000005",
+        "name": "Montar apontamentos",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-180, 0]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/Apontamentos?on_conflict=id,data_do_input",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.linhas) }}",
+          "options": { "timeout": 120000 }
+        },
+        "id": "b2000000-0000-4000-8000-000000000006",
+        "name": "Gravar Apontamentos (Supabase)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [60, 0],
+        "notes": "Upsert por (id, data_do_input) -- a UNIQUE real da tabela (`apontamentos_id_data_do_input_unique`), não pela PK `UUID`, que é gerada pelo próprio Postgres (DEFAULT gen_random_uuid()) e não vem da origem. Vem ANTES do MySQL porque é este banco que o painel lê hoje."
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "={{ $('Montar apontamentos').first().json.sqlMySql }}"
+        },
+        "id": "b2000000-0000-4000-8000-000000000007",
+        "name": "Gravar eap_apontamentos (MySQL)",
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [300, 0],
+        "onError": "continueRegularOutput",
+        "notes": "TODO: escolher a credencial MySQL (banco painelmse) neste node.\n\n`onError: continue` de propósito: o IP desta máquina ainda não está liberado no GRANT do MySQL, e sem isso uma falha aqui abortaria o loop e deixaria os outros grupos sem gravar nem no Supabase."
+      }
+    ],
+    "connections": {
+      "A cada 1 hora": { "main": [[{ "node": "Lista de id_eap x data", "type": "main", "index": 0 }]] },
+      "Lista de id_eap x data": { "main": [[{ "node": "Loop id_eap+data (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop id_eap+data (1 por vez)": { "main": [[], [{ "node": "Buscar avanços do dia (avancos_api)", "type": "main", "index": 0 }]] },
+      "Buscar avanços do dia (avancos_api)": { "main": [[{ "node": "Montar apontamentos", "type": "main", "index": 0 }]] },
+      "Montar apontamentos": { "main": [[{ "node": "Gravar Apontamentos (Supabase)", "type": "main", "index": 0 }]] },
+      "Gravar Apontamentos (Supabase)": { "main": [[{ "node": "Gravar eap_apontamentos (MySQL)", "type": "main", "index": 0 }]] },
+      "Gravar eap_apontamentos (MySQL)": { "main": [[{ "node": "Loop id_eap+data (1 por vez)", "type": "main", "index": 0 }]] }
+    },
+    "settings": { "executionOrder": "v1" },
+    "pinData": {},
+    "meta": { "instanceId": "painel-mse-migracao" }
+  }
+]
