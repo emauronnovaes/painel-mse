@@ -2955,9 +2955,20 @@ function ModuloEncarregados({ obraId, obraNome }){
   // antigo só seu). `diaStatusExibido` só existe depois do 1º fetch da
   // unificação — antes disso, mesmo fallback que ele usa (`alvo`) evita
   // a tabela ficar vazia no carregamento inicial.
-  // Elegibilidade: só entra quem tem card ativo nesta obra OU apontou no dia
-  // de referência — mesma regra corrigida no dashboard atual (ver
-  // [[cap-1000-linhas-supabase]]/RankingScreen).
+  // Elegibilidade: só entra quem tem card ativo nesta obra (`cardsEncsUpper`).
+  // Bug real 2026-09-18 (obra Porto Itapoá): a regra antiga também deixava
+  // entrar quem "apontou no dia de referência" mesmo SEM card ativo aqui —
+  // ou seja, tinha uma linha em `vw_dados_tv` (filtrada só pelo texto de
+  // OBRA, sem relação com `cards_ativos`) atribuída a esta obra por engano
+  // (ex.: RDO/planejamento lançado pra pessoa errada, ou encarregado já
+  // transferido pra outra obra). Como Qualidade/Colaboradores/Performance/
+  // Produtividade só existem pra quem tem card em `cardsRaw`, esse branch
+  // NUNCA produzia um caso legítimo com dado completo — só "fantasmas":
+  // nome + Aderência herdada de `vw_dados_tv`, tudo o resto "–", ranqueados
+  // (inclusive no topo, com 100%) na frente de encarregados com trabalho
+  // real. Quem tem card mas não apontou no dia continua entrando raso —
+  // cai no bloco de "sem apontamentos" logo abaixo, exibido como
+  // ALOCADO/sem apontamento, não mais rankeado com % inventado.
   const { linhas } = useMemo(() => {
     if (tvRaw == null || cardsRaw == null) return { linhas: null };
     const diaRef = diaStatusExibido || dataStatusOverride || getDiaAderencia();
@@ -2990,7 +3001,7 @@ function ModuloEncarregados({ obraId, obraNome }){
       const d = s.aderenciaPorDia[diaAderencia];
       const aderenciaLin = d ? (d.sum / d.n) * 100 : null;
       return { nome: s.nome, diaAderencia, aderenciaLin, score: aderenciaLin ?? -1, semApontamentos: !s.diasApontados.has(diaAderencia) };
-    }).filter(s => cardsEncsUpper.has(s.nome.trim().toUpperCase()) || !s.semApontamentos);
+    }).filter(s => cardsEncsUpper.has(s.nome.trim().toUpperCase()));
 
     const encNamesSet = new Set(arr.map(s => s.nome.trim().toUpperCase()));
     cardsRaw.forEach(c => {
