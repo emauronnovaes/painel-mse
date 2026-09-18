@@ -9,6 +9,7 @@ import { restricoesRouter } from './routes/restricoes.js';
 import { medicoesRouter } from './routes/medicoes.js';
 import { ocRouter } from './routes/oc.js';
 import { suprimentosRouter } from './routes/suprimentos.js';
+import { eapRouter } from './routes/eap.js';
 import { iniciarAgendador } from './scheduler.js';
 
 const app = express();
@@ -39,6 +40,7 @@ for (const prefixo of ['', '/api']) {
   app.use(`${prefixo}/medicoes`, medicoesRouter);
   app.use(`${prefixo}/oc`, ocRouter);
   app.use(`${prefixo}/suprimentos`, suprimentosRouter);
+  app.use(`${prefixo}/eap`, eapRouter);
   app.get(`${prefixo}/health`, health);
 }
 
