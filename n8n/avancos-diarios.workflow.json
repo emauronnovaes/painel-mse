@@ -1,0 +1,124 @@
+[
+  {
+    "id": "avancosDiariosV1",
+    "name": "Avanços diários — avancos → MySQL (eap_apontamentos + snapshot eap_tarefas)",
+    "nodes": [
+      {
+        "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
+        "id": "8f1a1a10-0002-4002-8002-000000000001",
+        "name": "A cada 1 hora",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [-1400, 0]
+      },
+      {
+        "parameters": {
+          "url": "https://portalmse.com.br/hub_mse_endpoint.php?id=8&endpoint=2",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "options": {
+            "response": { "response": { "responseFormat": "json" } },
+            "timeout": 60000
+          }
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000002",
+        "name": "Buscar eaps (hub_mse)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-1160, 0],
+        "notes": "Independente do fluxo 'EAP (Avanço Físico)' -- busca a lista de tarefas de novo em vez de depender do MySQL já estar atualizado, pra não precisar coordenar ordem/horário entre os 2 fluxos. Mesma credencial Bearer do outro fluxo (usuário insere direto no node)."
+      },
+      {
+        "parameters": {
+          "jsCode": "const corpo = $json;\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error('Envelope inesperado de eaps: ' + JSON.stringify(corpo).slice(0, 300)); })();\nreturn itens.map(t => ({ json: { card_id: Number(t.id), id_obra: Number(t.id_obra) } }));"
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000003",
+        "name": "1 item por tarefa",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-920, 0]
+      },
+      {
+        "parameters": { "options": {} },
+        "id": "8f1a1a10-0002-4002-8002-000000000004",
+        "name": "Loop tarefas (1 por vez)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [-680, 0],
+        "notes": "Mesmo motivo do loop de RMI/Mapa de Compras: liberar memória a cada tarefa em vez de acumular tudo antes de gravar."
+      },
+      {
+        "parameters": {
+          "jsCode": "const hoje = new Date().toISOString().slice(0, 10); // YYYY-MM-DD\nreturn [{ json: { ...$json, data_hoje: hoje } }];"
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000005",
+        "name": "Data de hoje",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-440, 0]
+      },
+      {
+        "parameters": {
+          "url": "=https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/avancos/{{$json.card_id}}/{{$json.data_hoje}}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "options": {
+            "response": { "response": { "responseFormat": "json" } },
+            "timeout": 60000
+          }
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000006",
+        "name": "Buscar avanço do dia",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-200, 0],
+        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (mesma do outro fluxo, usuário insere direto no node)."
+      },
+      {
+        "parameters": {
+          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'avancos'. Ajustar os\n// nomes à ESQUERDA (fonte.<campo>) assim que tivermos uma amostra real;\n// os nomes à DIREITA já são as colunas reais de\n// `eap_apontamentos`/`eap_tarefas` no MySQL (migration 008_eap.sql).\n//\n// Assumindo que a resposta é 1 objeto (não lista), já que a URL pede um\n// card_id + data específicos. Se vier vazio/null, é dia sem apontamento\n// -- pula sem gravar nada (não é erro), devolvendo lista vazia.\n\nconst fonte = $json;\nif (!fonte || (Array.isArray(fonte) && !fonte.length)) return [];\nconst a = Array.isArray(fonte) ? fonte[0] : fonte;\n\nconst cardOriginal = $('Loop tarefas (1 por vez)').item.json;\nconst dataHoje = $('Data de hoje').item.json.data_hoje;\n\n// 1 objeto só -- a rota /ingest/eap/avanco-diario grava em eap_apontamentos\n// (campos de apontamento) E atualiza o snapshot em eap_tarefas (campos de\n// progresso) a partir do MESMO objeto.\nconst item = {\n  tarefa_id: cardOriginal.card_id,\n  id_eap_grupo: a.id_eap != null ? Number(a.id_eap) : null,\n  nome_eap: a.nome_eap,\n  nome_obra: a.nome_obra,\n  data_do_input: dataHoje,\n  edt: a.edt,\n  tarefa: a.tarefa,\n  qtd: a.qtd,\n  unidade: a.unidade,\n  avanco_atual: a.avanco_atual,\n  avanco_atual_p100: a.avanco_atual_p100,\n  avanco_diario: a.avanco_diario,\n  usuario_avanco_diario: a.usuario_avanco_diario,\n  uuid_origem: a.uuid || a.UUID,\n  meta_diaria: a.meta_diaria,\n  status_qualidade: a.status_qualidade,\n  desvio: a.desvio,\n  hht_consumido: a.hht_consumido,\n};\n\nreturn [{ json: { item } }];"
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000007",
+        "name": "Montar avanço (TODO mapear)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [40, 0]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://painelmse.portalmse.com.br/api/ingest/eap/avanco-diario",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "X-Ingest-Key", "value": "TODO: colar aqui o INGEST_API_KEY (api/.env, mesma chave usada em restricoes/oc)" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify([$json.item]) }}",
+          "options": { "timeout": 60000 }
+        },
+        "id": "8f1a1a10-0002-4002-8002-000000000008",
+        "name": "Ingest /eap/avanco-diario",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [280, 0],
+        "notes": "Chama a API intermediária (mesmo servidor do MySQL) -- este host (n8n local) não tem acesso de rede liberado pro MySQL de produção. Grava eap_apontamentos + atualiza snapshot em eap_tarefas na mesma chamada (rota faz as 2 coisas numa transação)."
+      }
+    ],
+    "connections": {
+      "A cada 1 hora": { "main": [[{ "node": "Buscar eaps (hub_mse)", "type": "main", "index": 0 }]] },
+      "Buscar eaps (hub_mse)": { "main": [[{ "node": "1 item por tarefa", "type": "main", "index": 0 }]] },
+      "1 item por tarefa": { "main": [[{ "node": "Loop tarefas (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop tarefas (1 por vez)": { "main": [[{ "node": "Data de hoje", "type": "main", "index": 0 }], []] },
+      "Data de hoje": { "main": [[{ "node": "Buscar avanço do dia", "type": "main", "index": 0 }]] },
+      "Buscar avanço do dia": { "main": [[{ "node": "Montar avanço (TODO mapear)", "type": "main", "index": 0 }]] },
+      "Montar avanço (TODO mapear)": { "main": [[{ "node": "Ingest /eap/avanco-diario", "type": "main", "index": 0 }]] },
+      "Ingest /eap/avanco-diario": { "main": [[{ "node": "Loop tarefas (1 por vez)", "type": "main", "index": 0 }]] }
+    },
+    "pinData": {},
+    "meta": { "instanceId": "painel-mse-migracao" }
+  }
+]

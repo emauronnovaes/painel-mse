@@ -1,0 +1,97 @@
+[
+  {
+    "id": "eapAvancoFisicoV1",
+    "name": "EAP (Avanço Físico) — eaps → MySQL (painelmse)",
+    "nodes": [
+      {
+        "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
+        "id": "8f1a1a10-0001-4001-8001-000000000001",
+        "name": "A cada 1 hora",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [-800, 0]
+      },
+      {
+        "parameters": {
+          "url": "https://portalmse.com.br/hub_mse_endpoint.php?id=8&endpoint=2",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "options": {
+            "response": { "response": { "responseFormat": "json" } },
+            "timeout": 60000
+          }
+        },
+        "id": "8f1a1a10-0001-4001-8001-000000000002",
+        "name": "Buscar eaps (hub_mse)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-560, 0],
+        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (usuário insere direto no node). Envelope da resposta ainda não confirmado (assumindo {data:[...]} — mesmo padrão da família hub_mse — ver guard no Code node seguinte)."
+      },
+      {
+        "parameters": {
+          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'eaps'\n// (hub_mse_endpoint.php?id=8&endpoint=2). Ajustar os nomes à ESQUERDA\n// (fonte.<campo>) assim que tivermos uma amostra real; os nomes à\n// DIREITA já são as colunas reais de `eap_tarefas`/`eap_cards_ativos`\n// no MySQL (migration 008_eap.sql) -- não mudar sem mudar a migration\n// junto.\n\nconst corpo = $json;\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error('Envelope inesperado de eaps: ' + JSON.stringify(corpo).slice(0, 300)); })();\n\nif (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n  throw new Error(`eaps: API reportou total=${corpo.total} mas vieram ${itens.length} itens -- paginação não confirmada`);\n}\n\nconst linhasEAP = itens.map(t => ({\n  id: Number(t.id),\n  id_obra: Number(t.id_obra),\n  nome_obra: t.nome_obra,\n  id_eap_grupo: t.id_eap != null ? Number(t.id_eap) : null,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  disciplina: t.disciplina,\n  local: t.local,\n  unidade: t.unidade,\n  qtd: t.qtd,\n  saldo_qtd: t.saldo_qtd,\n  efetivo_previsto: t.efetivo_previsto,\n  ponderacao_reais: t.ponderacao_reais,\n  ponderacao_hht: t.ponderacao_hht,\n  data_inicio: t.data_inicio,\n  data_termino: t.data_termino,\n  data_inicio_reprogramado: t.data_inicio_reprogramado,\n  data_termino_reprogramado: t.data_termino_reprogramado,\n  encarregado_nome: t.encarregado_nome,\n}));\n\nconst linhasCards = itens.map(t => ({\n  card_id: Number(t.id),\n  id_eap_grupo: t.id_eap != null ? Number(t.id_eap) : null,\n  nome_eap: t.nome_eap,\n  id_obra: Number(t.id_obra),\n  nome_obra: t.nome_obra,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  resp_planejamento: t.resp_planejamento,\n  responsavel_encarregado: t.responsavel_encarregado,\n  supervisor_coordenador: t.supervisor_coordenador,\n  sincronizado_em: new Date().toISOString(),\n}));\n\nreturn [{ json: { linhasEAP, linhasCards } }];"
+        },
+        "id": "8f1a1a10-0001-4001-8001-000000000003",
+        "name": "Montar linhas EAP + cards_ativos (TODO mapear)",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-320, 0]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://painelmse.portalmse.com.br/api/ingest/eap/estrutura",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "X-Ingest-Key", "value": "TODO: colar aqui o INGEST_API_KEY (api/.env, mesma chave usada em restricoes/oc)" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.linhasEAP) }}",
+          "options": { "timeout": 60000 }
+        },
+        "id": "8f1a1a10-0001-4001-8001-000000000004",
+        "name": "Ingest /eap/estrutura",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-80, -100],
+        "notes": "Chama a API intermediária (mesmo servidor do MySQL), NÃO o Supabase e NÃO o MySQL direto -- este host (n8n local) não tem acesso de rede liberado pro MySQL de produção."
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://painelmse.portalmse.com.br/api/ingest/eap/cards-ativos",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "X-Ingest-Key", "value": "TODO: colar aqui o INGEST_API_KEY (api/.env, mesma chave usada em restricoes/oc)" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($('Montar linhas EAP + cards_ativos (TODO mapear)').item.json.linhasCards) }}",
+          "options": { "timeout": 60000 }
+        },
+        "id": "8f1a1a10-0001-4001-8001-000000000005",
+        "name": "Ingest /eap/cards-ativos",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-80, 100],
+        "notes": "Depende de 'Ingest /eap/estrutura' já ter rodado (FK: card_id -> eap_tarefas.id) -- por isso está conectado DEPOIS dele no fluxo, não em paralelo."
+      }
+    ],
+    "connections": {
+      "A cada 1 hora": { "main": [[{ "node": "Buscar eaps (hub_mse)", "type": "main", "index": 0 }]] },
+      "Buscar eaps (hub_mse)": { "main": [[{ "node": "Montar linhas EAP + cards_ativos (TODO mapear)", "type": "main", "index": 0 }]] },
+      "Montar linhas EAP + cards_ativos (TODO mapear)": { "main": [[{ "node": "Ingest /eap/estrutura", "type": "main", "index": 0 }]] },
+      "Ingest /eap/estrutura": { "main": [[{ "node": "Ingest /eap/cards-ativos", "type": "main", "index": 0 }]] }
+    },
+    "pinData": {},
+    "meta": { "instanceId": "painel-mse-migracao" }
+  }
+]
