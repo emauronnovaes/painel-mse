@@ -1,7 +1,7 @@
 [
   {
     "id": "eapAvancoFisicoV1",
-    "name": "EAP (Avanço Físico) — eaps → MySQL (painelmse)",
+    "name": "EAP (Avanço Físico) — tarefas por id_eap → MySQL (painelmse)",
     "nodes": [
       {
         "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
@@ -9,44 +9,69 @@
         "name": "A cada 1 hora",
         "type": "n8n-nodes-base.scheduleTrigger",
         "typeVersion": 1.2,
-        "position": [-800, 0]
+        "position": [-1200, 0]
       },
       {
         "parameters": {
-          "url": "https://portalmse.com.br/hub_mse_endpoint.php?id=8&endpoint=2",
+          "jsCode": "// Lista real de id_eap, consultada ao vivo no Supabase em 2026-09-18\n// (`SELECT DISTINCT id_eap, id_obra FROM EAP`, paginado -- 7093 linhas,\n// 15 grupos). NÃO é 1 por obra: obra 107 (NN-AP) tem 6 grupos, obra 94\n// (Porto Itapoá) tem 2. `id_eap=66` (obra 103, CNPEM-Auditório) fica de\n// fora de propósito -- mesma exclusão já usada em RMI/Mapa de Compras/OC\n// (obra 103 não está no array OBRAS do painel). Reconsultar o Supabase se\n// uma obra nova ganhar um id_eap que não está aqui.\nconst ID_EAP = [\n  { id_eap: 32,  id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 121, id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 51,  id_obra: 91,  nome_obra: 'Novo Nordisk - UB/SP' },\n  { id_eap: 73,  id_obra: 106, nome_obra: 'CNPEM - Faseado' },\n  { id_eap: 86,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 87,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 88,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 89,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 90,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 94,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 110, id_obra: 108, nome_obra: 'Novo Nordisk - AP - Reforço' },\n  { id_eap: 114, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 115, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 127, id_obra: 114, nome_obra: 'IPEN' },\n  // { id_eap: 66, id_obra: 103, nome_obra: 'CNPEM - Auditório' }, -- fora do painel\n];\n\nreturn ID_EAP.map(o => ({ json: o }));"
+        },
+        "id": "8f1a1a10-0001-4001-8001-000000000006",
+        "name": "Lista de id_eap",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-960, 0]
+      },
+      {
+        "parameters": { "options": {} },
+        "id": "8f1a1a10-0001-4001-8001-000000000007",
+        "name": "Loop id_eap (1 por vez)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [-720, 0],
+        "notes": "Mesmo motivo do loop de RMI/Mapa de Compras: processa e grava 1 grupo id_eap por vez, libera memória antes de buscar o próximo."
+      },
+      {
+        "parameters": {
+          "url": "=https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/tarefas/{{$json.id_eap}}",
           "authentication": "genericCredentialType",
           "genericAuthType": "httpBearerAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              { "name": "id_obra", "value": "={{$json.id_obra}}" }
+            ]
+          },
           "options": {
             "response": { "response": { "responseFormat": "text" } },
             "timeout": 60000
           }
         },
         "id": "8f1a1a10-0001-4001-8001-000000000002",
-        "name": "Buscar eaps (hub_mse)",
+        "name": "Buscar tarefas do grupo (hub_mse)",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [-560, 0],
-        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (usuário insere direto no node). Response Format = Text (não JSON) -- achado ao vivo 2026-09-18: hub_mse_endpoint.php (formato antigo) devolve algo que o parser JSON do n8n rejeita (provável warning/notice do PHP antes do corpo, ou content-type errado). O parse vira responsabilidade do Code node seguinte, que também expõe o texto cru se falhar."
+        "position": [-480, 0],
+        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (usuário insere direto no node). {id_eap} do path = id_eap de verdade (não id_obra); id_obra vai como query param também (confirmado 2026-09-18). Response Format = Text -- parse manual no Code node seguinte, com o texto cru exposto no erro se não for JSON válido."
       },
       {
         "parameters": {
-          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'eaps'\n// (hub_mse_endpoint.php?id=8&endpoint=2). Ajustar os nomes à ESQUERDA\n// (fonte.<campo>) assim que tivermos uma amostra real; os nomes à\n// DIREITA já são as colunas reais de `eap_tarefas`/`eap_cards_ativos`\n// no MySQL (migration 008_eap.sql) -- não mudar sem mudar a migration\n// junto.\n//\n// Node anterior está em Response Format = Text (n8n rejeitava como JSON\n// direto) -- o texto cru chega aqui em $json.data. Parse manual: se\n// falhar, joga o texto cru (até 1000 chars) no erro pra dar pra ler na\n// execução do n8n e diagnosticar (aviso do PHP antes do JSON? XML? HTML\n// de erro?).\nconst bruto = typeof $json === 'string' ? $json : ($json.data ?? $json.body ?? JSON.stringify($json));\nlet corpo;\ntry {\n  corpo = JSON.parse(bruto);\n} catch (e) {\n  throw new Error('Resposta de eaps nao e JSON valido. Texto cru (ate 1000 chars): ' + String(bruto).slice(0, 1000));\n}\n\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error('Envelope inesperado de eaps: ' + JSON.stringify(corpo).slice(0, 300)); })();\n\nif (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n  throw new Error(`eaps: API reportou total=${corpo.total} mas vieram ${itens.length} itens -- paginação não confirmada`);\n}\n\nconst linhasEAP = itens.map(t => ({\n  id: Number(t.id),\n  id_obra: Number(t.id_obra),\n  nome_obra: t.nome_obra,\n  id_eap_grupo: t.id_eap != null ? Number(t.id_eap) : null,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  disciplina: t.disciplina,\n  local: t.local,\n  unidade: t.unidade,\n  qtd: t.qtd,\n  saldo_qtd: t.saldo_qtd,\n  efetivo_previsto: t.efetivo_previsto,\n  ponderacao_reais: t.ponderacao_reais,\n  ponderacao_hht: t.ponderacao_hht,\n  data_inicio: t.data_inicio,\n  data_termino: t.data_termino,\n  data_inicio_reprogramado: t.data_inicio_reprogramado,\n  data_termino_reprogramado: t.data_termino_reprogramado,\n  encarregado_nome: t.encarregado_nome,\n}));\n\nconst linhasCards = itens.map(t => ({\n  card_id: Number(t.id),\n  id_eap_grupo: t.id_eap != null ? Number(t.id_eap) : null,\n  nome_eap: t.nome_eap,\n  id_obra: Number(t.id_obra),\n  nome_obra: t.nome_obra,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  resp_planejamento: t.resp_planejamento,\n  responsavel_encarregado: t.responsavel_encarregado,\n  supervisor_coordenador: t.supervisor_coordenador,\n  sincronizado_em: new Date().toISOString(),\n}));\n\nreturn [{ json: { linhasEAP, linhasCards } }];"
+          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'tarefas/{id_eap}'.\n// Ajustar os nomes à ESQUERDA (fonte.<campo>) assim que tivermos uma\n// amostra real; os nomes à DIREITA já são as colunas reais de\n// `eap_tarefas`/`eap_cards_ativos` no MySQL (migration 008_eap.sql).\n//\n// Node anterior está em Response Format = Text -- o texto cru chega aqui\n// em $json.data. Parse manual: se falhar, joga o texto cru (até 1000\n// chars) no erro pra dar pra ler na execução do n8n e diagnosticar.\nconst idEap = $('Loop id_eap (1 por vez)').item.json.id_eap;\nconst idObra = $('Loop id_eap (1 por vez)').item.json.id_obra;\nconst nomeObra = $('Loop id_eap (1 por vez)').item.json.nome_obra;\n\nconst bruto = typeof $json === 'string' ? $json : ($json.data ?? $json.body ?? JSON.stringify($json));\nlet corpo;\ntry {\n  corpo = JSON.parse(bruto);\n} catch (e) {\n  throw new Error(`id_eap ${idEap}: resposta de tarefas nao e JSON valido. Texto cru (ate 1000 chars): ` + String(bruto).slice(0, 1000));\n}\n\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error(`id_eap ${idEap}: envelope inesperado de tarefas: ` + JSON.stringify(corpo).slice(0, 300)); })();\n\nif (typeof corpo?.total === 'number' && corpo.total !== itens.length) {\n  throw new Error(`id_eap ${idEap}: API reportou total=${corpo.total} mas vieram ${itens.length} itens -- paginação não confirmada`);\n}\n\nconst linhasEAP = itens.map(t => ({\n  id: Number(t.id),\n  id_obra: idObra,\n  nome_obra: t.nome_obra || nomeObra,\n  id_eap_grupo: idEap,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  disciplina: t.disciplina,\n  local: t.local,\n  unidade: t.unidade,\n  qtd: t.qtd,\n  saldo_qtd: t.saldo_qtd,\n  efetivo_previsto: t.efetivo_previsto,\n  ponderacao_reais: t.ponderacao_reais,\n  ponderacao_hht: t.ponderacao_hht,\n  data_inicio: t.data_inicio,\n  data_termino: t.data_termino,\n  data_inicio_reprogramado: t.data_inicio_reprogramado,\n  data_termino_reprogramado: t.data_termino_reprogramado,\n  encarregado_nome: t.encarregado_nome,\n}));\n\nconst linhasCards = itens.map(t => ({\n  card_id: Number(t.id),\n  id_eap_grupo: idEap,\n  nome_eap: t.nome_eap,\n  id_obra: idObra,\n  nome_obra: t.nome_obra || nomeObra,\n  edt: t.edt,\n  tarefa: t.tarefa,\n  resp_planejamento: t.resp_planejamento,\n  responsavel_encarregado: t.responsavel_encarregado,\n  supervisor_coordenador: t.supervisor_coordenador,\n  sincronizado_em: new Date().toISOString(),\n}));\n\nreturn [{ json: { linhasEAP, linhasCards } }];"
         },
         "id": "8f1a1a10-0001-4001-8001-000000000003",
         "name": "Montar linhas EAP + cards_ativos (TODO mapear)",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-320, 0]
+        "position": [-240, 0]
       },
       {
         "parameters": {
-          "jsCode": "// Monta o INSERT ... ON DUPLICATE KEY UPDATE como STRING pronta -- mesmo\n// motivo do snippet de Restrições/OC: o campo \"Query Parameters\" do node\n// MySQL nativo (n8n 2.4) não é confiável entre versões, então a query\n// inteira vira uma expressão fx (esta) em vez de parâmetros do node.\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst valorSql = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';\n  return escapar(v);\n};\n\nconst COLUNAS = [\n  'id', 'id_obra', 'nome_obra', 'id_eap_grupo', 'edt', 'tarefa', 'disciplina',\n  'local', 'unidade', 'qtd', 'saldo_qtd', 'efetivo_previsto', 'ponderacao_reais',\n  'ponderacao_hht', 'data_inicio', 'data_termino', 'data_inicio_reprogramado',\n  'data_termino_reprogramado', 'encarregado_nome',\n];\n\nconst linhas = $json.linhasEAP;\nif (!linhas.length) return [{ json: { sql: 'SELECT 1' } }]; // nada pra gravar nesta rodada\n\nconst tuplas = linhas.map(l => '(' + COLUNAS.map(c => valorSql(l[c])).join(',') + ')').join(',\\n');\nconst atualiza = COLUNAS.filter(c => c !== 'id').map(c => `\\`${c}\\` = VALUES(\\`${c}\\`)`).join(', ');\nconst colunasSql = COLUNAS.map(c => `\\`${c}\\``).join(',');\nconst sql = `INSERT INTO eap_tarefas (${colunasSql}) VALUES ${tuplas} ON DUPLICATE KEY UPDATE ${atualiza}`;\n\nreturn [{ json: { sql } }];"
+          "jsCode": "const escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst valorSql = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';\n  return escapar(v);\n};\n\nconst COLUNAS = [\n  'id', 'id_obra', 'nome_obra', 'id_eap_grupo', 'edt', 'tarefa', 'disciplina',\n  'local', 'unidade', 'qtd', 'saldo_qtd', 'efetivo_previsto', 'ponderacao_reais',\n  'ponderacao_hht', 'data_inicio', 'data_termino', 'data_inicio_reprogramado',\n  'data_termino_reprogramado', 'encarregado_nome',\n];\n\nconst linhas = $json.linhasEAP;\nif (!linhas.length) return [{ json: { sql: 'SELECT 1' } }]; // obra sem tarefas nesta rodada\n\nconst tuplas = linhas.map(l => '(' + COLUNAS.map(c => valorSql(l[c])).join(',') + ')').join(',\\n');\nconst atualiza = COLUNAS.filter(c => c !== 'id').map(c => `\\`${c}\\` = VALUES(\\`${c}\\`)`).join(', ');\nconst colunasSql = COLUNAS.map(c => `\\`${c}\\``).join(',');\nconst sql = `INSERT INTO eap_tarefas (${colunasSql}) VALUES ${tuplas} ON DUPLICATE KEY UPDATE ${atualiza}`;\n\nreturn [{ json: { sql } }];"
         },
         "id": "8f1a1a10-0001-4001-8001-00000000000a",
         "name": "SQL — eap_tarefas",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-80, -150]
+        "position": [0, -100]
       },
       {
         "parameters": {
@@ -57,8 +82,8 @@
         "name": "Gravar eap_tarefas — MySQL",
         "type": "n8n-nodes-base.mySql",
         "typeVersion": 2.4,
-        "position": [160, -150],
-        "notes": "MySQL DIRETO (não via API) -- pedido explícito 2026-09-18. Precisa de credencial MySQL configurada neste node (host dbsubdominios.portalmse.com.br) e de o IP deste host de n8n estar liberado no GRANT do usuário painelmse -- hoje (2026-09-18) esta mesma máquina toma 'Access denied' direto no MySQL, mesmo bloqueio já visto na API local."
+        "position": [240, -100],
+        "notes": "MySQL direto -- precisa de credencial MySQL configurada neste node (host dbsubdominios.portalmse.com.br) e do IP deste host de n8n liberado no GRANT do usuário painelmse."
       },
       {
         "parameters": {
@@ -68,7 +93,7 @@
         "name": "SQL — eap_cards_ativos",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-80, 150]
+        "position": [0, 100]
       },
       {
         "parameters": {
@@ -79,17 +104,20 @@
         "name": "Gravar eap_cards_ativos — MySQL",
         "type": "n8n-nodes-base.mySql",
         "typeVersion": 2.4,
-        "position": [160, 150],
-        "notes": "Depende de 'Gravar eap_tarefas — MySQL' já ter rodado (FK: card_id -> eap_tarefas.id) -- por isso conectado DEPOIS dele, não em paralelo. Mesma credencial MySQL do node anterior."
+        "position": [240, 100],
+        "notes": "Depende de 'Gravar eap_tarefas — MySQL' já ter rodado (FK: card_id -> eap_tarefas.id) -- por isso conectado DEPOIS dele, não em paralelo. Mesma credencial MySQL."
       }
     ],
     "connections": {
-      "A cada 1 hora": { "main": [[{ "node": "Buscar eaps (hub_mse)", "type": "main", "index": 0 }]] },
-      "Buscar eaps (hub_mse)": { "main": [[{ "node": "Montar linhas EAP + cards_ativos (TODO mapear)", "type": "main", "index": 0 }]] },
+      "A cada 1 hora": { "main": [[{ "node": "Lista de id_eap", "type": "main", "index": 0 }]] },
+      "Lista de id_eap": { "main": [[{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop id_eap (1 por vez)": { "main": [[{ "node": "Buscar tarefas do grupo (hub_mse)", "type": "main", "index": 0 }], []] },
+      "Buscar tarefas do grupo (hub_mse)": { "main": [[{ "node": "Montar linhas EAP + cards_ativos (TODO mapear)", "type": "main", "index": 0 }]] },
       "Montar linhas EAP + cards_ativos (TODO mapear)": { "main": [[{ "node": "SQL — eap_tarefas", "type": "main", "index": 0 }]] },
       "SQL — eap_tarefas": { "main": [[{ "node": "Gravar eap_tarefas — MySQL", "type": "main", "index": 0 }]] },
       "Gravar eap_tarefas — MySQL": { "main": [[{ "node": "SQL — eap_cards_ativos", "type": "main", "index": 0 }]] },
-      "SQL — eap_cards_ativos": { "main": [[{ "node": "Gravar eap_cards_ativos — MySQL", "type": "main", "index": 0 }]] }
+      "SQL — eap_cards_ativos": { "main": [[{ "node": "Gravar eap_cards_ativos — MySQL", "type": "main", "index": 0 }]] },
+      "Gravar eap_cards_ativos — MySQL": { "main": [[{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] }
     },
     "pinData": {},
     "meta": { "instanceId": "painel-mse-migracao" }

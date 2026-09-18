@@ -1,7 +1,7 @@
 [
   {
     "id": "avancosDiariosV1",
-    "name": "Avanços diários — avancos → MySQL (eap_apontamentos + snapshot eap_tarefas)",
+    "name": "Avanços diários — por id_eap → MySQL (eap_apontamentos + snapshot eap_tarefas)",
     "nodes": [
       {
         "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
@@ -9,36 +9,60 @@
         "name": "A cada 1 hora",
         "type": "n8n-nodes-base.scheduleTrigger",
         "typeVersion": 1.2,
-        "position": [-1400, 0]
+        "position": [-1800, 0]
       },
       {
         "parameters": {
-          "url": "https://portalmse.com.br/hub_mse_endpoint.php?id=8&endpoint=2",
+          "jsCode": "// Lista real de id_eap, consultada ao vivo no Supabase em 2026-09-18\n// (`SELECT DISTINCT id_eap, id_obra FROM EAP`, paginado -- 7093 linhas,\n// 15 grupos). NÃO é 1 por obra: obra 107 (NN-AP) tem 6 grupos, obra 94\n// (Porto Itapoá) tem 2. `id_eap=66` (obra 103, CNPEM-Auditório) fica de\n// fora de propósito -- mesma exclusão já usada em RMI/Mapa de Compras/OC\n// (obra 103 não está no array OBRAS do painel). Mesma lista do fluxo\n// 'EAP (Avanço Físico)' -- manter as 2 sincronizadas se mudar.\nconst ID_EAP = [\n  { id_eap: 32,  id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 121, id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 51,  id_obra: 91,  nome_obra: 'Novo Nordisk - UB/SP' },\n  { id_eap: 73,  id_obra: 106, nome_obra: 'CNPEM - Faseado' },\n  { id_eap: 86,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 87,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 88,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 89,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 90,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 94,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 110, id_obra: 108, nome_obra: 'Novo Nordisk - AP - Reforço' },\n  { id_eap: 114, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 115, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 127, id_obra: 114, nome_obra: 'IPEN' },\n  // { id_eap: 66, id_obra: 103, nome_obra: 'CNPEM - Auditório' }, -- fora do painel\n];\n\nreturn ID_EAP.map(o => ({ json: o }));"
+        },
+        "id": "8f1a1a10-0002-4002-8002-00000000000b",
+        "name": "Lista de id_eap",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-1560, 0]
+      },
+      {
+        "parameters": { "options": {} },
+        "id": "8f1a1a10-0002-4002-8002-00000000000c",
+        "name": "Loop id_eap (1 por vez)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [-1320, 0],
+        "notes": "Loop EXTERNO por grupo id_eap. Dentro de cada grupo roda o loop INTERNO tarefa x data ('Loop tarefa+data'). Só avança pro próximo id_eap quando o loop interno terminar todas as combinações deste."
+      },
+      {
+        "parameters": {
+          "url": "=https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/tarefas/{{$json.id_eap}}",
           "authentication": "genericCredentialType",
           "genericAuthType": "httpBearerAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              { "name": "id_obra", "value": "={{$json.id_obra}}" }
+            ]
+          },
           "options": {
             "response": { "response": { "responseFormat": "text" } },
             "timeout": 60000
           }
         },
         "id": "8f1a1a10-0002-4002-8002-000000000002",
-        "name": "Buscar eaps (hub_mse)",
+        "name": "Buscar tarefas do grupo (hub_mse)",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [-1160, 0],
-        "notes": "Independente do fluxo 'EAP (Avanço Físico)' -- busca a lista de tarefas de novo em vez de depender do MySQL já estar atualizado, pra não precisar coordenar ordem/horário entre os 2 fluxos. Mesma credencial Bearer do outro fluxo (usuário insere direto no node). Response Format = Text -- ver nota equivalente no outro workflow (hub_mse_endpoint.php devolve algo que o parser JSON do n8n rejeita)."
+        "position": [-1080, 0],
+        "notes": "Independente do fluxo 'EAP (Avanço Físico)' -- busca a lista de tarefas de novo em vez de depender do MySQL já estar atualizado. Mesma credencial Bearer do outro fluxo. {id_eap} do path = id_eap de verdade; id_obra vai como query param também -- confirmado 2026-09-18."
       },
       {
         "parameters": {
-          "mode": "runOnceForAllItems",
-          "jsCode": "// Iteração por TAREFA x DATA (pedido explícito, 2026-09-18: não só\n// 'hoje' -- também recobre o dia anterior, pra não perder apontamento se\n// uma execução horária falhar ou se o dado do dia sair um pouco atrasado\n// na origem). Janela FIXA de 2 dias (hoje + ontem) -- não é a janela de\n// 21 dias usada em outros pontos do painel (aderência/TV), decisão\n// explícita de manter enxuto aqui.\nconst DIAS_JANELA = 2;\n\n// Node anterior está em Response Format = Text -- parse manual, com o\n// texto cru exposto no erro se falhar (mesmo tratamento do outro workflow).\nconst entrada = $input.first().json;\nconst bruto = typeof entrada === 'string' ? entrada : (entrada.data ?? entrada.body ?? JSON.stringify(entrada));\nlet corpo;\ntry {\n  corpo = JSON.parse(bruto);\n} catch (e) {\n  throw new Error('Resposta de eaps nao e JSON valido. Texto cru (ate 1000 chars): ' + String(bruto).slice(0, 1000));\n}\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error('Envelope inesperado de eaps: ' + JSON.stringify(corpo).slice(0, 300)); })();\n\nconst datas = [];\nfor (let i = 0; i < DIAS_JANELA; i++) {\n  const d = new Date();\n  d.setDate(d.getDate() - i);\n  datas.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD\n}\n\nconst combinacoes = [];\nfor (const t of itens) {\n  for (const data of datas) {\n    combinacoes.push({ json: { card_id: Number(t.id), id_obra: Number(t.id_obra), data } });\n  }\n}\nreturn combinacoes;"
+          "jsCode": "// Iteração por TAREFA x DATA (pedido explícito, 2026-09-18: não só\n// 'hoje' -- também recobre o dia anterior). Janela FIXA de 2 dias (hoje +\n// ontem) -- não é a janela de 21 dias usada em outros pontos do painel\n// (aderência/TV), decisão explícita de manter enxuto aqui.\n//\n// Node anterior está em Response Format = Text -- parse manual, com o\n// texto cru exposto no erro se falhar.\nconst DIAS_JANELA = 2;\nconst idEap = $('Loop id_eap (1 por vez)').item.json.id_eap;\nconst idObra = $('Loop id_eap (1 por vez)').item.json.id_obra;\n\nconst bruto = typeof $json === 'string' ? $json : ($json.data ?? $json.body ?? JSON.stringify($json));\nlet corpo;\ntry {\n  corpo = JSON.parse(bruto);\n} catch (e) {\n  throw new Error(`id_eap ${idEap}: resposta de tarefas nao e JSON valido. Texto cru (ate 1000 chars): ` + String(bruto).slice(0, 1000));\n}\nconst itens = Array.isArray(corpo?.data) ? corpo.data\n            : Array.isArray(corpo) ? corpo\n            : (() => { throw new Error(`id_eap ${idEap}: envelope inesperado de tarefas: ` + JSON.stringify(corpo).slice(0, 300)); })();\n\nconst datas = [];\nfor (let i = 0; i < DIAS_JANELA; i++) {\n  const d = new Date();\n  d.setDate(d.getDate() - i);\n  datas.push(d.toISOString().slice(0, 10)); // YYYY-MM-DD\n}\n\nconst combinacoes = [];\nfor (const t of itens) {\n  for (const data of datas) {\n    combinacoes.push({ json: { card_id: Number(t.id), id_obra: idObra, id_eap: idEap, data } });\n  }\n}\nreturn combinacoes;"
         },
         "id": "8f1a1a10-0002-4002-8002-000000000003",
-        "name": "Expandir tarefa x data",
+        "name": "Expandir tarefa x data (deste grupo)",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-920, 0],
-        "notes": "1 item de saída por combinação (tarefa, data) -- ex.: 300 tarefas x 2 dias = 600 itens pro loop seguinte processar."
+        "position": [-840, 0],
+        "notes": "1 item de saída por combinação (tarefa, data), só desta obra -- ex.: 50 tarefas x 2 dias = 100 itens pro loop interno processar antes de voltar pro loop de obras."
       },
       {
         "parameters": { "options": {} },
@@ -46,8 +70,8 @@
         "name": "Loop tarefa+data (1 por vez)",
         "type": "n8n-nodes-base.splitInBatches",
         "typeVersion": 3,
-        "position": [-680, 0],
-        "notes": "Mesmo motivo do loop de RMI/Mapa de Compras: liberar memória a cada combinação em vez de acumular tudo antes de gravar."
+        "position": [-600, 0],
+        "notes": "Loop INTERNO (dentro do loop de obras). Mesmo motivo do loop de RMI/Mapa de Compras: liberar memória a cada combinação em vez de acumular tudo antes de gravar."
       },
       {
         "parameters": {
@@ -63,28 +87,28 @@
         "name": "Buscar avanço do dia",
         "type": "n8n-nodes-base.httpRequest",
         "typeVersion": 4.2,
-        "position": [-200, 0],
-        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (mesma do outro fluxo, usuário insere direto no node)."
+        "position": [-360, 0],
+        "notes": "TODO: trocar a credencial Bearer pela do hub_mse (mesma do outro node)."
       },
       {
         "parameters": {
-          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'avancos'. Ajustar os\n// nomes à ESQUERDA (fonte.<campo>) assim que tivermos uma amostra real;\n// os nomes à DIREITA já são as colunas reais de\n// `eap_apontamentos`/`eap_tarefas` no MySQL (migration 008_eap.sql).\n//\n// Assumindo que a resposta é 1 objeto (não lista), já que a URL pede um\n// card_id + data específicos. Se vier vazio/null, é dia sem apontamento\n// -- pula sem gravar nada (não é erro), devolvendo lista vazia.\n\nconst fonte = $json;\nif (!fonte || (Array.isArray(fonte) && !fonte.length)) return [];\nconst a = Array.isArray(fonte) ? fonte[0] : fonte;\n\nconst combinacao = $('Loop tarefa+data (1 por vez)').item.json;\n\n// 1 objeto só -- a rota /ingest/eap/avanco-diario grava em eap_apontamentos\n// (campos de apontamento) E atualiza o snapshot em eap_tarefas (campos de\n// progresso) a partir do MESMO objeto.\nconst item = {\n  tarefa_id: combinacao.card_id,\n  id_eap_grupo: a.id_eap != null ? Number(a.id_eap) : null,\n  nome_eap: a.nome_eap,\n  nome_obra: a.nome_obra,\n  data_do_input: combinacao.data,\n  edt: a.edt,\n  tarefa: a.tarefa,\n  qtd: a.qtd,\n  unidade: a.unidade,\n  avanco_atual: a.avanco_atual,\n  avanco_atual_p100: a.avanco_atual_p100,\n  avanco_diario: a.avanco_diario,\n  usuario_avanco_diario: a.usuario_avanco_diario,\n  uuid_origem: a.uuid || a.UUID,\n  meta_diaria: a.meta_diaria,\n  status_qualidade: a.status_qualidade,\n  desvio: a.desvio,\n  hht_consumido: a.hht_consumido,\n};\n\nreturn [{ json: { item } }];"
+          "jsCode": "// TODO: mapeamento de campos AINDA NÃO CONFIRMADO -- escrito às cegas,\n// sem ter visto uma resposta real do endpoint 'avancos'. Ajustar os\n// nomes à ESQUERDA (fonte.<campo>) assim que tivermos uma amostra real;\n// os nomes à DIREITA já são as colunas reais de\n// `eap_apontamentos`/`eap_tarefas` no MySQL (migration 008_eap.sql).\n//\n// Assumindo que a resposta é 1 objeto (não lista), já que a URL pede um\n// card_id + data específicos. Se vier vazio/null, é dia sem apontamento\n// -- pula sem gravar nada (não é erro), devolvendo lista vazia.\n\nconst fonte = $json;\nif (!fonte || (Array.isArray(fonte) && !fonte.length)) return [];\nconst a = Array.isArray(fonte) ? fonte[0] : fonte;\n\nconst combinacao = $('Loop tarefa+data (1 por vez)').item.json;\n\nconst item = {\n  tarefa_id: combinacao.card_id,\n  id_eap_grupo: combinacao.id_eap,\n  nome_eap: a.nome_eap,\n  nome_obra: a.nome_obra,\n  data_do_input: combinacao.data,\n  edt: a.edt,\n  tarefa: a.tarefa,\n  qtd: a.qtd,\n  unidade: a.unidade,\n  avanco_atual: a.avanco_atual,\n  avanco_atual_p100: a.avanco_atual_p100,\n  avanco_diario: a.avanco_diario,\n  usuario_avanco_diario: a.usuario_avanco_diario,\n  uuid_origem: a.uuid || a.UUID,\n  meta_diaria: a.meta_diaria,\n  status_qualidade: a.status_qualidade,\n  desvio: a.desvio,\n  hht_consumido: a.hht_consumido,\n};\n\nreturn [{ json: { item } }];"
         },
         "id": "8f1a1a10-0002-4002-8002-000000000007",
         "name": "Montar avanço (TODO mapear)",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [40, 0]
+        "position": [-120, 0]
       },
       {
         "parameters": {
-          "jsCode": "// Monta as 2 queries como STRING pronta -- mesmo motivo do snippet de\n// Restrições/OC (campo \"Query Parameters\" do node MySQL nativo não é\n// confiável no n8n 2.4). 2 queries porque são 2 tabelas diferentes\n// (eap_apontamentos = INSERT/upsert; eap_tarefas = UPDATE parcial só do\n// snapshot) -- nunca uma query só, senão o UPDATE de eap_tarefas\n// arriscaria zerar colunas de estrutura que este fluxo não deveria tocar.\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst valorSql = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';\n  return escapar(v);\n};\n\nconst item = $json.item;\n\nconst COLUNAS_APONTAMENTO = [\n  'tarefa_id', 'id_eap_grupo', 'nome_eap', 'nome_obra', 'data_do_input', 'edt',\n  'tarefa', 'qtd', 'unidade', 'avanco_atual', 'avanco_atual_p100', 'avanco_diario',\n  'usuario_avanco_diario', 'uuid_origem', 'meta_diaria', 'status_qualidade',\n];\nconst colunasSql = COLUNAS_APONTAMENTO.map(c => `\\`${c}\\``).join(',');\nconst valoresSql = COLUNAS_APONTAMENTO.map(c => valorSql(item[c])).join(',');\nconst atualizaApontamento = COLUNAS_APONTAMENTO\n  .filter(c => c !== 'tarefa_id' && c !== 'data_do_input')\n  .map(c => `\\`${c}\\` = VALUES(\\`${c}\\`)`).join(', ');\nconst sqlApontamento = `INSERT INTO eap_apontamentos (${colunasSql}) VALUES (${valoresSql}) ON DUPLICATE KEY UPDATE ${atualizaApontamento}`;\n\nconst COLUNAS_SNAPSHOT = ['avanco_atual', 'desvio', 'meta_diaria', 'avanco_diario', 'status_qualidade', 'hht_consumido'];\nconst setSnapshot = COLUNAS_SNAPSHOT.map(c => `\\`${c}\\` = ${valorSql(item[c])}`).join(', ');\nconst sqlSnapshot = `UPDATE eap_tarefas SET ${setSnapshot} WHERE id = ${valorSql(item.tarefa_id)}`;\n\nreturn [{ json: { sqlApontamento, sqlSnapshot } }];"
+          "jsCode": "const escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst valorSql = (v) => {\n  if (v === null || v === undefined) return 'NULL';\n  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL';\n  return escapar(v);\n};\n\nconst item = $json.item;\n\nconst COLUNAS_APONTAMENTO = [\n  'tarefa_id', 'id_eap_grupo', 'nome_eap', 'nome_obra', 'data_do_input', 'edt',\n  'tarefa', 'qtd', 'unidade', 'avanco_atual', 'avanco_atual_p100', 'avanco_diario',\n  'usuario_avanco_diario', 'uuid_origem', 'meta_diaria', 'status_qualidade',\n];\nconst colunasSql = COLUNAS_APONTAMENTO.map(c => `\\`${c}\\``).join(',');\nconst valoresSql = COLUNAS_APONTAMENTO.map(c => valorSql(item[c])).join(',');\nconst atualizaApontamento = COLUNAS_APONTAMENTO\n  .filter(c => c !== 'tarefa_id' && c !== 'data_do_input')\n  .map(c => `\\`${c}\\` = VALUES(\\`${c}\\`)`).join(', ');\nconst sqlApontamento = `INSERT INTO eap_apontamentos (${colunasSql}) VALUES (${valoresSql}) ON DUPLICATE KEY UPDATE ${atualizaApontamento}`;\n\nconst COLUNAS_SNAPSHOT = ['avanco_atual', 'desvio', 'meta_diaria', 'avanco_diario', 'status_qualidade', 'hht_consumido'];\nconst setSnapshot = COLUNAS_SNAPSHOT.map(c => `\\`${c}\\` = ${valorSql(item[c])}`).join(', ');\nconst sqlSnapshot = `UPDATE eap_tarefas SET ${setSnapshot} WHERE id = ${valorSql(item.tarefa_id)}`;\n\nreturn [{ json: { sqlApontamento, sqlSnapshot } }];"
         },
         "id": "8f1a1a10-0002-4002-8002-00000000000a",
         "name": "SQL — avanço",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [280, 0]
+        "position": [120, 0]
       },
       {
         "parameters": {
@@ -95,8 +119,8 @@
         "name": "Gravar eap_apontamentos — MySQL",
         "type": "n8n-nodes-base.mySql",
         "typeVersion": 2.4,
-        "position": [520, -100],
-        "notes": "MySQL DIRETO (não via API) -- pedido explícito 2026-09-18. Precisa de credencial MySQL configurada neste node e de o IP deste host de n8n estar liberado no GRANT do usuário painelmse -- hoje (2026-09-18) esta mesma máquina toma 'Access denied' direto no MySQL, mesmo bloqueio já visto na API local."
+        "position": [360, -100],
+        "notes": "MySQL direto -- precisa de credencial MySQL configurada neste node e do IP deste host de n8n liberado no GRANT do usuário painelmse."
       },
       {
         "parameters": {
@@ -107,15 +131,17 @@
         "name": "Atualizar snapshot eap_tarefas — MySQL",
         "type": "n8n-nodes-base.mySql",
         "typeVersion": 2.4,
-        "position": [520, 100],
-        "notes": "Mesma credencial MySQL do node anterior. Roda DEPOIS do insert em eap_apontamentos (não em paralelo) -- sem transação entre os 2 (o node MySQL nativo do n8n não junta 2 execuções numa transação só), mas cada um é atômico por si."
+        "position": [360, 100],
+        "notes": "Mesma credencial MySQL do node anterior. Roda depois do insert em eap_apontamentos (não em paralelo, sem transação entre os 2 -- cada um é atômico por si)."
       }
     ],
     "connections": {
-      "A cada 1 hora": { "main": [[{ "node": "Buscar eaps (hub_mse)", "type": "main", "index": 0 }]] },
-      "Buscar eaps (hub_mse)": { "main": [[{ "node": "Expandir tarefa x data", "type": "main", "index": 0 }]] },
-      "Expandir tarefa x data": { "main": [[{ "node": "Loop tarefa+data (1 por vez)", "type": "main", "index": 0 }]] },
-      "Loop tarefa+data (1 por vez)": { "main": [[{ "node": "Buscar avanço do dia", "type": "main", "index": 0 }], []] },
+      "A cada 1 hora": { "main": [[{ "node": "Lista de id_eap", "type": "main", "index": 0 }]] },
+      "Lista de id_eap": { "main": [[{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop id_eap (1 por vez)": { "main": [[{ "node": "Buscar tarefas do grupo (hub_mse)", "type": "main", "index": 0 }], []] },
+      "Buscar tarefas do grupo (hub_mse)": { "main": [[{ "node": "Expandir tarefa x data (deste grupo)", "type": "main", "index": 0 }]] },
+      "Expandir tarefa x data (deste grupo)": { "main": [[{ "node": "Loop tarefa+data (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop tarefa+data (1 por vez)": { "main": [[{ "node": "Buscar avanço do dia", "type": "main", "index": 0 }], [{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] },
       "Buscar avanço do dia": { "main": [[{ "node": "Montar avanço (TODO mapear)", "type": "main", "index": 0 }]] },
       "Montar avanço (TODO mapear)": { "main": [[{ "node": "SQL — avanço", "type": "main", "index": 0 }]] },
       "SQL — avanço": { "main": [[{ "node": "Gravar eap_apontamentos — MySQL", "type": "main", "index": 0 }]] },
