@@ -19,12 +19,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Além do banco, informa quais integrações têm token configurado — só
+// true/false, nunca o valor. Serve para conferir um deploy sem acesso ao
+// servidor: desde que Restrições e OC/CO passaram a consultar o Portal direto
+// (sem fallback pra tabela), `.env` sem esses tokens = essas duas telas fora do
+// ar. Melhor descobrir por aqui do que pelo usuário reclamando.
 async function health(req, res) {
+  const integracoes = {
+    avancos_token: Boolean(process.env.AVANCOS_API_TOKEN),
+    oc_token: Boolean(process.env.OC_API_TOKEN),
+    rmi_token: Boolean(process.env.RMI_API_TOKEN),
+    mapa_compras_token: Boolean(process.env.MAPA_COMPRAS_API_TOKEN),
+  };
   try {
     await pool.query('SELECT 1');
-    res.json({ status: 'ok', db: 'painelmse' });
+    res.json({ status: 'ok', db: 'painelmse', integracoes });
   } catch (err) {
-    res.status(503).json({ status: 'erro', detalhe: err.message });
+    res.status(503).json({ status: 'erro', detalhe: err.message, integracoes });
   }
 }
 

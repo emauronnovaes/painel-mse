@@ -31,7 +31,14 @@ for (const prefixo of ['', '/api']) {
   // funcionar. Ficam montadas para o teste refletir o servidor de verdade.
   app.use(`${prefixo}/suprimentos`, suprimentosRouter);
   app.use(`${prefixo}/medicoes`, medicoesRouter);
-  app.get(`${prefixo}/health`, (req, res) => res.json({ status: 'ok', modo: 'local-sem-banco' }));
+  app.get(`${prefixo}/health`, (req, res) => res.json({
+    status: 'ok',
+    modo: 'local-sem-banco',
+    integracoes: {
+      avancos_token: Boolean(process.env.AVANCOS_API_TOKEN),
+      oc_token: Boolean(process.env.OC_API_TOKEN),
+    },
+  }));
 }
 
 const port = process.env.PORT || 3001;
