@@ -1,0 +1,398 @@
+{
+  "name": "Efetivo API - Efetivo diário",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 23
+            }
+          ]
+        }
+      },
+      "id": "efe-trigger",
+      "name": "Diariamente 23h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4096,
+        -240
+      ],
+      "notes": "23h: o efetivo do dia so fecha depois do turno."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Uma chamada por DIA (a API devolve todas as obras de uma vez quando obra_id e omitido).\n// Backfill/recarga: preencha os dois campos abaixo com 'YYYY-MM-DD'.\n// Os dois vazios = modo normal (ultimos DIAS dias, terminando hoje).\nconst DATA_INICIO = '';\nconst DATA_FIM = '';\nconst DIAS = 2; // hoje + ontem: o dia corrente ainda muda ate o fim do turno\n\nconst ISO = /^\\d{4}-\\d{2}-\\d{2}$/;\nconst hoje = $now.setZone('America/Sao_Paulo').startOf('day');\nconst datas = [];\n\nif (DATA_INICIO || DATA_FIM) {\n  if (!ISO.test(DATA_INICIO) || !ISO.test(DATA_FIM)) {\n    throw new Error('DATA_INICIO e DATA_FIM devem estar os dois preenchidos no formato YYYY-MM-DD');\n  }\n  let d = DateTime.fromISO(DATA_INICIO, { zone: 'America/Sao_Paulo' });\n  const fim = DateTime.fromISO(DATA_FIM, { zone: 'America/Sao_Paulo' });\n  if (fim < d) throw new Error('DATA_FIM e anterior a DATA_INICIO');\n  while (d <= fim) { datas.push(d.toFormat('yyyy-MM-dd')); d = d.plus({ days: 1 }); }\n} else {\n  if (!(DIAS >= 1)) throw new Error('DIAS deve ser >= 1');\n  for (let i = 0; i < DIAS; i++) datas.push(hoje.minus({ days: i }).toFormat('yyyy-MM-dd'));\n}\n\nreturn datas.map(data => ({ json: { data } }));\n"
+      },
+      "id": "efe-datas",
+      "name": "Definir datas",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3872,
+        -240
+      ],
+      "notes": "Backfill: preencher DATA_INICIO e DATA_FIM dentro do node."
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "efe-loop",
+      "name": "Loop data (1 por vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3648,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://portalmse.com.br/microservices/hub_mse/api_efetivo/efetivo",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "data_efetivo_diario",
+              "value": "={{ $('Loop data (1 por vez)').item.json.data }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "efe-http",
+      "name": "Buscar efetivo do dia",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3424,
+        -240
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "CRIAR-CREDENCIAL-EFETIVO",
+          "name": "Efetivo (Hub MSE)"
+        }
+      },
+      "notes": "Sem obra_id de proposito: a API devolve TODAS as obras de uma vez (~400 KB). O filtro de obras fica no node seguinte."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Obras gravadas. null = TODAS as que a API devolver (hoje 21, inclui SEDE/AFASTADOS).\n// Padrao = as 7 obras da tabela canonica painelmse.obras. Para incluir o\n// CNPEM-AUDITORIO (que o fluxo antigo tinha comentado) e so acrescentar 103.\nconst OBRAS = [91, 94, 106, 107, 108, 110, 114];\n\nconst dataLoop = $('Loop data (1 por vez)').first().json.data;\n\n// O node HTTP embrulha o corpo em { data: ... }; a propria API tambem responde { data: {...} }.\nlet corpo = $json;\nif (typeof corpo === 'string') { corpo = JSON.parse(corpo); }\nif (corpo && typeof corpo.data === 'string') { try { corpo = JSON.parse(corpo.data); } catch (e) { /* nao era JSON */ } }\nwhile (corpo && corpo.data && typeof corpo.data === 'object' && !Array.isArray(corpo.data) && corpo.data.obras) { corpo = corpo.data; }\nif (corpo && corpo.body && typeof corpo.body === 'object' && corpo.body.obras) { corpo = corpo.body; }\n\nconst vazio = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\nconst n = v => { if (vazio(v)) return null; const x = Number(typeof v === 'string' ? v.trim().replace(',', '.') : v); return Number.isFinite(x) ? x : null; };\nconst i = v => { const x = n(v); return x === null ? null : Math.trunc(x); };\nconst s = (v, max) => { if (vazio(v) || typeof v === 'object') return null; const t = String(v).trim(); return t.length > max ? t.slice(0, max) : t; };\nconst d = v => { if (vazio(v)) return null; const t = String(v).trim().slice(0, 10); return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null; };\nconst q = String.fromCharCode(96);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\").replace(/\\x00/g, '') + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\n\nconst dataRef = d(corpo && corpo.data_efetivo_diario) || d(dataLoop);\nif (!dataRef) throw new Error('Sem data_efetivo_diario valida (loop: ' + dataLoop + ')');\n\nconst obras = corpo && Array.isArray(corpo.obras) ? corpo.obras : null;\nif (!obras) {\n  throw new Error('Formato inesperado em api_efetivo/efetivo para ' + dataRef + ' - chaves recebidas: ' + JSON.stringify(Object.keys(corpo || {})));\n}\n\n// Obra sem id_obra nao tem chave; obra fora de OBRAS nao interessa ao painel.\nconst obrasFiltradas = obras.filter(o => {\n  const idObra = i(o.id_obra);\n  if (idObra === null) return false;\n  return OBRAS === null || OBRAS.includes(idObra);\n});\n\nconst detalheMySql = [];\nconst detalheSupabase = [];\nconst resumoMySql = [];\nconst resumoSupabase = [];\nconst idsObras = [];\nlet vistos = 0;\nlet descartados = 0;\nlet amostraRuim = null;\n\nfor (const o of obrasFiltradas) {\n  const idObra = i(o.id_obra);\n  const nomeObra = s(o.nome_obra, 120);\n  idsObras.push(idObra);\n\n  const r = o.resumo || {};\n  resumoMySql.push({\n    data_efetivo_diario: dataRef,\n    id_obra: idObra,\n    nome_obra: nomeObra,\n    is_hoje: corpo.is_hoje === true ? 1 : (corpo.is_hoje === false ? 0 : null),\n    fonte: s(corpo.fonte, 60),\n    total_obra: i(o.total),\n    total: i(r.total),\n    presentes: i(r.presentes),\n    presentes_d: i(r.presentes_d),\n    presentes_int: i(r.presentes_int),\n    presentes_n: i(r.presentes_n),\n    ausentes: i(r.ausentes),\n    mobilizacao: i(r.mobilizacao),\n    sede: i(r.sede),\n    sem_atividade: i(r.sem_atividade),\n    outros: i(r.outros)\n  });\n\n  // O Supabase (projeto Efetivo) mantem o nome de coluna antigo (obra_id) e a\n  // coluna raw; o painel le essas duas tabelas hoje, nao dava pra renomear aqui.\n  resumoSupabase.push({\n    obra_id: idObra,\n    nome_obra: nomeObra,\n    data_efetivo_diario: dataRef,\n    is_hoje: corpo.is_hoje ?? null,\n    fonte: corpo.fonte ?? null,\n    total_obra: o.total ?? null,\n    total: r.total ?? null,\n    presentes: r.presentes ?? null,\n    presentes_d: r.presentes_d ?? null,\n    presentes_int: r.presentes_int ?? null,\n    presentes_n: r.presentes_n ?? null,\n    ausentes: r.ausentes ?? null,\n    mobilizacao: r.mobilizacao ?? null,\n    sede: r.sede ?? null,\n    sem_atividade: r.sem_atividade ?? null,\n    outros: r.outros ?? null,\n    raw: JSON.stringify(r)\n  });\n\n  const efetivo = Array.isArray(o.efetivo) ? o.efetivo : [];\n  for (const f of efetivo) {\n    vistos++;\n    const idFunc = i(f.id_funcionario);\n    const idEmp = i(f.id_empresa);\n    // A chave no MySQL e no Supabase e (dia, obra, funcionario, empresa):\n    // linha sem funcionario ou sem empresa nao tem onde encaixar.\n    if (idFunc === null || idEmp === null) {\n      descartados++;\n      if (!amostraRuim) amostraRuim = JSON.stringify({ id_obra: idObra, funcionario: f }).slice(0, 400);\n      continue;\n    }\n    detalheMySql.push({\n      data_efetivo_diario: dataRef,\n      id_obra: idObra,\n      id_funcionario: idFunc,\n      id_empresa: idEmp,\n      nome_obra: nomeObra,\n      nome: s(f.nome, 120),\n      tipo_funcionario: s(f.tipo_funcionario, 40),\n      moi_mod: s(f.moi_mod, 20),\n      id_funcao: i(f.id_funcao),\n      nome_funcao: s(f.nome_funcao, 120),\n      razao_social: s(f.razao_social, 120),\n      data_admissao: d(f.data_admissao),\n      situacao: s(f.situacao, 40),\n      observacao: vazio(f.observacao) ? null : String(f.observacao)\n    });\n    detalheSupabase.push({\n      obra_id: idObra,\n      nome_obra: nomeObra,\n      data_efetivo_diario: dataRef,\n      id_funcionario: idFunc,\n      id_empresa: idEmp,\n      tipo_funcionario: f.tipo_funcionario ?? null,\n      moi_mod: f.moi_mod ?? null,\n      nome: f.nome ?? null,\n      id_funcao: f.id_funcao ?? null,\n      nome_funcao: f.nome_funcao ?? null,\n      razao_social: f.razao_social ?? null,\n      data_admissao: d(f.data_admissao),\n      situacao: f.situacao ?? null,\n      observacao: f.observacao ?? null,\n      raw: JSON.stringify(f)\n    });\n  }\n}\n\n// Sem isto, mapeamento errado vira carga vazia SEM erro: as linhas sao\n// descartadas em silencio, o INSERT vira 'SELECT 1' e o fluxo termina verde.\nif (vistos > 0 && detalheMySql.length === 0) {\n  throw new Error('api_efetivo ' + dataRef + ': ' + vistos + ' funcionario(s) na resposta e NENHUM com id utilizavel. Amostra: ' + amostraRuim);\n}\n\n// Usa o alias `novo` no lugar de VALUES(col): VALUES() esta deprecado no\n// MySQL 8.4 e enche o log de warning 1287 (1 por coluna, por statement).\nconst montarUpsert = (tabela, colunas, chave, linhas) => {\n  if (!linhas.length) return 'SELECT 1';\n  const cols = colunas.map(c => q + c + q).join(',');\n  const tuplas = linhas.map(l => '(' + colunas.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\n  const upd = colunas.filter(c => !chave.includes(c)).map(c => q + c + q + ' = novo.' + q + c + q).join(', ');\n  return 'INSERT INTO ' + tabela + ' (' + cols + ') VALUES ' + tuplas + ' AS novo ON DUPLICATE KEY UPDATE ' + upd;\n};\n\nconst COLS_DETALHE = ['data_efetivo_diario','id_obra','id_funcionario','id_empresa','nome_obra','nome','tipo_funcionario','moi_mod','id_funcao','nome_funcao','razao_social','data_admissao','situacao','observacao'];\nconst COLS_RESUMO = ['data_efetivo_diario','id_obra','nome_obra','is_hoje','fonte','total_obra','total','presentes','presentes_d','presentes_int','presentes_n','ausentes','mobilizacao','sede','sem_atividade','outros'];\n\nconst sqlDetalhe = montarUpsert('efet_diario', COLS_DETALHE, ['data_efetivo_diario','id_obra','id_funcionario','id_empresa'], detalheMySql);\nconst sqlResumo = montarUpsert('efet_resumo_diario', COLS_RESUMO, ['data_efetivo_diario','id_obra'], resumoMySql);\n\n// Quem saiu do efetivo do dia tem que sair da tabela. So apaga dentro das obras\n// que vieram nesta resposta: resposta vazia (API fora do ar, dia sem lancamento)\n// nao apaga nada, porque idsObras fica vazio.\nlet sqlDeleteDetalhe = 'SELECT 1';\nlet sqlDeleteResumo = 'SELECT 1';\nif (idsObras.length) {\n  const listaObras = idsObras.join(',');\n  const escopo = 'data_efetivo_diario = ' + sqlVal(dataRef) + ' AND id_obra IN (' + listaObras + ')';\n  const trincas = detalheMySql.map(r => '(' + r.id_obra + ',' + r.id_funcionario + ',' + r.id_empresa + ')').join(',');\n  sqlDeleteDetalhe = trincas\n    ? 'DELETE FROM efet_diario WHERE ' + escopo + ' AND (id_obra, id_funcionario, id_empresa) NOT IN (' + trincas + ')'\n    : 'DELETE FROM efet_diario WHERE ' + escopo;\n  // Resumo: 1 linha por obra, e toda obra do escopo acabou de ser reinserida.\n  // Este DELETE so serve pra limpar obra que saiu de OBRAS depois de ja ter sido gravada.\n  sqlDeleteResumo = 'DELETE FROM efet_resumo_diario WHERE data_efetivo_diario = ' + sqlVal(dataRef) + ' AND id_obra NOT IN (' + listaObras + ')';\n}\n\nconst diagnostico = {\n  data_efetivo_diario: dataRef,\n  obras_na_resposta: obras.length,\n  obras_gravadas: obrasFiltradas.length,\n  funcionarios_recebidos: vistos,\n  descartados: descartados,\n  linhas_detalhe: detalheMySql.length,\n  linhas_resumo: resumoMySql.length\n};\n\nreturn [{\n  json: {\n    detalheSupabase,\n    resumoSupabase,\n    sqlDetalhe,\n    sqlResumo,\n    sqlDeleteDetalhe,\n    sqlDeleteResumo,\n    diagnostico\n  }\n}];\n"
+      },
+      "id": "efe-montar",
+      "name": "Montar efetivo do dia",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3168,
+        -240
+      ],
+      "notes": "Filtro de obras (const OBRAS) e montagem do SQL. Estoura se a resposta vier em formato inesperado."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://wnldmumgjwujveeimyef.supabase.co/rest/v1/efetivo_diario_raw?on_conflict=obra_id,data_efetivo_diario,id_funcionario,id_empresa",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar efetivo do dia').first().json.detalheSupabase) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "efe-supa-efetivo_diario_raw",
+      "name": "Upsert detalhe no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2816,
+        -400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "CRIAR-CREDENCIAL-SUPABASE-EFETIVO",
+          "name": "Supabase Efetivo (service_role)"
+        }
+      },
+      "notes": "Projeto Efetivo (wnldmumgjwujveeimyef), NAO o principal. Credencial precisa ser service_role."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://wnldmumgjwujveeimyef.supabase.co/rest/v1/efetivo_resumo_diario?on_conflict=obra_id,data_efetivo_diario",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar efetivo do dia').first().json.resumoSupabase) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "efe-supa-efetivo_resumo_diario",
+      "name": "Upsert resumo no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2816,
+        -240
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "CRIAR-CREDENCIAL-SUPABASE-EFETIVO",
+          "name": "Supabase Efetivo (service_role)"
+        }
+      },
+      "notes": "Projeto Efetivo (wnldmumgjwujveeimyef), NAO o principal. Credencial precisa ser service_role."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar efetivo do dia').first().json.sqlDetalhe }}",
+        "options": {}
+      },
+      "id": "efe-my-det",
+      "name": "Gravar efet_diario — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -400
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Upsert em painelmse.efet_diario (PK = data + obra + funcionario + empresa)."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar efetivo do dia').first().json.sqlResumo }}",
+        "options": {}
+      },
+      "id": "efe-my-res",
+      "name": "Gravar efet_resumo_diario — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -240
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Upsert em painelmse.efet_resumo_diario (PK = data + obra)."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar efetivo do dia').first().json.sqlDeleteDetalhe }}",
+        "options": {}
+      },
+      "id": "efe-my-del-det",
+      "name": "Remover detalhe que saiu — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -80
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Apaga do dia quem sumiu da resposta, so nas obras que vieram nela."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar efetivo do dia').first().json.sqlDeleteResumo }}",
+        "options": {}
+      },
+      "id": "efe-my-del-res",
+      "name": "Remover resumo orfao — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        80
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Rede de seguranca: limpa obra que saiu da const OBRAS depois de ja ter sido gravada."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Diariamente 23h": {
+      "main": [
+        [
+          {
+            "node": "Definir datas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Definir datas": {
+      "main": [
+        [
+          {
+            "node": "Loop data (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop data (1 por vez)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar efetivo do dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar efetivo do dia": {
+      "main": [
+        [
+          {
+            "node": "Montar efetivo do dia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar efetivo do dia": {
+      "main": [
+        [
+          {
+            "node": "Upsert detalhe no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert detalhe no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Upsert resumo no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert resumo no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Gravar efet_diario — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar efet_diario — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Gravar efet_resumo_diario — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar efet_resumo_diario — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Remover detalhe que saiu — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover detalhe que saiu — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Remover resumo orfao — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover resumo orfao — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Loop data (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "instanceId": "232593807e4cb6bc9c0202a82a725208ea2e54a4d25b9192213d397de27f38fc"
+  },
+  "tags": []
+}
