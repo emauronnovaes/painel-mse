@@ -50,7 +50,7 @@
     91: 'https://visi.constructin.com.br/#/v?t=edc798829d281af4cc43b80fec23cea2df9eeba26a78cc8a434257bedd774461&p=11517',
   });
   const OBRA_ORTOFOTO = Object.freeze({
-    94: Object.freeze({ dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-08-25' }),
+    94: Object.freeze({ dzi: 'assets/ortofoto-porto/ortofoto.dzi', data: '2026-09-15' }),
   });
   const OBRAS_SUPRIMENTOS_VALIDADAS = Object.freeze(new Set([106, 110, 94, 107, 108, 91, 114]));
   const OBRAS_STATUS_MANUAL_DESATIVADO = Object.freeze(new Set());

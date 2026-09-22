@@ -1,0 +1,301 @@
+{
+  "name": "Avanços API - Cards ativos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "6b5eb01f-3b86-4492-beee-7f09544d4db7",
+      "name": "A cada 1 hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1568,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Mesma lista dos fluxos de EAP/Apontamentos (consulta manual na tabela EAP).\nconst ids = [32, 51, 66, 73, 86, 87, 88, 89, 90, 94, 110, 114, 115, 121, 127];\nreturn ids.map(id_eap => ({ json: { id_eap } }));"
+      },
+      "id": "c3cdfc96-2a42-4a91-be0f-d3b089fe081b",
+      "name": "Lista manual de id_eap",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "2f068c7f-8cdd-49de-abc5-fda267521dc5",
+      "name": "Loop id_eap (1 por vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1152,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/cards_ativos/' + $('Loop id_eap (1 por vez)').item.json.id_eap}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "0916db2a-0436-4466-a894-f1fefc8469f9",
+      "name": "Buscar cards ativos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -928,
+        80
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FT2cWeDSqiJuPx4t",
+          "name": "EAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const corpo = $json.data ?? $json.body?.data ?? $json.body ?? $json;\nconst idEap = $('Loop id_eap (1 por vez)').item.json.id_eap;\n\n// A resposta do endpoint ainda nao foi vista de perto: aceita os formatos mais\n// provaveis e, se nenhum casar, o erro mostra as chaves reais que vieram.\nconst bruto = corpo.cards ?? corpo.cards_ativos ?? corpo.tarefas ?? (Array.isArray(corpo) ? corpo : null);\nif (!Array.isArray(bruto)) throw new Error('Formato inesperado em cards_ativos/' + idEap + ' - chaves recebidas: ' + JSON.stringify(Object.keys(corpo || {})));\n\nconst vazio = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\nconst n = v => { if (vazio(v)) return null; const x = Number(typeof v === 'string' ? v.trim().replace(',', '.') : v); return Number.isFinite(x) ? x : null; };\nconst s = (v, max) => { if (vazio(v)) return null; const t = String(v).trim(); return t.length > max ? t.slice(0, max) : t; };\nconst d = v => { if (vazio(v)) return null; const t = String(v).trim().slice(0, 10); return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null; };\nconst q = String.fromCharCode(96);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\").replace(/\\x00/g, '') + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\n\n// limites de texto = tamanho das colunas em painelmse.eap_cards_ativos\nconst rows = bruto.map(c => ({\n  card_id: s(c.card_id ?? c.id_card ?? c.id, 30),\n  id_eap_tabela: n(corpo.id_eap_tabela ?? corpo.id_eap ?? c.id_eap_tabela ?? idEap),\n  nome_eap: s(corpo.nome_eap ?? c.nome_eap, 120),\n  id_obra: n(corpo.id_obra ?? c.id_obra),\n  nome_obra: s(corpo.nome_obra ?? c.nome_obra, 120),\n  edt: s(c.edt, 60),\n  tarefa: s(c.tarefa ?? c.tarefa_nome ?? c.nome_tarefa, 255),\n  resp_planejamento: s(c.resp_planejamento ?? c.responsavel_planejamento ?? c.planejamento, 120),\n  responsavel_encarregado: s(c.responsavel_encarregado ?? c.encarregado ?? c.encarregado_nome, 120),\n  supervisor_coordenador: s(c.supervisor_coordenador ?? c.supervisor ?? c.coordenador, 120)\n})).filter(r => r.card_id != null);\n\n// --- MySQL: painelmse.eap_cards_ativos (PK = card_id) ---\nconst COLUNAS = ['card_id','id_eap_tabela','nome_eap','id_obra','nome_obra','edt','tarefa','resp_planejamento','responsavel_encarregado','supervisor_coordenador'];\nconst colsSql = COLUNAS.map(c => q + c + q).join(',');\nconst tuplas = rows.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst updSql = COLUNAS.filter(c => c !== 'card_id').map(c => q + c + q + ' = VALUES(' + q + c + q + ')').join(', ');\nconst sqlMySql = rows.length\n  ? 'INSERT INTO eap_cards_ativos (' + colsSql + ') VALUES ' + tuplas + ' ON DUPLICATE KEY UPDATE ' + updSql + ', ' + q + 'sincronizado_em' + q + ' = CURRENT_TIMESTAMP'\n  : 'SELECT 1';\n\n// cards_ativos e retrato do AGORA: o que sumiu da resposta tem que sair da tabela.\n// Roda antes ou depois do INSERT, tanto faz - a lista de quem fica e a mesma.\nconst idSql = sqlVal(n(idEap));\nconst listaSql = rows.map(r => sqlVal(r.card_id)).join(',');\nconst sqlDelete = rows.length\n  ? 'DELETE FROM eap_cards_ativos WHERE id_eap_tabela = ' + idSql + ' AND card_id NOT IN (' + listaSql + ')'\n  : 'DELETE FROM eap_cards_ativos WHERE id_eap_tabela = ' + idSql;\n\n// mesma limpeza no Supabase, via PostgREST\nconst listaUrl = rows.map(r => '%22' + encodeURIComponent(String(r.card_id)) + '%22').join(',');\nconst urlDeleteSupabase = 'https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/cards_ativos?id_eap_tabela=eq.' + encodeURIComponent(String(n(idEap)))\n  + (rows.length ? '&card_id=not.in.(' + listaUrl + ')' : '');\n\nreturn [{ json: { rows, sqlMySql, sqlDelete, urlDeleteSupabase, total: rows.length } }];\n"
+      },
+      "id": "5e6d3871-d9a7-4aaa-a5e0-53c6c9ccaedb",
+      "name": "Montar cards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/cards_ativos?on_conflict=card_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json.rows)}}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "60284589-4489-4f86-9573-cb09a21ec7e8",
+      "name": "Upsert cards no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        -96
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Credencial Supabase precisa ser a service_role: cards_ativos e apontamento_efetivo so tem policy de SELECT, anon key nao escreve."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sqlMySql }}",
+        "options": {}
+      },
+      "id": "fed65e18-b697-493e-bd16-f66ae52692c4",
+      "name": "Gravar eap_cards_ativos — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -480,
+        96
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Upsert em painelmse.eap_cards_ativos. Selecione a credencial MySQL neste node."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sqlDelete }}",
+        "options": {}
+      },
+      "id": "62bdc2fa-a355-45ca-a683-e17b056f79ac",
+      "name": "Remover cards inativos — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -480,
+        288
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Apaga os cards da EAP que sumiram da resposta (a tabela e retrato do agora). Ordem em relacao ao INSERT nao importa. Selecione a credencial MySQL neste node."
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ $json.urlDeleteSupabase }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "7f9c2be4-b59c-4755-95fb-9f6f08c41030",
+      "name": "Remover cards inativos no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -480,
+        480
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Mesma limpeza do MySQL. So funciona com credencial service_role."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "A cada 1 hora": {
+      "main": [
+        [
+          {
+            "node": "Lista manual de id_eap",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista manual de id_eap": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop id_eap (1 por vez)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar cards ativos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar cards ativos": {
+      "main": [
+        [
+          {
+            "node": "Montar cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar cards": {
+      "main": [
+        [
+          {
+            "node": "Upsert cards no Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gravar eap_cards_ativos — MySQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remover cards inativos — MySQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remover cards inativos no Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover cards inativos no Supabase": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "94ad99e2-2488-4842-b479-05d2a75c3813",
+  "meta": {
+    "instanceId": "232593807e4cb6bc9c0202a82a725208ea2e54a4d25b9192213d397de27f38fc"
+  },
+  "nodeGroups": [],
+  "id": "KZI5SUcJps4Sg2kw",
+  "tags": []
+}

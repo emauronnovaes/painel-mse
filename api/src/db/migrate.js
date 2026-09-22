@@ -1,13 +1,14 @@
 import 'dotenv/config';
 import { readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import mysql from 'mysql2/promise';
 
 const migrationsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'migrations');
 
 // Reaplica TODOS os arquivos toda vez, sem tabela de controle — seguro
-// porque cada migration usa `CREATE TABLE IF NOT EXISTS` (idempotente).
+// porque SQL usa CREATE TABLE IF NOT EXISTS e migrations JS verificam o
+// schema antes de ALTER (ambas precisam ser idempotentes).
 // Usado tanto pelo `npm run migrate` (linha de comando) quanto por
 // `server.js` no boot, pra nenhum deploy esquecer de rodar migration nova.
 export async function aplicarMigracoes() {
@@ -25,13 +26,17 @@ export async function aplicarMigracoes() {
 
   try {
     const arquivos = readdirSync(migrationsDir)
-      .filter((nome) => nome.endsWith('.sql'))
+      .filter((nome) => /\.(sql|js)$/.test(nome))
       .sort();
 
     for (const arquivo of arquivos) {
-      const sql = readFileSync(path.join(migrationsDir, arquivo), 'utf8');
       console.log(`Aplicando ${arquivo}...`);
-      await conn.query(sql);
+      if (arquivo.endsWith('.js')) {
+        const { default: migrar } = await import(pathToFileURL(path.join(migrationsDir, arquivo)).href);
+        await migrar(conn);
+      } else {
+        await conn.query(readFileSync(path.join(migrationsDir, arquivo), 'utf8'));
+      }
     }
     console.log('Migrações aplicadas.');
   } finally {

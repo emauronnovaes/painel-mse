@@ -1,5 +1,13 @@
 # Plano de Migração — Supabase → MySQL (painelmse)
 
+> Atualização de 21/09/2026: inventário de fontes efetivas, comparação dos
+> espelhos e migração do consumo de cards no
+> [[17 - Auditoria das fontes e consumo MySQL]]. Passar pela API não implica
+> ler MySQL: Restrições e OC/CO hoje consultam o Portal diretamente.
+> Continuação: [[18 - Corte EAP e histórico de setembro no MySQL]] — carga
+> real de setembro concluída e consumo de EAP/qualidade/alocação/aderência
+> migrado no código local, preservando o legado anterior a 01/09/2026.
+
 Mapa de ação completo para tirar o painel-mse do Supabase e passar a operar
 sobre o MySQL `painelmse` (host `dbsubdominios.portalmse.com.br`, usuário
 `painelmse`). Estratégia escolhida: **big bang por feature** — cada domínio
@@ -430,12 +438,37 @@ repetir o mesmo padrão de `exigirAcessoFinanceiroCp`, não o de Restrições.
 
 ### Etapa 4 — Efetivo
 
-- [ ] Migrar o projeto Supabase "Efetivo" inteiro (realizado + previsto + 14
-      views agregadas).
+- [x] Ingestão do efetivo diário realizado escrevendo também no MySQL
+      (`efet_diario`, `efet_resumo_diario` — migration `009_efetivo.sql`),
+      via o fluxo n8n `Efetivo API - Efetivo diário`, que substitui o
+      `Efetivo Diário` antigo (21/09/2026). Escrita dupla: o painel continua
+      lendo `efetivo_diario_raw` / `efetivo_resumo_diario` no Supabase do
+      projeto Efetivo. Detalhes e pendências em
+      `n8n/Revisão N8N/Efetivo API - Efetivo diário.README.md`.
+- [ ] Migrar o resto do projeto Supabase "Efetivo" (previsto + 14 views
+      agregadas).
+- [ ] Repontar as 5 leituras de `efetivo_diario_raw` do front
+      (`prototipo/index.html`, `prototipo/combinado/index.html`) para a API
+      intermediária, e então derrubar as 2 tabelas do Supabase.
 - [ ] Substituir a Edge Function `efetivo` pela lógica já portada na Etapa 0.
 
 ### Etapa 5 — Financeiro/Acesso + SSO (mais acoplado, por último)
 
+- [x] Índice financeiro por tarefa (a "Performance" de Encarregados) migrado
+      (21/09/2026): `fin_medicao_acumulada` (migration `010_financeiro.sql`),
+      alimentada pelo fluxo n8n `Financeiro API - Relatório de custos`, que
+      substitui o `Relatório de Custos` antigo. O `prototipo/` deixou de ler a
+      view `v_indices_financeiros_diario` direto do Supabase e passou pela rota
+      `GET /eap/indices-financeiros`. `apresentacao/` ainda lê a view, por isso
+      a escrita no Supabase (`medicao_acumulada` + `tarefas`) continua.
+      **Tentamos consulta direta à API, como em Cards Ativos/Restrições, e não
+      serve**: a origem leva 73–96 s na `id_eap` 51 (obra 91),
+      independentemente da janela pedida — medição no
+      `n8n/Revisão N8N/Financeiro API - Relatório de custos.README.md`. É o
+      primeiro caso do projeto em que "perguntar na hora" foi testado e
+      REJEITADO por tempo de resposta; vale como critério para os próximos.
+- [ ] Repontar `apresentacao/index.html` para a rota e então derrubar a view,
+      `medicao_acumulada` e `tarefas` no Supabase.
 - [ ] `obra_chaves`, `acesso_total`.
 - [ ] Reimplementar as funções RPC financeiras na API intermediária.
 - [ ] Cortar o SSO do Portal para a versão nova (API intermediária), com o

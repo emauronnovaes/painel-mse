@@ -1,0 +1,370 @@
+{
+  "name": "Financeiro API - Relatório de custos",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 4
+            }
+          ]
+        }
+      },
+      "id": "fin-trigger",
+      "name": "Diariamente 04h",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4096,
+        -240
+      ],
+      "notes": "04h: a origem leva 73-96s na EAP maior; com 15 EAPs x 2 dias em série isso passa de 30 min. De madrugada ninguém espera."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT id_eap FROM eap_tarefas WHERE id_eap IS NOT NULL ORDER BY id_eap",
+        "options": {}
+      },
+      "id": "fin-eaps",
+      "name": "Listar EAPs — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -240
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Mesma consulta que a rota /eap/indices-financeiros usa. Evita lista fixa de id_eap no código do fluxo (a antiga tinha 13 e já estava faltando 2)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Backfill/recarga: preencha os dois com 'YYYY-MM-DD'. Vazios = modo normal.\nconst DATA_INICIO = '';\nconst DATA_FIM = '';\nconst DIAS = 2; // hoje-1 e hoje-2: o dia corrente so fecha depois do turno\n\n// Janela que vai no dia_start da chamada. NAO e' enfeite: a API devolve as\n// tarefas com MOVIMENTO dentro de [dia_start, dia_end], e o bloco `acumulado`\n// de cada uma e' o estado no dia_end. Janela de 1 dia devolve MENOS tarefa.\n// Medido em 21/09/2026 na id_eap 51 (a maior, obra 91), dia_end 19/09:\n//     1 dia  -> 54 tarefas, 96s\n//    30 dias -> 60 tarefas, 73s\n//   180 dias -> nao respondeu em 120s\n// Por isso 30. Aumentar so' acrescenta tarefa, nunca troca valor de quem ja\n// veio (conferido contra a view), mas passa do que a origem aguenta.\nconst JANELA_DIAS = 30;\n\nconst ISO = /^\\d{4}-\\d{2}-\\d{2}$/;\n\n// Lista de EAPs vem do node anterior (MySQL), nao de constante no codigo:\n// entrou obra nova, `eap_tarefas` ja sabe e este fluxo acompanha sozinho.\nconst eaps = [...new Set(\n  $input.all()\n    .map(it => Number(it.json.id_eap))\n    .filter(v => Number.isInteger(v))\n)];\nif (!eaps.length) throw new Error('Nenhum id_eap veio do node de listagem — o fluxo nao tem o que buscar.');\n\nconst hoje = $now.setZone('America/Sao_Paulo').startOf('day');\nconst datas = [];\nif (DATA_INICIO || DATA_FIM) {\n  if (!ISO.test(DATA_INICIO) || !ISO.test(DATA_FIM)) {\n    throw new Error('DATA_INICIO e DATA_FIM devem estar os dois preenchidos no formato YYYY-MM-DD');\n  }\n  let dt = DateTime.fromISO(DATA_INICIO, { zone: 'America/Sao_Paulo' });\n  const fim = DateTime.fromISO(DATA_FIM, { zone: 'America/Sao_Paulo' });\n  if (fim < dt) throw new Error('DATA_FIM e anterior a DATA_INICIO');\n  while (dt <= fim) { datas.push(dt.toFormat('yyyy-MM-dd')); dt = dt.plus({ days: 1 }); }\n} else {\n  if (!(DIAS >= 1)) throw new Error('DIAS deve ser >= 1');\n  for (let k = 1; k <= DIAS; k++) datas.push(hoje.minus({ days: k }).toFormat('yyyy-MM-dd'));\n}\n\nconst recuar = (diaISO, dias) => DateTime.fromISO(diaISO, { zone: 'America/Sao_Paulo' })\n  .minus({ days: dias }).toFormat('yyyy-MM-dd');\n\nconst combinacoes = [];\nfor (const data of datas) {\n  for (const id_eap of eaps) {\n    combinacoes.push({ json: { id_eap, data, dia_start: recuar(data, JANELA_DIAS) } });\n  }\n}\nreturn combinacoes;\n"
+      },
+      "id": "fin-combinar",
+      "name": "Combinar dia × EAP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3648,
+        -240
+      ],
+      "notes": "Datas (backfill aqui dentro) × EAPs do node anterior. Define também a janela (JANELA_DIAS)."
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "fin-loop",
+      "name": "Loop dia x EAP (1 por vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3424,
+        -240
+      ],
+      "notes": "1 por vez de propósito: em paralelo a origem lenta vira timeout em todas."
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://portalmse.com.br/microservices/avancos_api/v1/receita_custos/' + $('Loop dia x EAP (1 por vez)').item.json.id_eap }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "dia_start",
+              "value": "={{ $('Loop dia x EAP (1 por vez)').item.json.dia_start }}"
+            },
+            {
+              "name": "dia_end",
+              "value": "={{ $('Loop dia x EAP (1 por vez)').item.json.data }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 180000
+        }
+      },
+      "id": "fin-http",
+      "name": "Buscar receita e custos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3200,
+        -240
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "CRIAR-CREDENCIAL-CUSTOS",
+          "name": "Custos (avancos_api)"
+        }
+      },
+      "notes": "timeout 180s, não o padrão: medido 73-96s na id_eap 51 e 120s ainda insuficiente com janela de 180 dias."
+    },
+    {
+      "parameters": {
+        "jsCode": "// `medicao_diaria` NAO e mais alimentada (decidido 21/09/2026). O bloco\n// `diario` de cada tarefa so vem quando dia_start == dia_end — com a janela de\n// 30 dias (que e o que da cobertura boa no acumulado) ele vem `null` em 100%\n// das tarefas, conferido na origem. Alimentar os dois exigiria uma SEGUNDA\n// chamada por EAP/dia numa origem que ja leva 73-96s na maior delas. Como\n// `medicao_diaria` nao tem nenhum leitor (grep no repo, em `apresentacao/` e\n// nas copias legadas do Dropbox, 21/09/2026), a escolha foi cobertura do\n// acumulado. A tabela fica no Supabase com o historico ate 20/09, parada.\nconst par = $('Loop dia x EAP (1 por vez)').first().json;\nconst dataRefLoop = par.data;\nconst idEapLoop = par.id_eap;\n\n// A API responde { data: { id_eap, tarefas: [...] } }; o node HTTP pode\n// embrulhar de novo. Desembrulha ate achar quem tem `tarefas`.\nlet corpo = $json;\nif (typeof corpo === 'string') { corpo = JSON.parse(corpo); }\nif (corpo && typeof corpo.data === 'string') { try { corpo = JSON.parse(corpo.data); } catch (e) { /* nao era JSON */ } }\nwhile (corpo && corpo.data && typeof corpo.data === 'object' && !Array.isArray(corpo.data) && corpo.data.tarefas) { corpo = corpo.data; }\nif (corpo && corpo.body && typeof corpo.body === 'object' && corpo.body.tarefas) { corpo = corpo.body; }\n\nconst vazio = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\nconst n = v => { if (vazio(v)) return null; const x = Number(typeof v === 'string' ? v.trim().replace(',', '.') : v); return Number.isFinite(x) ? x : null; };\nconst i = v => { const x = n(v); return x === null ? null : Math.trunc(x); };\nconst s = (v, max) => { if (vazio(v) || typeof v === 'object') return null; const t = String(v).trim(); return t.length > max ? t.slice(0, max) : t; };\nconst b = v => (v === true ? 1 : v === false ? 0 : null);\nconst d = v => { if (vazio(v)) return null; const t = String(v).trim().slice(0, 10); return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null; };\nconst q = String.fromCharCode(96);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\").replace(/\\x00/g, '') + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\n\nconst dataRef = d(dataRefLoop);\nif (!dataRef) throw new Error('Data de referencia invalida no loop: ' + dataRefLoop);\n\nconst idEap = i(corpo && corpo.id_eap) ?? i(idEapLoop);\nif (idEap === null) throw new Error('Sem id_eap utilizavel (loop: ' + idEapLoop + ')');\n\nconst tarefas = corpo && Array.isArray(corpo.tarefas) ? corpo.tarefas : null;\nif (!tarefas) {\n  throw new Error('Formato inesperado em receita_custos/' + idEapLoop + ' (' + dataRef + ') - chaves recebidas: ' + JSON.stringify(Object.keys(corpo || {})));\n}\n\nconst acumMySql = [];\nconst acumSupabase = [];\nconst tarefasSupabase = [];\nlet descartados = 0;\nlet amostraRuim = null;\n\nfor (const t of tarefas) {\n  const tarefaId = i(t.id ?? t.tarefa_id);\n  // tarefa sem id nao tem chave: nao da pra gravar nem pra atualizar depois.\n  if (tarefaId === null) {\n    descartados++;\n    if (!amostraRuim) amostraRuim = JSON.stringify(t).slice(0, 400);\n    continue;\n  }\n  const a = t.acumulado || {};\n\n  acumMySql.push({\n    data_referencia: dataRef,\n    tarefa_id: tarefaId,\n    id_eap: idEap,\n    receita: n(t.receita),\n    custo_incorrido: n(a.custo_incorrido),\n    custo_projetado: n(a.custo_projetado),\n    avanco_total: n(a.avanco_total),\n    efetivo_total: n(a.efetivo_total),\n    custo_incorrido_acima_projetado: b(a.custo_incorrido_acima_projetado),\n  });\n\n  // Supabase continua recebendo o MESMO formato de antes: `apresentacao/`\n  // ainda le a view `v_indices_financeiros_diario`, que sai de\n  // `medicao_acumulada` + `tarefas`. Enquanto aquela copia nao migrar, cortar\n  // esta escrita quebraria a Performance la.\n  acumSupabase.push({\n    tarefa_id: tarefaId,\n    data_referencia: dataRef,\n    custo_incorrido: a.custo_incorrido ?? null,\n    custo_projetado: a.custo_projetado ?? null,\n    avanco_total: a.avanco_total ?? null,\n    efetivo_total: a.efetivo_total ?? null,\n    receita: t.receita ?? null,\n    custo_incorrido_acima_projetado: a.custo_incorrido_acima_projetado ?? null,\n  });\n\n  tarefasSupabase.push({\n    id: tarefaId,\n    id_eap: idEap,\n    codigo_seq: t.codigo_seq ?? null,\n    tarefa: t.tarefa ?? null,\n    local: t.local ?? null,\n    supervisor: t.supervisor ?? null,\n    valor_hora: t.valor_hora ?? null,\n    hht_previsto_avanco: t.hht_previsto_avanco ?? null,\n    hht_consumido: t.hht_consumido ?? null,\n    custo_meta_servico_subtotal: t.custo_meta_servico_subtotal ?? null,\n    avanco_acumulado: t.avanco_acumulado ?? null,\n    avanco_atual_p100_total: t.avanco_atual_p100_total ?? null,\n    receita: t.receita ?? null,\n    total_efetivo: t.total_efetivo ?? null,\n    diario_disponivel: corpo.diario_disponivel ?? false,\n  });\n\n}\n\n// Sem isto, mapeamento errado vira carga vazia SEM erro: as linhas somem em\n// silencio, o INSERT vira 'SELECT 1' e o fluxo termina verde.\nif (tarefas.length > 0 && acumMySql.length === 0) {\n  throw new Error('receita_custos/' + idEap + ' ' + dataRef + ': ' + tarefas.length + ' tarefa(s) e NENHUMA com id utilizavel. Amostra: ' + amostraRuim);\n}\n\n// As colunas geradas (indice_receita_custo_incorrido, sem_custo) NAO entram no\n// INSERT: o MySQL as calcula e recusa valor explicito.\nconst COLUNAS = ['data_referencia','tarefa_id','id_eap','receita','custo_incorrido','custo_projetado','avanco_total','efetivo_total','custo_incorrido_acima_projetado'];\nconst CHAVE = ['data_referencia','tarefa_id'];\nconst colsSql = COLUNAS.map(c => q + c + q).join(',');\nconst tuplas = acumMySql.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst upd = COLUNAS.filter(c => !CHAVE.includes(c)).map(c => q + c + q + ' = novo.' + q + c + q).join(', ');\n// `AS novo` em vez de VALUES(col): VALUES() esta deprecado no MySQL 8.4.\nconst sqlUpsert = acumMySql.length\n  ? 'INSERT INTO fin_medicao_acumulada (' + colsSql + ') VALUES ' + tuplas + ' AS novo ON DUPLICATE KEY UPDATE ' + upd\n  : 'SELECT 1';\n\n// Tarefa que saiu da resposta tem que sair do dia. Resposta VAZIA nao apaga\n// nada: nao da pra distinguir \"dia sem tarefa\" de \"origem com problema\", e a\n// origem aqui e reconhecidamente lenta/instavel (73-96s na id_eap 51).\nconst ids = acumMySql.map(l => l.tarefa_id).join(',');\nconst sqlDelete = acumMySql.length\n  ? 'DELETE FROM fin_medicao_acumulada WHERE data_referencia = ' + sqlVal(dataRef) + ' AND id_eap = ' + idEap + ' AND tarefa_id NOT IN (' + ids + ')'\n  : 'SELECT 1';\n\nconst diagnostico = {\n  id_eap: idEap,\n  data_referencia: dataRef,\n  janela: { dia_start: par.dia_start, dia_end: par.data },\n  tarefas_recebidas: tarefas.length,\n  descartadas: descartados,\n  linhas_acumulado: acumMySql.length,\n};\n\nreturn [{ json: { acumSupabase, tarefasSupabase, sqlUpsert, sqlDelete, diagnostico } }];\n"
+      },
+      "id": "fin-montar",
+      "name": "Montar índices",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2976,
+        -240
+      ],
+      "notes": "Monta o SQL do MySQL e os corpos do Supabase. Estoura se a resposta vier em formato inesperado ou se nenhuma tarefa tiver id."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/medicao_acumulada?on_conflict=tarefa_id,data_referencia",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar índices').first().json.acumSupabase) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "fin-supa-medicao_acumulada",
+      "name": "Upsert medicao_acumulada — Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2816,
+        -400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Projeto principal. Mantido porque `apresentacao/index.html` ainda lê a view v_indices_financeiros_diario, que sai daqui + `tarefas`."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/tarefas?on_conflict=id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($('Montar índices').first().json.tarefasSupabase) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "fin-supa-tarefas",
+      "name": "Upsert tarefas — Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2816,
+        -240
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "A view junta `tarefas` só para achar o id_eap. Sem esta escrita, tarefa nova não apareceria na Performance de `apresentacao/`."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar índices').first().json.sqlUpsert }}",
+        "options": {}
+      },
+      "id": "fin-my-upsert",
+      "name": "Gravar fin_medicao_acumulada — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -400
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Upsert em painelmse.fin_medicao_acumulada (PK = data_referencia + tarefa_id). O índice é coluna GERADA, não vem no INSERT."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $('Montar índices').first().json.sqlDelete }}",
+        "options": {}
+      },
+      "id": "fin-my-delete",
+      "name": "Remover tarefa que saiu — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2592,
+        -240
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Apaga do dia+EAP quem sumiu da resposta. Resposta vazia não apaga nada."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Diariamente 04h": {
+      "main": [
+        [
+          {
+            "node": "Listar EAPs — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Listar EAPs — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Combinar dia × EAP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combinar dia × EAP": {
+      "main": [
+        [
+          {
+            "node": "Loop dia x EAP (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop dia x EAP (1 por vez)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar receita e custos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar receita e custos": {
+      "main": [
+        [
+          {
+            "node": "Montar índices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar índices": {
+      "main": [
+        [
+          {
+            "node": "Upsert medicao_acumulada — Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert medicao_acumulada — Supabase": {
+      "main": [
+        [
+          {
+            "node": "Upsert tarefas — Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert tarefas — Supabase": {
+      "main": [
+        [
+          {
+            "node": "Gravar fin_medicao_acumulada — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gravar fin_medicao_acumulada — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Remover tarefa que saiu — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover tarefa que saiu — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Loop dia x EAP (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "instanceId": "232593807e4cb6bc9c0202a82a725208ea2e54a4d25b9192213d397de27f38fc"
+  },
+  "tags": []
+}

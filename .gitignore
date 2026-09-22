@@ -22,3 +22,8 @@ backups/
 # conteudo exclusivo (verificado por md5 em 08/09/2026). Somente o index.html da
 # apresentacao e fonte propria e vai versionado.
 apresentacao/assets/
+
+# Simula localmente o bucket publico do Supabase Storage (ortofoto-porto)
+# enquanto ele nao existe de verdade — ver scripts/serve-bucket-local.js e
+# scripts/publicar-ortofoto.js. So conteudo de teste, nunca fonte.
+bucket-local/

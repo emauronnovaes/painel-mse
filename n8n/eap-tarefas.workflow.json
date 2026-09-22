@@ -1,0 +1,114 @@
+[
+  {
+    "id": "eapTarefasV2",
+    "name": "EAP — tarefas por id_eap → Supabase + MySQL",
+    "nodes": [
+      {
+        "parameters": { "rule": { "interval": [{ "field": "hours" }] } },
+        "id": "b1000000-0000-4000-8000-000000000001",
+        "name": "A cada 1 hora",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [-1060, 0]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Lista de id_eap levantada por SQL direto no Supabase (2026-09-18):\n//   SELECT id_eap, id_obra, count(*) FROM \"EAP\" WHERE id_eap IS NOT NULL\n//   GROUP BY id_eap, id_obra;\n// NÃO é 1 por obra: a obra 107 (NN-AP) tem 6 grupos e a 94 (Porto Itapoá)\n// tem 2. Reconsultar se aparecer um grupo novo que não está aqui.\n//\n// id_eap=66 é da obra 103 (CNPEM - Auditório), que não aparece no painel\n// (não está no array OBRAS nem na tabela `obras` do MySQL). Fica incluído\n// de propósito: a tabela `EAP` do Supabase JÁ tem as 641 tarefas dela, e\n// deixar de fora só criaria um pedaço permanentemente desatualizado da\n// mesma tabela. Pra excluir, basta comentar a linha.\nconst ID_EAP = [\n  { id_eap: 51,  id_obra: 91,  nome_obra: 'Novo Nordisk - UB/SP' },\n  { id_eap: 32,  id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 121, id_obra: 94,  nome_obra: 'Porto Itapoá' },\n  { id_eap: 66,  id_obra: 103, nome_obra: 'CNPEM - Auditório' },\n  { id_eap: 73,  id_obra: 106, nome_obra: 'CNPEM - Faseado' },\n  { id_eap: 86,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 87,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 88,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 89,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 90,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 94,  id_obra: 107, nome_obra: 'Novo Nordisk - AP' },\n  { id_eap: 110, id_obra: 108, nome_obra: 'Novo Nordisk - AP - Reforço' },\n  { id_eap: 114, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 115, id_obra: 110, nome_obra: 'Hitachi' },\n  { id_eap: 127, id_obra: 114, nome_obra: 'IPEN' },\n];\n\nreturn ID_EAP.map(o => ({ json: o }));"
+        },
+        "id": "b1000000-0000-4000-8000-000000000002",
+        "name": "Lista de id_eap",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-840, 0]
+      },
+      {
+        "parameters": { "options": {} },
+        "id": "b1000000-0000-4000-8000-000000000003",
+        "name": "Loop id_eap (1 por vez)",
+        "type": "n8n-nodes-base.splitInBatches",
+        "typeVersion": 3,
+        "position": [-620, 0],
+        "notes": "Processa e grava 1 grupo por vez, liberando memória antes de buscar o próximo — mesmo motivo dos fluxos de RMI/Mapa de Compras (máquina com pouca RAM travava sem erro quando se acumulava tudo antes de gravar)."
+      },
+      {
+        "parameters": {
+          "url": "=https://portalmse.com.br/microservices/avancos_api/v1/tarefas/{{$json.id_eap}}",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpBearerAuth",
+          "options": {
+            "response": { "response": { "responseFormat": "text" } },
+            "timeout": 120000
+          }
+        },
+        "id": "b1000000-0000-4000-8000-000000000004",
+        "name": "Buscar tarefas (avancos_api)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [-400, 0],
+        "notes": "TODO: escolher a credencial Bearer do avancos_api neste node.\n\nResponse Format = Text de propósito: o parse fica no Code node seguinte, que em caso de resposta inesperada joga o corpo cru na mensagem de erro (dá pra diagnosticar sem precisar adivinhar). Timeout 120s porque a resposta de um grupo grande passa de 300KB."
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "// Envelope confirmado contra resposta real (2026-09-18, id_eap=32):\n//   {data: {id_eap, nome_eap, id_obra, nome_obra, tarefas: [...]}}\n// 'data' é OBJETO (não array) e os campos de cada tarefa já batem 1:1 com\n// as colunas da tabela `EAP` do Supabase — nenhuma tradução de nome é\n// necessária, só de TIPO (ver `num` abaixo).\n\nconst ctx = $('Loop id_eap (1 por vez)').first().json;\nconst entrada = $input.first().json;\n\nconst bruto = typeof entrada === 'string' ? entrada\n            : (typeof entrada.data === 'string' ? entrada.data\n            : (typeof entrada.body === 'string' ? entrada.body : entrada));\nlet corpo;\ntry {\n  corpo = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;\n} catch (e) {\n  throw new Error(`id_eap ${ctx.id_eap}: resposta nao e JSON. Corpo cru (1000 chars): ` + String(bruto).slice(0, 1000));\n}\n\nconst grupo = corpo && corpo.data ? corpo.data : corpo;\nif (!grupo || !Array.isArray(grupo.tarefas)) {\n  throw new Error(`id_eap ${ctx.id_eap}: envelope inesperado (esperava data.tarefas[]). Recebido: ` + JSON.stringify(corpo).slice(0, 600));\n}\n\n// A origem manda número como string (\"254616112.00\") e \"vazio\" como \"\" —\n// string vazia quebra tanto coluna `double precision` no Postgres quanto\n// `DOUBLE` no MySQL, então vira null. Datas ficam como STRING de\n// propósito (são TEXT/VARCHAR nos dois bancos; a origem manda\n// \"0000-00-00\" e o painel já sabe tratar isso).\nconst num = (v) => {\n  if (v === null || v === undefined || v === '') return null;\n  const n = Number(String(v).replace(',', '.'));\n  return Number.isFinite(n) ? n : null;\n};\nconst txt = (v) => (v === null || v === undefined || v === '' ? null : String(v));\n\nconst idObra = num(grupo.id_obra) ?? ctx.id_obra;\nconst nomeObra = txt(grupo.nome_obra) ?? ctx.nome_obra;\nconst idEap = num(grupo.id_eap) ?? ctx.id_eap;\n\nconst linhas = grupo.tarefas.map(t => ({\n  id: num(t.id),\n  id_obra: idObra,\n  nome_obra: nomeObra,\n  id_eap: idEap,\n  edt: txt(t.edt),\n  tarefa: txt(t.tarefa),\n  disciplina: txt(t.disciplina),\n  local: txt(t.local),\n  unidade: txt(t.unidade),\n  qtd: num(t.qtd),\n  saldo_qtd: num(t.saldo_qtd),\n  efetivo_previsto: txt(t.efetivo_previsto),\n  ponderacao_reais: num(t.ponderacao_reais),\n  ponderacao_hht: num(t.ponderacao_hht),\n  avanco_atual: num(t.avanco_atual),\n  desvio: num(t.desvio),\n  data_inicio: txt(t.data_inicio),\n  data_termino: txt(t.data_termino),\n  data_inicio_reprogramado: txt(t.data_inicio_reprogramado),\n  data_termino_reprogramado: txt(t.data_termino_reprogramado),\n  meta_diaria: num(t.meta_diaria),\n  avanco_diario: num(t.avanco_diario),\n  encarregado_nome: txt(t.encarregado_nome),\n  status_qualidade: txt(t.status_qualidade),\n  hht_consumido: num(t.hht_consumido),\n}));\n\nconst semId = linhas.filter(l => l.id === null).length;\nif (semId) throw new Error(`id_eap ${ctx.id_eap}: ${semId} tarefa(s) sem id -- nao da pra fazer upsert sem chave`);\n\n// SQL do MySQL montado aqui como string pronta: o campo \"Query\n// Parameters\" do node MySQL nativo não é confiável entre versões do n8n\n// (lição já registrada no snippet de Restrições/OC), então a query inteira\n// vai como expressão.\nconst COLUNAS = Object.keys(linhas[0] || { id: null });\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\") + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\nconst colsSql = COLUNAS.map(c => '`' + c + '`').join(',');\nconst tuplas = linhas.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst updSql = COLUNAS.filter(c => c !== 'id').map(c => '`' + c + '` = VALUES(`' + c + '`)').join(', ');\nconst sqlMySql = linhas.length\n  ? `INSERT INTO eap_tarefas (${colsSql}) VALUES ${tuplas} ON DUPLICATE KEY UPDATE ${updSql}`\n  : 'SELECT 1';\n\nreturn [{ json: { id_eap: idEap, id_obra: idObra, total: linhas.length, linhas, sqlMySql } }];"
+        },
+        "id": "b1000000-0000-4000-8000-000000000005",
+        "name": "Montar linhas da EAP",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [-180, 0]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/EAP?on_conflict=id",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              { "name": "Content-Type", "value": "application/json" },
+              { "name": "Prefer", "value": "resolution=merge-duplicates,return=minimal" }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.linhas) }}",
+          "options": { "timeout": 120000 }
+        },
+        "id": "b1000000-0000-4000-8000-000000000006",
+        "name": "Gravar EAP (Supabase)",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [60, 0],
+        "notes": "Upsert por `id` (PK real da tabela, confirmada via SQL). Vem ANTES do MySQL de propósito: é este banco que o painel lê hoje, então é o que não pode ficar sem dado."
+      },
+      {
+        "parameters": {
+          "operation": "executeQuery",
+          "query": "={{ $('Montar linhas da EAP').first().json.sqlMySql }}"
+        },
+        "id": "b1000000-0000-4000-8000-000000000007",
+        "name": "Gravar eap_tarefas (MySQL)",
+        "type": "n8n-nodes-base.mySql",
+        "typeVersion": 2.4,
+        "position": [300, 0],
+        "onError": "continueRegularOutput",
+        "notes": "TODO: escolher a credencial MySQL (banco painelmse) neste node.\n\n`onError: continue` de propósito: hoje o IP desta máquina não está liberado no GRANT do MySQL, e sem isso uma falha aqui abortaria o loop e deixaria as OUTRAS obras sem gravar nem no Supabase. Assim o Supabase (que alimenta o painel) sempre completa, e o MySQL passa a funcionar sozinho quando o acesso for liberado."
+      }
+    ],
+    "connections": {
+      "A cada 1 hora": { "main": [[{ "node": "Lista de id_eap", "type": "main", "index": 0 }]] },
+      "Lista de id_eap": { "main": [[{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] },
+      "Loop id_eap (1 por vez)": { "main": [[], [{ "node": "Buscar tarefas (avancos_api)", "type": "main", "index": 0 }]] },
+      "Buscar tarefas (avancos_api)": { "main": [[{ "node": "Montar linhas da EAP", "type": "main", "index": 0 }]] },
+      "Montar linhas da EAP": { "main": [[{ "node": "Gravar EAP (Supabase)", "type": "main", "index": 0 }]] },
+      "Gravar EAP (Supabase)": { "main": [[{ "node": "Gravar eap_tarefas (MySQL)", "type": "main", "index": 0 }]] },
+      "Gravar eap_tarefas (MySQL)": { "main": [[{ "node": "Loop id_eap (1 por vez)", "type": "main", "index": 0 }]] }
+    },
+    "settings": { "executionOrder": "v1" },
+    "pinData": {},
+    "meta": { "instanceId": "painel-mse-migracao" }
+  }
+]

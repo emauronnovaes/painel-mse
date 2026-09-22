@@ -1,0 +1,246 @@
+{
+  "name": "Avanços API - EAP",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sqlMySql }}",
+        "options": {}
+      },
+      "id": "ad4c4e21-1e06-48ab-9939-048c2069014f",
+      "name": "Gravar eap_tarefas — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        240,
+        480
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Grava em painelmse.eap_tarefas. Selecione a credencial MySQL neste node. Sem onError: falha aqui para o workflow de proposito, para a carga nao ficar muda."
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "883c2a2a-8178-472f-a0c9-aa317a6f45db",
+      "name": "A cada 1 hora1",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -800,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consulta manual realizada em 2026-09-18 na tabela EAP do Supabase.\nconst ids = [32, 51, 66, 73, 86, 87, 88, 89, 90, 94, 110, 114, 115, 121, 127];\nreturn ids.map(id_eap => ({ json: { id_eap } }));"
+      },
+      "id": "8a3c3344-e666-4315-ac88-4f757c8eb629",
+      "name": "Lista manual de id_eap1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "fa66d7a5-8fc8-43ce-adc3-874e8160a08a",
+      "name": "Loop id_eap (1 por vez)1",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -400,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/tarefas/' + $('Loop id_eap (1 por vez)1').item.json.id_eap}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "53e4b6ed-8cff-475d-b049-9eeaedc1a2a7",
+      "name": "Buscar tarefas da EAP1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        288
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FT2cWeDSqiJuPx4t",
+          "name": "EAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const corpo = $json.data ?? $json.body?.data ?? $json.body ?? $json;\nif (!corpo || !Array.isArray(corpo.tarefas)) throw new Error('Resposta invalida para id_eap ' + $('Loop id_eap (1 por vez)1').item.json.id_eap);\n\n// --- normalizacao: o mesmo payload alimenta Supabase e MySQL ---\nconst vazio = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\nconst n = v => { if (vazio(v)) return null; const x = Number(typeof v === 'string' ? v.trim().replace(',', '.') : v); return Number.isFinite(x) ? x : null; };\nconst s = (v, max) => { if (vazio(v)) return null; const t = String(v).trim(); return t.length > max ? t.slice(0, max) : t; };\nconst d = v => { if (vazio(v)) return null; const t = String(v).trim().slice(0, 10); return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null; };\n\n// os limites de texto abaixo sao o tamanho das colunas em painelmse.eap_tarefas\nconst rows = corpo.tarefas.map(t => ({\n  id: n(t.id),\n  id_obra: n(corpo.id_obra),\n  nome_obra: s(corpo.nome_obra, 120),\n  id_eap: n(corpo.id_eap),\n  edt: s(t.edt, 60),\n  tarefa: s(t.tarefa, 255),\n  disciplina: s(t.disciplina, 120),\n  local: s(t.local, 160),\n  unidade: s(t.unidade, 20),\n  qtd: n(t.qtd),\n  saldo_qtd: n(t.saldo_qtd),\n  efetivo_previsto: n(t.efetivo_previsto),\n  ponderacao_reais: n(t.ponderacao_reais),\n  ponderacao_hht: n(t.ponderacao_hht),\n  data_inicio: d(t.data_inicio),\n  data_termino: d(t.data_termino),\n  data_inicio_reprogramado: d(t.data_inicio_reprogramado),\n  data_termino_reprogramado: d(t.data_termino_reprogramado),\n  encarregado_nome: s(t.encarregado_nome, 120),\n  avanco_atual: n(t.avanco_atual),\n  desvio: n(t.desvio),\n  meta_diaria: n(t.meta_diaria),\n  avanco_diario: n(t.avanco_diario),\n  hht_consumido: n(t.hht_consumido),\n  status_qualidade: s(t.status_qualidade, 30)\n})).filter(r => r.id != null);\n\n// --- SQL para MySQL: painelmse.eap_tarefas (PK = id) ---\nconst MODELO = { id:1, id_obra:1, nome_obra:1, id_eap:1, edt:1, tarefa:1, disciplina:1, local:1, unidade:1, qtd:1, saldo_qtd:1, efetivo_previsto:1, ponderacao_reais:1, ponderacao_hht:1, data_inicio:1, data_termino:1, data_inicio_reprogramado:1, data_termino_reprogramado:1, encarregado_nome:1, avanco_atual:1, desvio:1, meta_diaria:1, avanco_diario:1, hht_consumido:1, status_qualidade:1 };\nconst CHAVE = ['id'];\nconst q = String.fromCharCode(96);\nconst COLUNAS = Object.keys(MODELO);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\").replace(/\\x00/g, '') + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\nconst colsSql = COLUNAS.map(c => q + c + q).join(',');\nconst tuplas = rows.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst updSql = COLUNAS.filter(c => !CHAVE.includes(c)).map(c => q + c + q + ' = VALUES(' + q + c + q + ')').join(', ');\nconst sqlMySql = rows.length ? 'INSERT INTO eap_tarefas (' + colsSql + ') VALUES ' + tuplas + ' ON DUPLICATE KEY UPDATE ' + updSql : 'SELECT 1';\nreturn [{ json: { rows, sqlMySql, total: rows.length } }];\n"
+      },
+      "id": "61679e70-d0cf-47c0-87c7-f26749c43236",
+      "name": "Montar linhas EAP1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/EAP?on_conflict=id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdlYmpsaGt5d3RucGZxanJha29rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NDMwMjEsImV4cCI6MjA5MjQxOTAyMX0.jmoyrAsH9XHgAx2vLizQMcwWwEyMEBwSKFH5EEyP6tM"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdlYmpsaGt5d3RucGZxanJha29rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NDMwMjEsImV4cCI6MjA5MjQxOTAyMX0.jmoyrAsH9XHgAx2vLizQMcwWwEyMEBwSKFH5EEyP6tM"
+            },
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json.rows)}}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "b5d8c32a-4d02-44ae-a119-d8846fef3b3c",
+      "name": "Upsert EAP no Supabase1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        288
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gravar eap_tarefas — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "A cada 1 hora1": {
+      "main": [
+        [
+          {
+            "node": "Lista manual de id_eap1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista manual de id_eap1": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop id_eap (1 por vez)1": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar tarefas da EAP1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar tarefas da EAP1": {
+      "main": [
+        [
+          {
+            "node": "Montar linhas EAP1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar linhas EAP1": {
+      "main": [
+        [
+          {
+            "node": "Upsert EAP no Supabase1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gravar eap_tarefas — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a394632b-07cb-433a-9ebe-9f68f0c38df5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "232593807e4cb6bc9c0202a82a725208ea2e54a4d25b9192213d397de27f38fc"
+  },
+  "nodeGroups": [],
+  "id": "avancosApiEapSupabaseV1",
+  "tags": []
+}

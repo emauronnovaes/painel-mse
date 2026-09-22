@@ -1,0 +1,283 @@
+{
+  "name": "Avanços API - Efetivo ocupado",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "id": "fdeb842b-507f-4310-9e4b-8dc56b87e608",
+      "name": "Diariamente",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -4096,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// O endpoint devolve o efetivo ocupado do momento, sem data no caminho.\n// Esta data so CARIMBA o registro (data_consulta) quando a resposta nao traz a dela.\n// Vazio = data vigente no fuso de Sao Paulo.\nconst DATA_MANUAL = '';\nconst data = DATA_MANUAL || $now.setZone('America/Sao_Paulo').toFormat('yyyy-MM-dd');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(data)) throw new Error('DATA_MANUAL deve estar no formato YYYY-MM-DD');\nreturn [{ json: { data } }];"
+      },
+      "id": "c53dbbe0-4614-45b9-8c72-c86f78c5516b",
+      "name": "Definir data de referência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3904,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $('Definir data de referência').first().json.data;\nconst ids = [32, 51, 66, 73, 86, 87, 88, 89, 90, 94, 110, 114, 115, 121, 127];\nreturn ids.map(id_eap => ({ json: { id_eap, data } }));"
+      },
+      "id": "5f6b460b-27f7-4c9b-b22e-94e59a8a5134",
+      "name": "Lista manual de id_eap e data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3696,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "1dc9f63c-393b-45df-a7cb-07aa7dde46a2",
+      "name": "Loop id_eap (1 por vez)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -3488,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{'https://portalmse.com.br/microservices/hub_mse/api_avancos/v1/efetivo_ocupado/' + $('Loop id_eap (1 por vez)').item.json.id_eap}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "5944f161-0539-4650-850d-b7c32de49030",
+      "name": "Buscar efetivo ocupado",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -3264,
+        -240
+      ],
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "FT2cWeDSqiJuPx4t",
+          "name": "EAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const corpo = $json.data ?? $json.body?.data ?? $json.body ?? $json;\nconst idEap = $('Loop id_eap (1 por vez)').item.json.id_eap;\n\nconst vazio = v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\nconst n = v => { if (vazio(v)) return null; const x = Number(typeof v === 'string' ? v.trim().replace(',', '.') : v); return Number.isFinite(x) ? x : null; };\nconst s = (v, max) => { if (vazio(v) || typeof v === 'object') return null; const t = String(v).trim(); return t.length > max ? t.slice(0, max) : t; };\nconst d = v => { if (vazio(v)) return null; const t = String(v).trim().slice(0, 10); return /^\\d{4}-\\d{2}-\\d{2}$/.test(t) ? t : null; };\nconst q = String.fromCharCode(96);\nconst escapar = (v) => \"'\" + String(v).replace(/\\\\/g, '\\\\\\\\').replace(/'/g, \"\\\\'\").replace(/\\x00/g, '') + \"'\";\nconst sqlVal = (v) => (v === null || v === undefined) ? 'NULL' : (typeof v === 'number' ? String(v) : escapar(v));\n\n// A API carimba a propria data da consulta; a data do fluxo e so rede de seguranca.\nconst dataRef = d(corpo.data_cadastro ?? corpo.data_consulta) ?? d($('Loop id_eap (1 por vez)').item.json.data);\nif (!dataRef) throw new Error('Sem data de consulta valida para id_eap ' + idEap);\n\nconst listaTarefas = corpo.tarefas ?? corpo.efetivo ?? (Array.isArray(corpo) ? corpo : null);\nif (!Array.isArray(listaTarefas)) throw new Error('Formato inesperado em efetivo_ocupado/' + idEap + ' - chaves recebidas: ' + JSON.stringify(Object.keys(corpo || {})));\n\n// A resposta vem por TAREFA, com a lista de pessoas dentro de funcionarios_alocados.\n// Vira uma linha por (tarefa x funcionario). Tarefa sem ninguem alocado nao gera linha.\n// Nao dava para fazer merge tarefa+funcionario: os dois objetos tem a chave \"id\".\nconst rows = [];\nlet vistos = 0;\nlet comChaveRuim = 0;\nlet amostraRuim = null;\n\n// limites de texto = tamanho das colunas em painelmse.eap_apontamento_efetivo\nfor (const t of listaTarefas) {\n  const alocados = t.funcionarios_alocados ?? t.funcionarios ?? t.alocacoes ?? [];\n  if (!Array.isArray(alocados) || alocados.length === 0) continue;\n  const tarefaId = n(t.id ?? t.tarefa_id ?? t.id_tarefa);\n  for (const f of alocados) {\n    vistos++;\n    const funcionarioId = n(f.id ?? f.funcionario_id ?? f.id_funcionario);\n    if (tarefaId == null || funcionarioId == null) {\n      comChaveRuim++;\n      if (!amostraRuim) amostraRuim = JSON.stringify({ tarefa: t.id, funcionario: f }).slice(0, 400);\n      continue;\n    }\n    rows.push({\n      data_consulta: dataRef,\n      tarefa_id: tarefaId,\n      funcionario_id: funcionarioId,\n      id_eap: n(corpo.id_eap ?? idEap),\n      nome_eap: s(corpo.nome_eap, 120),\n      id_obra: n(corpo.id_obra),\n      nome_obra: s(corpo.nome_obra, 120),\n      edt: s(t.edt, 60),\n      tarefa_nome: s(t.tarefa ?? t.tarefa_nome, 255),\n      funcionario_nome: s(f.nome ?? f.funcionario_nome, 120),\n      nome_funcao: s(f.nome_funcao ?? f.funcao, 80),\n      empresa: s(f.empresa_contratante ?? f.empresa ?? f.razao_social, 120),\n      tabela_origem: s(f.tabela ?? f.tabela_origem, 40)\n    });\n  }\n}\n\n// Sem isto, mapeamento errado vira carga vazia SEM erro: as linhas sao descartadas\n// em silencio, o INSERT vira 'SELECT 1' e o fluxo termina verde.\nif (vistos > 0 && rows.length === 0) {\n  throw new Error('efetivo_ocupado/' + idEap + ': ' + vistos + ' funcionario(s) alocado(s) e NENHUM com id utilizavel. Amostra: ' + amostraRuim);\n}\n\nconst diagnostico = {\n  id_eap: idEap,\n  data_consulta: dataRef,\n  tarefas_recebidas: listaTarefas.length,\n  funcionarios_alocados: vistos,\n  descartados: comChaveRuim,\n  linhas_validas: rows.length\n};\n\n// --- MySQL: painelmse.eap_apontamento_efetivo (PK = data_consulta + tarefa_id + funcionario_id) ---\nconst COLUNAS = ['data_consulta','tarefa_id','funcionario_id','id_eap','nome_eap','id_obra','nome_obra','edt','tarefa_nome','funcionario_nome','nome_funcao','empresa','tabela_origem'];\nconst CHAVE = ['data_consulta','tarefa_id','funcionario_id'];\nconst colsSql = COLUNAS.map(c => q + c + q).join(',');\nconst tuplas = rows.map(l => '(' + COLUNAS.map(c => sqlVal(l[c])).join(',') + ')').join(',\\n');\nconst updSql = COLUNAS.filter(c => !CHAVE.includes(c)).map(c => q + c + q + ' = VALUES(' + q + c + q + ')').join(', ');\nconst sqlMySql = rows.length ? 'INSERT INTO eap_apontamento_efetivo (' + colsSql + ') VALUES ' + tuplas + ' ON DUPLICATE KEY UPDATE ' + updSql : 'SELECT 1';\n\n// quem saiu da alocacao no meio do dia tem que sair da tabela (do dia + EAP em questao)\nconst filtro = 'id_eap = ' + sqlVal(n(idEap)) + ' AND data_consulta = ' + sqlVal(dataRef);\nconst pares = rows.map(r => '(' + r.tarefa_id + ',' + r.funcionario_id + ')').join(',');\nconst sqlDelete = rows.length\n  ? 'DELETE FROM eap_apontamento_efetivo WHERE ' + filtro + ' AND (tarefa_id, funcionario_id) NOT IN (' + pares + ')'\n  : 'DELETE FROM eap_apontamento_efetivo WHERE ' + filtro;\n\nreturn [{ json: { rows, sqlMySql, sqlDelete, total: rows.length, diagnostico } }];\n"
+      },
+      "id": "142c08cd-b624-4237-ae13-a63e57003d5f",
+      "name": "Montar efetivo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3040,
+        -240
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gebjlhkywtnpfqjrakok.supabase.co/rest/v1/apontamento_efetivo?on_conflict=funcionario_id,tarefa_id,data_consulta",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{JSON.stringify($json.rows)}}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "365a6e2e-1fc3-4490-9029-436caad0d8e4",
+      "name": "Upsert efetivo no Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2816,
+        -336
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "jaaDGvzRrYeNSdFF",
+          "name": "Supabase account"
+        }
+      },
+      "notes": "Credencial Supabase precisa ser a service_role: cards_ativos e apontamento_efetivo so tem policy de SELECT, anon key nao escreve."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sqlMySql }}",
+        "options": {}
+      },
+      "id": "e3937c1c-ea59-412b-947b-89eb8cea5ab7",
+      "name": "Gravar eap_apontamento_efetivo — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2816,
+        -144
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Upsert em painelmse.eap_apontamento_efetivo. Selecione a credencial MySQL neste node."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $json.sqlDelete }}",
+        "options": {}
+      },
+      "id": "a7455bb2-029a-4b52-80dc-41a0cbc3a785",
+      "name": "Remover efetivo que saiu — MySQL",
+      "type": "n8n-nodes-base.mySql",
+      "typeVersion": 2.4,
+      "position": [
+        -2816,
+        48
+      ],
+      "credentials": {
+        "mySql": {
+          "id": "xtOj1i1tyu03Ztar",
+          "name": "MySQL account"
+        }
+      },
+      "notes": "Apaga do dia+EAP quem sumiu da resposta. Ordem em relacao ao INSERT nao importa. Selecione a credencial MySQL neste node."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Diariamente": {
+      "main": [
+        [
+          {
+            "node": "Definir data de referência",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Definir data de referência": {
+      "main": [
+        [
+          {
+            "node": "Lista manual de id_eap e data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lista manual de id_eap e data": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop id_eap (1 por vez)": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Buscar efetivo ocupado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar efetivo ocupado": {
+      "main": [
+        [
+          {
+            "node": "Montar efetivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar efetivo": {
+      "main": [
+        [
+          {
+            "node": "Upsert efetivo no Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gravar eap_apontamento_efetivo — MySQL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Remover efetivo que saiu — MySQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remover efetivo que saiu — MySQL": {
+      "main": [
+        [
+          {
+            "node": "Loop id_eap (1 por vez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "5bb6f87c-e008-4828-bc00-3a371e6a99a7",
+  "meta": {
+    "instanceId": "232593807e4cb6bc9c0202a82a725208ea2e54a4d25b9192213d397de27f38fc"
+  },
+  "nodeGroups": [],
+  "id": "wRHxNJ883kqOWc7q",
+  "tags": []
+}

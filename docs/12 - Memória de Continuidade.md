@@ -137,6 +137,17 @@ Supabase → MySQL]].)
 
 ## Pendências para retomada
 
+### Migração de 21/09/2026 — estado local + banco
+
+Ver [[18 - Corte EAP e histórico de setembro no MySQL]]. Banco real contém
+1.332 apontamentos e 9.308 alocações de setembro; sem exclusões. Confirmados
+45 IDs da EAP também removidos no Hub (não restaurar). Schema de precisão
+ajustado via migration 013 condicional. Painel principal lê EAP/MySQL e
+histórico MySQL desde 01/09, legado antes disso. **Sem deploy**: publicar API
+antes do frontend, incluindo `lib/eap-data.js`. Alterações locais anteriores
+de financeiro e demais arquivos foram preservadas. Supabase ainda necessário
+para domínios não migrados e datas antigas; não desligar dual-write.
+
 1. **Levar o front atualizado para produção.** O banco já mudou; o painel servido
    ainda é o antigo. O `firebase deploy` está travado por cota, mas o Firebase é
    só backup — quem serve o painel é o portal, então o caminho real de
