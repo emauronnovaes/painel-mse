@@ -9715,11 +9715,6 @@ function ModuloOrtofoto({ dziUrl, data, obraNome }){
       maxZoomPixelRatio: 2,
       visibilityRatio: 1,
       constrainDuringPan: true,
-      // Rotação de exibição (pedido explícito, 2026-08-25: "gire a foto
-      // 90º para esquerda") — gira só o viewport, não os tiles; sentido
-      // horário é positivo no OpenSeadragon, por isso 270 (= -90, giro
-      // pra esquerda/anti-horário).
-      degrees: 270,
     });
     return () => { viewerRef.current?.destroy(); viewerRef.current = null; };
   }, [dziUrl]);
